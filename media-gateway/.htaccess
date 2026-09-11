@@ -1,0 +1,13 @@
+# Media gateway docroot hardening (Apache / cPanel / LiteSpeed).
+# Deploy this file NEXT TO upload.php in the media subdomain's document root.
+# The media/ subdirectory gets its OWN .htaccess (see media-htaccess.txt)
+# which denies script execution — never disable the PHP engine in the
+# docroot root or upload.php stops working on mod_php hosts.
+Options -Indexes
+
+# Cache public media aggressively (filenames are UUIDs and never change)
+<IfModule mod_headers.c>
+  <FilesMatch "\.(jpg|jpeg|png|webp)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>

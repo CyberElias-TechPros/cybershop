@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'arena/**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  worker:
+    name: API worker — typecheck + integration suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: worker
+        run: npm ci --no-fund --no-audit
+      - name: Typecheck
+        working-directory: worker
+        run: npm run typecheck
+      - name: Test (unit + integration on local wrangler dev)
+        working-directory: worker
+        timeout-minutes: 10
+        run: npm test
+
+  web:
+    name: Web — typecheck + production build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install
+        working-directory: web
+        run: npm ci --no-fund --no-audit
+      - name: Typecheck
+        working-directory: web
+        run: npx tsc --noEmit
+      - name: Production build
+        working-directory: web
+        run: npm run build

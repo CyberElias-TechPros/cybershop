@@ -5,8 +5,16 @@ export default function ItemCard({ item, biz }: { item: ItemOut; biz: BusinessOu
   const href = `/business/${biz.slug}/${item.url_segment}/${item.slug}`;
   const img = item.images[0];
   return (
-    <a className="card" href={href} style={{ color: 'inherit' }}>
+    <a
+      className="card tilt"
+      href={href}
+      style={{ color: 'inherit' }}
+      data-flip={`item:${item.id}`}
+      data-flip-src=""
+      aria-label={`${item.name} — ${item.price_display}`}
+    >
       <div className="item-img">
+        <span className="skel" aria-hidden="true" />
         {img ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={img.url} alt={img.alt} loading="lazy" />

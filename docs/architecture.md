@@ -247,11 +247,25 @@ One dark brand across the whole app; two registers:
   animation libraries; SSR + OG untouched; everything disabled under
   `prefers-reduced-motion` (content-first fallback, gated by `html.js`).
 - **Dashboard/admin (clarity-first, same tokens):** fast micro-transitions
-  only (row hover, active-nav indicator, button feedback).
+  only (row hover, active-nav indicator, button feedback) — plus one
+  "empowering" exception: the bank-proof upload is a drop-zone with
+  marching-ants border and a liquid fill driven by **real XHR progress**,
+  ending in a drawn checkmark (haptic: double on success, deep on error).
+- **v3 "Fluid Material" additions (D-018):** shared-element card ⇄ detail
+  morph (`FlipBridge` in `components/Fx.tsx` — layout-level client bridge;
+  the flying overlay + scrim are imperative DOM so they survive route
+  unmount; reverse = swipe-down on the image or the back chip; content
+  cascades in on landing), WhatsApp swipe-to-buy slider (`SwipeWa.tsx` —
+  liquid fill, velocity-assisted release, confetti burst, fade-to-black),
+  pointer/gyro tilt parallax + specular highlight, luminous gradient
+  borders, shaped skeleton shimmers, elastic end-of-list stretch, haptic
+  landscape (`lib/haptics.ts`), and per-category accent theming
+  (`lib/theme.ts` → `--acc`/`--acc2` on storefront + vendor dashboard).
 
 Note: React 19.3's `<ViewTransition>` does not interop under Next 15.5's
 server-component transform (verified — renders `undefined`), so page
-transitions are a custom veil, not the built-in component.
+transitions are a custom veil (suppressed while a flip is in flight),
+not the built-in component.
 
 ---
 

@@ -133,3 +133,42 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
 - **Risk:** Each webhook triggers an outbound Paystack API call (cost ≈ 0 on free; rate-limited by Paystack) — accepted.
 - **Status:** Final.
 
+## D-018 — Design v3 "Fluid Material" layer — scope decisions (2026-09-11, owner blueprint)
+- **Decision:** Owner supplied a full "luxury immersion" blueprint. It was implemented where
+  it fits the product, and deliberately not implemented where it contradicts it:
+  - **Built (public):** shared-element **card ⇄ detail morph** (FLIP technique; a catalog
+    card expands into the item header; reverse via swipe-down on the image or the back
+    chip; overlay + scrim are imperative DOM owned by a layout-level bridge so they
+    survive Next's page unmount; content cascades in on landing). **WhatsApp
+    swipe-to-buy** slider (shimmering liquid fill + wave edge, velocity-assisted
+    release, thumb pop, localized confetti burst, haptic double-tap, fade-to-black
+    while the wa.me link is pulled into view). Pointer/gyro **tilt parallax** with
+    specular highlight on cards (≤4.5°), **luminous shimmering gradient borders**
+    (wa-card, auth cards), **skeleton shimmers** shaped to the real media (tied to
+    actual image loading), **elastic rubber-band** end-of-list stretch (touch only),
+    **haptic landscape** (pop/double/deep/long via navigator.vibrate, no-op on iOS).
+  - **Built (vendor):** proof-upload **drop-zone** with marching-ants border,
+    **liquid fill driven by real XHR upload progress**, drawn checkmark; **category
+    theme morph** — each industry carries an accent duet (Tech→neon blue, Bakery→warm
+    earth, Fashion→rose, Real-estate→teal, Auto→gold, Health→teal-green; default
+    emerald/gold) applied to the storefront accents/ambient glow AND the vendor's own
+    dashboard, so the vendor recognises their brand surface.
+  - **Not built (contradictions, documented not faked):** "add to cart" fly-to-cart —
+    the product has **no cart** (D-001/D-007: purchase = the WhatsApp conversation;
+    the swipe-to-buy slider IS the liquid purchase gesture). Voice record button +
+    liquid waveforms — the data model has **no audio yet** (would be a schema feature,
+    not styling). "SFTP tunnel upload" — media rides the cPanel gateway (D-002/D-011);
+    shimmers track real loads instead of a tunnel. Gyro on iOS needs a permission
+    prompt on user gesture — we don't prompt (Android fires freely; iOS gets the
+    static ambient instead).
+- **Evidence:** Owner blueprint 2026-09-11 ("fluid like liquid, tactile like physical
+  paper… premium editorial"); D-001/D-007 (no cart), D-002 (media path), D-015
+  (no fake features).
+- **Risk:** Flip morph edge cases (deep-link back, off-screen cards, aspect-ratio
+  changes) → mitigated: rAF polling for targets, scroll-into-view before the reverse
+  fly, 4s staleness timeout, 900ms no-navigation recovery in `flipBack()`, and the
+  whole layer is inert under `prefers-reduced-motion` (plain navigation + button CTA).
+  Popup blockers: slider path falls back to same-tab `location.href` if
+  `window.open` is blocked.
+- **Status:** Final (v3).
+

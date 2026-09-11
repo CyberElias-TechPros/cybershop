@@ -9,6 +9,9 @@ import ItemCard from '@/components/ItemCard';
 import WaCta from '@/components/WaCta';
 import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
+import { FlipBack } from '@/components/Fx';
+import { categoryTheme } from '@/lib/theme';
+import type { CSSProperties } from 'react';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,26 +87,31 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
       : {}),
   };
 
+  const th = categoryTheme(business.categories);
+  const flipId = `biz:${business.slug}`;
+
   return (
-    <div>
+    <div style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <StickyWa name={business.name} waUrl={stickyWa} ctaLabel="Chat now" />
+      <FlipBack id={flipId} />
 
       <div className="store-hero">
         {business.cover && (
-          <div className="cover-wrap kb" aria-hidden="true">
+          <div className="cover-wrap kb" aria-hidden="true" data-flip-target={flipId} data-flip-close={flipId}>
+            <span className="skel" aria-hidden="true" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img className="cover" src={business.cover.url} alt="" />
           </div>
         )}
         {!business.cover && (
-          <div className="aurora" aria-hidden="true">
+          <div className="aurora" aria-hidden="true" data-flip-target={flipId}>
             <span />
             <span />
             <span />
           </div>
         )}
-        <div className="inner">
+        <div className="inner cascade">
           {business.logo ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img className="store-logo" src={business.logo.url} alt={business.logo.alt} />
@@ -134,7 +142,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
       <div className="container item-layout" style={{ padding: '28px 16px' }}>
         <div>
           {business.about && (
-            <Reveal>
+            <Reveal className="cascade">
               <div className="card about-box" style={{ marginBottom: 24 }}>
                 <p>{business.about}</p>
               </div>
@@ -194,7 +202,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
         </div>
 
         <aside>
-          <Reveal>
+          <Reveal className="cascade">
             <WaCta businessId={business.id} ctaLabel={`Chat with ${business.name}`} />
           </Reveal>
         </aside>

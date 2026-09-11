@@ -3,8 +3,16 @@ import { initials, location } from '@/lib/ui';
 
 export default function BusinessCard({ b }: { b: BusinessOut }) {
   return (
-    <a className="card" href={`/business/${b.slug}`} style={{ color: 'inherit' }}>
+    <a
+      className="card tilt"
+      href={`/business/${b.slug}`}
+      style={{ color: 'inherit' }}
+      data-flip={`biz:${b.slug}`}
+      data-flip-src=""
+      aria-label={`${b.name}${location(b) ? ' — ' + location(b) : ''}`}
+    >
       <div className="biz-thumb">
+        <span className="skel" aria-hidden="true" />
         {b.cover ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={b.cover.url} alt="" loading="lazy" />
@@ -20,10 +28,10 @@ export default function BusinessCard({ b }: { b: BusinessOut }) {
       <div className="biz-body">
         <p className="biz-name">{b.name}</p>
         {location(b) && <p className="biz-loc">{location(b)}</p>}
-        <div className="biz-cats">
+        <div className="biz-cats" aria-hidden="true">
           {b.categories.slice(0, 3).map((c) => (
             <span className="chip" key={c.slug}>
-              <a href={`/categories/${c.slug}`}>{c.name}</a>
+              {c.name}
             </span>
           ))}
         </div>

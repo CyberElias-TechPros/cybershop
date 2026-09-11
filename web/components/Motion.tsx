@@ -2,6 +2,7 @@
 
 import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode, type CSSProperties, type ElementType } from 'react';
+import { flipSuppressing } from '@/components/Fx';
 
 /**
  * Scroll-reveal: fades/rises content in when it enters the viewport.
@@ -174,6 +175,9 @@ export function TransitionFx() {
       return;
     }
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    // A shared-element flip is in flight — the morphing overlay is the
+    // transition, so skip the veil.
+    if (flipSuppressing()) return;
     setPhase('cover');
     const t1 = setTimeout(() => setPhase('reveal'), 240);
     const t2 = setTimeout(() => setPhase('idle'), 860);

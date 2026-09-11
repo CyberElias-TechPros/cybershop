@@ -87,7 +87,7 @@ export default async function CategoryPage({ params }: { params: Promise<SP> }) 
             </p>
           </div>
         ) : (
-          <div className="grid grid-biz" style={{ marginTop: 22 }}>
+          <div className="grid grid-biz" data-elastic="" style={{ marginTop: 22 }}>
             {data.businesses.map((b, i) => (
               <Reveal key={b.id} i={i % 4}>
                 <BusinessCard b={b} />

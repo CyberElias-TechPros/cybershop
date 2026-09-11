@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import SwipeWa from '@/components/SwipeWa';
 
 interface Props {
   businessId: number;
@@ -18,13 +19,20 @@ interface Props {
   messagePreview?: string;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * The "Enquire on WhatsApp" call-to-action.
  *
- * On click it first POSTs /api/public/inquiries (the Worker records the lead
- * and returns the exact wa.me URL + pre-filled message), then opens WhatsApp.
- * If the POST fails it falls back to the pre-computed waUrl so the buyer can
- * still reach the business; with JS disabled the plain <a> does the same.
+ * On activation it first POSTs /api/public/inquiries (the Worker records the
+ * lead and returns the exact wa.me URL + pre-filled message), then opens
+ * WhatsApp. If the POST fails it falls back to the pre-computed waUrl so the
+ * buyer can still reach the business; with JS disabled the plain <a> does the
+ * same.
+ *
+ * Item pages also get the "Slide to open WhatsApp" liquid slider as the
+ * primary gesture — a fallback tap button stays below it (accessibility +
+ * vendors' low-tech-confidence audience).
  */
 export default function WaCta(props: Props) {
   const { businessId, listingId, waUrl, ctaLabel = 'Enquire on WhatsApp', priceDisplay, withDetails = false, messagePreview } = props;
@@ -32,37 +40,18 @@ export default function WaCta(props: Props) {
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [fade, setFade] = useState(false);
 
   const open = (url: string) => {
-    window.open(url, '_blank', 'noopener');
+    const w = window.open(url, '_blank', 'noopener');
+    if (!w) window.location.href = url; // popup blocked → go in-tab
   };
 
-  async function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+  /** Record the lead and hand the buyer to WhatsApp. */
+  async function doOpen() {
     if (busy) return;
-    // No pre-computed URL (storefront CTA): must go through the inquiry POST.
-    if (!waUrl) e.preventDefault();
-    if (!waUrl && !busy) {
-      e.preventDefault();
-      setBusy(true);
-      try {
-        const res = await fetch('/api/public/inquiries', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ business_id: businessId, quantity, name: name.trim() || null }),
-        });
-        const j = await res.json();
-        if (res.ok && j?.wa_url) open(j.wa_url);
-        else setFailed(true);
-      } catch {
-        setFailed(true);
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    // Item CTA: record the lead (fire-and-forget style) then open WhatsApp.
-    e.preventDefault();
     setBusy(true);
+    setFailed(false);
     try {
       const res = await fetch('/api/public/inquiries', {
         method: 'POST',
@@ -71,13 +60,28 @@ export default function WaCta(props: Props) {
       });
       const j = await res.json();
       if (res.ok && j?.wa_url) open(j.wa_url);
-      else open(waUrl!);
+      else if (waUrl) open(waUrl);
+      else setFailed(true);
     } catch {
-      open(waUrl!);
+      if (waUrl) open(waUrl);
+      else setFailed(true);
     } finally {
       setBusy(false);
     }
   }
+
+  async function handleClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (busy) return;
+    if (!waUrl) e.preventDefault(); // storefront CTA: must go through the inquiry POST
+    await doOpen();
+  }
+
+  const onSlideLaunch = async () => {
+    setFade(true);
+    await sleep(480);
+    await doOpen();
+    setTimeout(() => setFade(false), 2600);
+  };
 
   const disabled = !waUrl && busy;
 
@@ -118,9 +122,18 @@ export default function WaCta(props: Props) {
           </div>
         </>
       )}
-      <a className="btn btn-wa" href={waUrl || '#'} target="_blank" rel="noopener" onClick={handleClick} aria-disabled={disabled}>
-        {busy ? 'Opening WhatsApp…' : `💬 ${ctaLabel || 'Enquire on WhatsApp'}`}
-      </a>
+      {withDetails && waUrl ? (
+        <>
+          <SwipeWa onLaunch={onSlideLaunch} label="Slide to open WhatsApp" />
+          <a className="btn btn-wa btn-alt" href={waUrl} target="_blank" rel="noopener" onClick={handleClick} aria-disabled={disabled}>
+            {busy ? 'Opening WhatsApp…' : `💬 ${ctaLabel || 'Enquire on WhatsApp'}`}
+          </a>
+        </>
+      ) : (
+        <a className="btn btn-wa" href={waUrl || '#'} target="_blank" rel="noopener" onClick={handleClick} aria-disabled={disabled}>
+          {busy ? 'Opening WhatsApp…' : `💬 ${ctaLabel || 'Enquire on WhatsApp'}`}
+        </a>
+      )}
       {failed && (
         <p className="wa-note" style={{ color: 'var(--danger)' }}>
           We couldn’t record your enquiry — please try again or contact the business directly.
@@ -133,6 +146,11 @@ export default function WaCta(props: Props) {
         <div className="wa-msg-preview" aria-label="Preview of the WhatsApp message">
           <strong>Your message will start like this:</strong>
           {messagePreview}
+        </div>
+      )}
+      {fade && (
+        <div className="wa-fade" aria-hidden="true">
+          <span>Opening WhatsApp…</span>
         </div>
       )}
     </div>

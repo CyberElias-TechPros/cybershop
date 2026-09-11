@@ -200,7 +200,7 @@ export default async function HomePage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-biz">
+            <div className="grid grid-biz" data-elastic="">
               {data.businesses.map((b, i) => (
                 <Reveal key={b.id} i={i % 4}>
                   <BusinessCard b={b} />

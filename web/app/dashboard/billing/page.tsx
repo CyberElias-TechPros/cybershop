@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { capi, extractError, fmtNaira } from '@/lib/client-api';
+import { haptic } from '@/lib/haptics';
 
 interface Plan {
   id: number;
@@ -53,6 +54,10 @@ export default function BillingPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [dzState, setDzState] = useState<'idle' | 'uploading' | 'done'>('idle');
+  const [dzPct, setDzPct] = useState(0);
+  const [dzDrag, setDzDrag] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -114,22 +119,57 @@ export default function BillingPage() {
     }
   }
 
-  async function uploadProof(file: File) {
-    if (!pending) return;
+  /** XHR (not fetch) so the liquid fill can track real upload progress. */
+  function uploadProof(file: File) {
+    if (!pending || dzState === 'uploading') return;
+    const ref = pending.id;
     setBusy(true);
     setError('');
     setNotice('');
-    try {
-      const form = new FormData();
-      form.append('proof', file);
-      await capi(`/vendor/payment-proof/${pending.id}`, { method: 'POST', body: form });
-      setNotice('Proof submitted — an admin will verify it shortly.');
-      await load();
-    } catch (e) {
-      setError(extractError(e));
-    } finally {
+    setDzState('uploading');
+    setDzPct(4);
+
+    const form = new FormData();
+    form.append('proof', file);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `/api/vendor/payment-proof/${ref}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setDzPct(Math.min(99, Math.max(4, Math.round((e.loaded / e.total) * 100))));
+    };
+    xhr.onload = async () => {
       setBusy(false);
-    }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setDzPct(100);
+        setDzState('done');
+        haptic('double');
+        setNotice('Proof submitted — an admin will verify it shortly.');
+        setTimeout(() => {
+          load();
+          setDzState('idle');
+          setDzPct(0);
+        }, 1600);
+      } else {
+        setDzState('idle');
+        setDzPct(0);
+        haptic('deep');
+        let msg = 'Upload failed — check your connection and try again.';
+        try {
+          const j = JSON.parse(xhr.responseText);
+          msg = j?.error?.message ?? j?.message ?? msg;
+        } catch {
+          /* keep default */
+        }
+        setError(msg);
+      }
+    };
+    xhr.onerror = () => {
+      setBusy(false);
+      setDzState('idle');
+      setDzPct(0);
+      haptic('deep');
+      setError('Upload failed — check your connection and try again.');
+    };
+    xhr.send(form);
   }
 
   const usageRows = usage
@@ -161,18 +201,68 @@ export default function BillingPage() {
             {pending.rejection_reason && <div style={{ fontSize: '0.88rem', marginTop: 4 }}>Rejected: {pending.rejection_reason}</div>}
           </div>
           {pending.status === 'pending' && (
-            <label className="btn btn-primary" style={{ cursor: 'pointer' }}>
-              {busy ? 'Uploading…' : 'Upload transfer proof'}
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Upload bank transfer proof — drop a file here or press Enter to browse"
+              className={`dropzone${dzState === 'uploading' ? ' dz-up' : ''}${dzState === 'done' ? ' dz-done' : ''}${dzDrag ? ' dz-drag' : ''}`}
+              onClick={() => {
+                if (dzState !== 'uploading') fileRef.current?.click();
+              }}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && dzState !== 'uploading') {
+                  e.preventDefault();
+                  fileRef.current?.click();
+                }
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDzDrag(true);
+              }}
+              onDragLeave={() => setDzDrag(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDzDrag(false);
+                const f = e.dataTransfer.files?.[0];
+                if (f) uploadProof(f);
+              }}
+            >
+              <span className="dz-ring" aria-hidden="true" />
+              {dzState === 'uploading' && (
+                <span className="dz-fill" style={{ height: `${dzPct}%` }} aria-hidden="true" />
+              )}
+              <span className="dz-ic" aria-hidden="true">
+                {dzState === 'done' ? (
+                  <svg viewBox="0 0 52 52" width="44" height="44">
+                    <circle className="dz-circle" cx="26" cy="26" r="23" fill="none" strokeWidth="2.5" />
+                    <path className="dz-check" d="M15 27l8 8 14-16" fill="none" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  <span className="dz-emoji">🧾</span>
+                )}
+              </span>
+              <span className="dz-title">
+                {dzState === 'done'
+                  ? 'Proof submitted'
+                  : dzState === 'uploading'
+                    ? `Uploading… ${dzPct}%`
+                    : 'Drop your transfer proof here'}
+              </span>
+              <span className="dz-sub">
+                {dzState === 'done' ? 'An admin will verify it shortly.' : 'or tap to browse · JPG, PNG, WebP or PDF'}
+              </span>
               <input
+                ref={fileRef}
                 type="file"
                 hidden
                 accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) uploadProof(f);
+                  e.target.value = '';
                 }}
               />
-            </label>
+            </div>
           )}
         </div>
       )}

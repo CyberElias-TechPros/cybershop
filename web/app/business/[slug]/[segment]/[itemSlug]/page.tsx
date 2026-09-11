@@ -8,6 +8,9 @@ import Gallery from '@/components/Gallery';
 import WaCta from '@/components/WaCta';
 import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
+import { FlipBack } from '@/components/Fx';
+import { categoryTheme } from '@/lib/theme';
+import type { CSSProperties } from 'react';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,12 +94,16 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
     };
   }
 
+  const flipId = `item:${item.id}`;
+  const th = categoryTheme(business.categories);
+
   return (
-    <div>
+    <div style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <StickyWa name={business.name} waUrl={wa.url} ctaLabel={item.cta_label ?? 'Chat now'} after={280} />
+      <FlipBack id={flipId} />
       <div className="container" style={{ padding: '24px 16px' }}>
-        <Reveal>
+        <Reveal className="cascade">
           <nav className="crumb" aria-label="Breadcrumb" style={{ margin: '0 0 20px' }}>
             <a href="/">Home</a>
             <span aria-hidden>/</span>
@@ -109,10 +116,10 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
         <div className="item-layout">
           <div>
             <Reveal>
-              <Gallery images={item.images} name={item.name} />
+              <Gallery images={item.images} name={item.name} flipId={flipId} />
             </Reveal>
             {fields.length > 0 && (
-              <Reveal i={1}>
+              <Reveal i={1} className="cascade">
                 <dl className="field-table">
                   {fields.map(([k, v]) => (
                     <div className="field-row" key={k}>
@@ -124,14 +131,14 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
               </Reveal>
             )}
             {item.description && (
-              <Reveal i={2}>
+              <Reveal i={2} className="cascade">
                 <p className="item-desc">{item.description}</p>
               </Reveal>
             )}
           </div>
 
           <div className="item-info">
-            <Reveal>
+            <Reveal className="cascade">
               <p className="crumb" style={{ margin: 0 }}>
                 <a href={`/business/${business.slug}`}>{business.name}</a>
                 {location(business) ? (
@@ -158,7 +165,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 )
               )}
             </Reveal>
-            <Reveal i={1}>
+            <Reveal i={1} className="cascade">
               <WaCta
                 businessId={business.id}
                 listingId={item.id}

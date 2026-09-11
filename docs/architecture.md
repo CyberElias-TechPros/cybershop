@@ -233,6 +233,26 @@ docs/                    this file · decisions.md (ADRs) · feature-matrix.md
                          schema.sql (canonical relational design) · deployment.md
 ```
 
+### 3.1 Design system ("The Night Market" — D-012 v2)
+
+One dark brand across the whole app; two registers:
+
+- **Public (cinematic):** deep-green-black canvas, emerald + gold accents,
+  self-hosted **Fraunces** variable serif for display (`app/fonts/Fraunces.ttf`,
+  `next/font/local` — no runtime third-party font requests), glass cards, film
+  grain, drifting aurora + parallax hero, per-word hero reveal, staggered
+  scroll reveals (`Reveal`), Ken Burns covers, pulsing WhatsApp CTA, category
+  marquee, count-up stats, curtain page transitions (`TransitionFx`), sheen
+  hovers, crossfading gallery. All CSS/transform + ~60 lines of JS; no
+  animation libraries; SSR + OG untouched; everything disabled under
+  `prefers-reduced-motion` (content-first fallback, gated by `html.js`).
+- **Dashboard/admin (clarity-first, same tokens):** fast micro-transitions
+  only (row hover, active-nav indicator, button feedback).
+
+Note: React 19.3's `<ViewTransition>` does not interop under Next 15.5's
+server-component transform (verified — renders `undefined`), so page
+transitions are a custom veil, not the built-in component.
+
 ---
 
 ## 4. Data model (D1 — 32 tables)

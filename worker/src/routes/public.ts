@@ -69,6 +69,9 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
   const cover = b.cover_media_id ? await getMedia(env, b.cover_media_id) : null;
   let social: Record<string, string> = {};
   try { social = JSON.parse(b.social || '{}'); } catch { social = {}; }
+  const waNumber = (await env.DB.prepare(
+    `SELECT number FROM whatsapp_numbers WHERE business_id = ? AND is_default = 1 AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1`
+  ).bind(b.id).first()) as { number: string } | null;
   return {
     id: b.id,
     name: b.name,
@@ -81,6 +84,7 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     social,
     status: b.status,
     categories: cats,
+    whatsapp_number: waNumber?.number ?? null,
     logo: logo ? { url: mediaUrl(env, logo), alt: b.name } : null,
     cover: cover ? { url: mediaUrl(env, cover) } : null,
   };

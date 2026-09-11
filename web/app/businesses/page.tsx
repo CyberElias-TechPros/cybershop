@@ -5,6 +5,7 @@ import type { BusinessesOut, CategoryOut } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import Pager from '@/components/Pager';
 import SearchForm from '@/components/SearchForm';
+import { Reveal } from '@/components/Motion';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,45 +56,55 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   };
 
   return (
-    <section className="section">
+    <section className="section" style={{ paddingTop: 'clamp(36px, 6vw, 64px)' }}>
       <div className="container">
-        <div className="section-head">
-          <h1>Businesses</h1>
-          <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
-            {data.total} found
-          </span>
-        </div>
-        <div style={{ marginBottom: 14 }}>
-          <SearchForm initial={q} />
-        </div>
-        {cats.length > 0 && (
-          <div className="biz-cats" style={{ marginBottom: 18 }}>
-            <span className={`chip${!category ? ' current' : ''}`}>
-              <a href={base(1)} style={{ color: !category ? '#fff' : undefined }}>
-                All
-              </a>
+        <Reveal>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">The directory</span>
+              <h1>Every shop, one marketplace</h1>
+            </div>
+            <span className="section-count">
+              {data.total} business{data.total === 1 ? '' : 'es'}
+              {q ? ` for “${q}”` : ''}
             </span>
-            {cats.map((c) => (
-              <span key={c.slug} className="chip">
-                <a
-                  href={`/businesses?category=${c.slug}${q ? `&q=${encodeURIComponent(q)}` : ''}`}
-                  style={{ color: category === c.slug ? '#fff' : undefined }}
-                >
-                  {c.name}
-                </a>
-              </span>
-            ))}
           </div>
+        </Reveal>
+        <Reveal i={1}>
+          <div style={{ marginBottom: 16 }}>
+            <SearchForm initial={q} />
+          </div>
+        </Reveal>
+        {cats.length > 0 && (
+          <Reveal i={2}>
+            <div className="biz-cats" style={{ marginBottom: 22 }}>
+              <span className={`chip${!category ? ' current' : ''}`}>
+                <a href={base(1)}>All</a>
+              </span>
+              {cats.map((c) => (
+                <span key={c.slug} className={`chip${category === c.slug ? ' current' : ''}`}>
+                  <a href={`/businesses?category=${c.slug}${q ? `&q=${encodeURIComponent(q)}` : ''}`}>
+                    {c.name}
+                  </a>
+                </span>
+              ))}
+            </div>
+          </Reveal>
         )}
         {data.businesses.length === 0 ? (
           <div className="empty">
+            <span className="empty-icon floaty" aria-hidden>
+              🔍
+            </span>
             <h2>No businesses match</h2>
             <p>Try a different search or category.</p>
           </div>
         ) : (
           <div className="grid grid-biz">
-            {data.businesses.map((b) => (
-              <BusinessCard key={b.id} b={b} />
+            {data.businesses.map((b, i) => (
+              <Reveal key={b.id} i={i % 4}>
+                <BusinessCard b={b} />
+              </Reveal>
             ))}
           </div>
         )}

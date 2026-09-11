@@ -11,7 +11,7 @@ export default function Gallery({ images, name }: { images: ItemImageOut[]; name
   if (images.length === 0) {
     return (
       <div className="main-img" role="img" aria-label={name}>
-        <div className="no-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '3rem', color: '#b7c6c1' }}>
+          <div className="no-img" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: '3rem', color: 'var(--ink-faint)' }}>
           🏷️
         </div>
       </div>
@@ -20,9 +20,10 @@ export default function Gallery({ images, name }: { images: ItemImageOut[]; name
   const img = images[active]!;
   return (
     <div className="gallery">
-      <div className="main-img">
+      <div className="main-img fade-swap">
+        {/* key={img.id} re-mounts on change → crossfade animation */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={img.url} alt={img.alt} width={img.width ?? undefined} height={img.height ?? undefined} />
+        <img key={img.id} src={img.url} alt={img.alt} width={img.width ?? undefined} height={img.height ?? undefined} />
       </div>
       {images.length > 1 && (
         <div className="thumbs">

@@ -80,10 +80,32 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
   to scale). Media single-host risk → documented backup procedure.
 - **Status:** Final (2026-09-10).
 
-## D-012 — Design register
-- **Decision:** Public marketplace = polished + dynamic (distinctive, not a generic template): strong typographic identity, purposeful motion, mobile-first, sticky WhatsApp CTA. Vendor dashboard + admin = clarity and speed: plain language, big tap targets, complete state handling. No cinematic maximalism (audience is low-tech-confidence vendors).
-- **Evidence:** Plan §13.5 (explicitly right-sizing the master prompt's immersive directive for this audience).
-- **Status:** Final.
+## D-012 — Design register — **REVISED 2026-09-11 (owner request)**
+- **Decision (v2):** Two registers, one dark brand:
+  - **Public buyer experience = the most immersive the stack can honestly do**
+    (owner explicitly requested "all effects, animations, transitions, elegance,
+    and utmost beauty"): "The Night Market" identity — cinematic dark emerald &
+    gold, self-hosted Fraunces display serif (360KB variable TTF, zero runtime
+    third-party font requests), glass surfaces, film-grain overlay, drifting
+    aurora + scroll parallax, per-word hero reveal, staggered scroll reveals
+    (IntersectionObserver), Ken Burns storefront covers, pulsing WhatsApp CTAs,
+    category marquee, count-up stats, curtain page transitions, sheen hovers,
+    crossfading gallery. All motion is CSS/transform + ~60 lines of JS (no
+    animation libraries), SSR/OG untouched, and fully disabled under
+    `prefers-reduced-motion` (content-first fallback).
+  - **Vendor dashboard + admin keep the same dark brand but stay
+    clarity-first** (unchanged principle): no ambient effects, only fast
+    micro-transitions (row hover, active-nav indicator, button feedback).
+    Audience = low-tech-confidence vendors; immersion there would slow them down.
+- **Evidence:** Owner request 2026-09-11 ("most immersive design possible …
+  utmost beauty") overriding the v1 right-sizing; plan §13.5's dashboard
+  principle retained. React 19.3's `<ViewTransition>` does not interop under
+  Next 15.5's server transform (verified: renders undefined) → custom veil
+  transition used instead.
+- **Risk:** Motion cost on low-end mobile + data plans → mitigated: transform/
+  opacity only (GPU), no new JS dependencies, no WebGL/Lottie, font is
+  self-hosted with swap, reduced-motion honored.
+- **Status:** Final (v2).
 
 ## D-013 — Data lifecycle
 - **Decision:** Soft delete on businesses, listings, media, users. Item states: draft → published → archived. Payment states: pending → submitted → reviewing → approved | rejected (→ new intent on resubmit). Media: uploaded → attached → unused → orphaned (grace ≥ 7 days) → deleted.

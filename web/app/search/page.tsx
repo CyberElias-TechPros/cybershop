@@ -4,6 +4,7 @@ import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import type { SearchOut } from '@/lib/types';
 import SearchForm from '@/components/SearchForm';
+import { Reveal } from '@/components/Motion';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Search' };
@@ -26,15 +27,27 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   const data = q.length >= 2 ? await api<SearchOut>(`/public/search?q=${encodeURIComponent(q)}`, { ip: await clientIp() }) : null;
 
   return (
-    <section className="section">
+    <section className="section" style={{ paddingTop: 'clamp(36px, 6vw, 64px)' }}>
       <div className="container">
-        <h1>Search</h1>
-        <div style={{ maxWidth: 480, marginBottom: 24 }}>
-          <SearchForm initial={q} />
-        </div>
-        {!data && <p style={{ color: 'var(--muted)' }}>Type at least 2 characters to search businesses and listings.</p>}
+        <Reveal>
+          <div className="section-head">
+            <div>
+              <span className="eyebrow">Search</span>
+              <h1>Find it in a heartbeat</h1>
+            </div>
+          </div>
+        </Reveal>
+        <Reveal i={1}>
+          <div style={{ maxWidth: 520, marginBottom: 28 }}>
+            <SearchForm initial={q} big />
+          </div>
+        </Reveal>
+        {!data && <p style={{ color: 'var(--ink-faint)' }}>Type at least 2 characters to search businesses and listings.</p>}
         {data && data.total === 0 && (
           <div className="empty">
+            <span className="empty-icon floaty" aria-hidden>
+              🫥
+            </span>
             <h2>Nothing found for “{q}”</h2>
             <p>Try a different word, or <a href="/businesses">browse all businesses</a>.</p>
           </div>
@@ -71,7 +84,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={it.image} alt="" loading="lazy" />
                       ) : (
-                        <div style={{ width: 56, height: 56, borderRadius: 8, background: '#eef3f1', flexShrink: 0 }} aria-hidden />
+                        <div style={{ width: 56, height: 56, borderRadius: 10, background: 'var(--glass)', border: '1px solid var(--line)', flexShrink: 0 }} aria-hidden />
                       )}
                       <div>
                         <div className="result-name">{it.name}</div>

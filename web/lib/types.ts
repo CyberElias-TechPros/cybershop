@@ -21,6 +21,7 @@ export interface BusinessOut {
   website: string | null;
   social: Record<string, string>;
   status: string;
+  whatsapp_number?: string | null;
   categories: { name: string; slug: string; icon: string | null }[];
   logo: { url: string; alt: string } | null;
   cover: { url: string } | null;

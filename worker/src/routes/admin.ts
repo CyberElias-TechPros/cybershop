@@ -9,7 +9,7 @@ import { notify } from '../lib/notify';
 import { clientIp } from '../lib/ip';
 import { approvePayment, rejectPayment } from '../lib/payments';
 import { formatNaira } from '../lib/money';
-import { getMedia, mediaUrl, softDeleteMedia, storageUsedBytes } from '../lib/media';
+import { getMedia, mediaUrl, softDeleteMedia, storageUsedBytes, blobToBuffer } from '../lib/media';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -180,7 +180,7 @@ app.get('/payments/:id/proof', async (c) => {
   const media = await getMedia(c.env, payment.proof_media_id);
   if (!media) throw notFound('Proof media not found.');
   if (media.driver === 'd1' && media.d1_blob) {
-    const bytes = media.d1_blob;
+    const bytes = blobToBuffer(media.d1_blob);
     return new Response(bytes, { headers: { 'Content-Type': media.mime_type, 'Content-Disposition': `attachment; filename="${media.storage_key.split('/').pop()}"`, 'Cache-Control': 'no-store' } });
   }
   throw notFound('Proof media is not available for download.');

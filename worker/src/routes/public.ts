@@ -213,7 +213,15 @@ app.get('/item', async (c) => {
   } else {
     wa = { url: null, number: null, message: '' };
   }
-  return c.json({ ok: true, item: data, business, wa, related: [] });
+
+  // voice note (vendor-recorded description), if attached
+  const audioId = (item as { audio_media_id: number | null }).audio_media_id;
+  const audioRow = audioId
+    ? ((await env.DB.prepare(`SELECT id, driver, storage_key, size_bytes FROM media WHERE id = ? AND deleted_at IS NULL`).bind(audioId).first()) as { id: number; driver: 'd1' | 'gateway'; storage_key: string; size_bytes: number } | null)
+    : null;
+  const audio = audioRow ? { url: mediaUrl(env, audioRow), size_bytes: audioRow.size_bytes } : null;
+
+  return c.json({ ok: true, item: { ...data, audio }, business, wa, related: [] });
 });
 
 /** Global search (businesses + published items). */
@@ -263,8 +271,38 @@ app.post('/inquiries', async (c) => {
   const biz = (await env.DB.prepare('SELECT * FROM businesses WHERE id = ? AND status = "active" AND deleted_at IS NULL').bind(bizId).first()) as Record<string, unknown> | null;
   if (!biz) throw notFound('Business not found.');
   interface InquiryItem { id: number; name: string; item_type_id: number; item_type_slug: string; url_segment: string; slug: string; price: number | null; whatsapp_number_id: number | null }
+  interface CartItem extends InquiryItem { qty: number }
   let item: InquiryItem | null = null;
-  if (listingId) {
+  let cartItems: CartItem[] | null = null;
+  // Multi-item WhatsApp cart (plan §30): `items` wins over `listing_id`.
+  // Every listing is re-validated server-side (ownership + published), so a
+  // crafted payload can never inject another vendor's items.
+  const itemsIn = Array.isArray(body.items) ? (body.items as Record<string, unknown>[]) : null;
+  if (itemsIn) {
+    if (itemsIn.length === 0) throw badRequest('Your cart is empty.');
+    const seen = new Map<number, number>();
+    for (const it of itemsIn.slice(0, 20)) {
+      const lid = Number(it?.listing_id);
+      if (!Number.isInteger(lid) || lid < 1) continue;
+      const q = clampInt(Number(it?.quantity), 1, 999, 1);
+      seen.set(lid, (seen.get(lid) ?? 0) + q);
+    }
+    const ids = [...seen.keys()];
+    if (ids.length === 0) throw badRequest('Your cart is empty.');
+    const qm = ids.map(() => '?').join(',');
+    const rows = (await env.DB.prepare(
+      `SELECT l.id, l.name, l.price, l.whatsapp_number_id FROM listings l
+       WHERE l.business_id = ? AND l.status = 'published' AND l.deleted_at IS NULL AND l.id IN (${qm})`
+    ).bind(bizId, ...ids).all()).results as { id: number; name: string; price: number | null; whatsapp_number_id: number | null }[];
+    cartItems = rows
+      .sort((a, b) => a.id - b.id)
+      .map((r) => ({
+        id: r.id, name: r.name, price: r.price, whatsapp_number_id: r.whatsapp_number_id,
+        item_type_id: 0, item_type_slug: '', url_segment: '', slug: '', qty: seen.get(r.id) ?? 1,
+      }));
+    if (cartItems.length === 0) throw notFound('Item not found.');
+    item = { ...cartItems[0]! };
+  } else if (listingId) {
     const l = (await env.DB.prepare(
       `SELECT l.id, l.name, l.slug, l.price, l.item_type_id, l.whatsapp_number_id, t.slug AS item_type_slug, t.url_segment, t.whatsapp_template_key
        FROM listings l JOIN item_types t ON t.id = l.item_type_id
@@ -279,7 +317,7 @@ app.post('/inquiries', async (c) => {
     || ((await env.DB.prepare(`SELECT number FROM whatsapp_numbers WHERE business_id = ? AND is_default = 1 AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1`).bind(bizId).first()) as { number: string } | null)?.number;
   if (!number) throw badRequest('This business has not configured a WhatsApp number yet.');
 
-  const itemTypeRow = item
+  const itemTypeRow = item && !cartItems
     ? ((await env.DB.prepare('SELECT item_type_id FROM listings WHERE id = ?').bind(item.id).first()) as { item_type_id: number } | null)
     : null;
   const template =
@@ -289,29 +327,64 @@ app.post('/inquiries', async (c) => {
       : null) ||
     ((await env.DB.prepare('SELECT body FROM message_templates WHERE is_active = 1 AND business_id IS NULL AND item_type_id IS NULL LIMIT 1').first()) as { body: string } | null);
 
-  const itemUrl = item
-    ? `${env.APP_URL}/business/${(biz as { slug: string }).slug}/${item.url_segment}/${item.slug}`
-    : `${env.APP_URL}/business/${(biz as { slug: string }).slug}`;
-  const message = renderTemplate(template ? template.body : 'Hello {{business_name}}!', {
-    business_name: (biz as { name: string }).name,
-    business_url: `${env.APP_URL}/business/${(biz as { slug: string }).slug}`,
-    item_name: item ? item.name : '',
-    item_url: itemUrl,
-    price: item?.price !== null && item?.price !== undefined ? formatNaira(item.price) : 'Price on request',
-    quantity: String(quantity),
-    customer_name: name || '',
-  });
+  const itemUrl = cartItems
+    ? `${env.APP_URL}/business/${(biz as { slug: string }).slug}`
+    : item
+      ? `${env.APP_URL}/business/${(biz as { slug: string }).slug}/${item.url_segment}/${item.slug}`
+      : `${env.APP_URL}/business/${(biz as { slug: string }).slug}`;
+  // Cart message: one numbered line per item + estimated total (plan §30).
+  // Templates are single-item constructs, so multi-item uses the fixed
+  // composer format.
+  let message: string;
+  if (cartItems) {
+    const priced = cartItems.filter((i) => i.price !== null);
+    const total = priced.reduce((s, i) => s + (i.price ?? 0) * i.qty, 0);
+    const totalLabel =
+      total > 0
+        ? formatNaira(total) + (priced.length < cartItems.length ? ' (some items priced on request)' : '')
+        : 'Price on request';
+    message = [
+      `Hello ${(biz as { name: string }).name}, I found you on CyberShop and I'd like to enquire about these items:`,
+      '',
+      ...cartItems.map((i, n) => `${n + 1}. ${i.name} × ${i.qty} — ${i.price !== null ? formatNaira(i.price) : 'Price on request'}`),
+      '',
+      `Estimated total: ${totalLabel}`,
+      '',
+      'Please confirm availability and final price.',
+      '',
+      itemUrl,
+    ].join('\n');
+  } else {
+    message = renderTemplate(template ? template.body : 'Hello {{business_name}}!', {
+      business_name: (biz as { name: string }).name,
+      business_url: `${env.APP_URL}/business/${(biz as { slug: string }).slug}`,
+      item_name: item ? item.name : '',
+      item_url: itemUrl,
+      price: item?.price !== null && item?.price !== undefined ? formatNaira(item.price) : 'Price on request',
+      quantity: String(quantity),
+      customer_name: name || '',
+    });
+  }
   const waUrl = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 
   const user = await getSession(env, c);
   const waNumberRow = (await env.DB.prepare(
     `SELECT id FROM whatsapp_numbers WHERE business_id = ? AND number = ? AND status = 'active' ORDER BY is_default DESC LIMIT 1`
   ).bind(bizId, number).first()) as { id: number } | null;
+  const itemsJson = cartItems
+    ? JSON.stringify(cartItems.map((i) => ({ listing_id: i.id, quantity: i.qty, name: i.name })))
+    : null;
   await env.DB.prepare(
-    `INSERT INTO inquiries (business_id, listing_id, whatsapp_number_id, buyer_user_id, buyer_name, buyer_phone, message, wa_url, source)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 2000), waUrl.slice(0, 500), item ? 'item_page' : 'storefront').run();
-  await trackEvent(env, c, { businessId: bizId, eventType: 'wa_click', listingId: item?.id ?? null, userId: user?.id ?? null, meta: { quantity } });
+    `INSERT INTO inquiries (business_id, listing_id, whatsapp_number_id, buyer_user_id, buyer_name, buyer_phone, message, wa_url, source, items_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 2000), waUrl.slice(0, 500), cartItems ? 'cart' : item ? 'item_page' : 'storefront', itemsJson).run();
+  await trackEvent(env, c, {
+    businessId: bizId,
+    eventType: 'wa_click',
+    listingId: item?.id ?? null,
+    userId: user?.id ?? null,
+    meta: cartItems ? { items: cartItems.length, quantity: cartItems.reduce((s, i) => s + i.qty, 0) } : { quantity },
+  });
   return c.json({ ok: true, wa_url: waUrl });
 });
 

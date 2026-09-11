@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { capi, extractError, fmtNaira } from '@/lib/client-api';
+import VoiceRecorder from '@/components/VoiceRecorder';
 
 interface ItemType {
   id: number;
@@ -57,6 +58,7 @@ interface ExistingItem {
   seo_description: string | null;
   custom_fields: Record<string, unknown>;
   images: { id: number }[];
+  audio: { id: number; url: string } | null;
   stats: { views: number; inquiries: number };
 }
 
@@ -91,6 +93,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
   const [publish, setPublish] = useState(true);
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   const [selectedMedia, setSelectedMedia] = useState<number[]>([]);
+  const [audio, setAudio] = useState<{ id: number; url: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -126,8 +129,10 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
         setPublish(x.status === 'published');
         setCustom(x.custom_fields ?? {});
         setSelectedMedia(x.images.map((i) => i.id));
+        setAudio(x.audio ?? null);
       } else {
         setPublish(true);
+        setAudio(null);
       }
     } catch (e) {
       setLoadError(extractError(e));
@@ -221,6 +226,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
         seo_description: seoDescription || null,
         custom_fields: custom,
         media_ids: selectedMedia,
+        audio_media_id: audio?.id ?? null,
         publish: publishNow,
       };
       if (itemId) {
@@ -568,6 +574,22 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
           </label>
           <span style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>JPG, PNG or WEBP · up to 8MB. Or manage everything on the <Link href="/dashboard/media">Media</Link> page.</span>
         </div>
+      </div>
+
+      <div className="card panel">
+        <h2 style={{ fontSize: '1.05rem' }}>Voice note (optional)</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: 0, marginBottom: 14 }}>
+          Record yourself introducing the item — buyers hear it on the item page, like a WhatsApp
+          voice message. Courses and services convert well with a 20–30 second note.
+        </p>
+        <VoiceRecorder
+          value={audio}
+          onAttach={(id, url) => {
+            setAudio({ id, url });
+            setNotice('Voice note attached.');
+          }}
+          onDetach={() => setAudio(null)}
+        />
       </div>
 
       <div className="card panel">

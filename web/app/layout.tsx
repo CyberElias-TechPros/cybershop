@@ -6,6 +6,7 @@ import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { HeaderFx, TransitionFx } from '@/components/Motion';
 import { FlipBridge } from '@/components/Fx';
+import CartChip from '@/components/CartFx';
 
 const fraunces = Fraunces({
   src: [{ path: './fonts/Fraunces.ttf', weight: '300 700', style: 'normal' }],
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <HeaderFx />
         <TransitionFx />
         <FlipBridge />
+        <CartChip />
         <a className="skip-link" href="#main">
           Skip to content
         </a>

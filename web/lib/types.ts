@@ -50,6 +50,8 @@ export interface ItemOut {
   images: ItemImageOut[];
   url_segment: string;
   cta_label: string;
+  /** Vendor voice note (item page only). */
+  audio?: { url: string; size_bytes: number } | null;
   schema_type?: string;
   seo: { title: string; description: string | null };
   published_at: string | null;

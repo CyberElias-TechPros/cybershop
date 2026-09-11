@@ -6,7 +6,7 @@ import { slugify, assertSlugAvailable, uuid, nowIso, clampInt, parseMoneySafe } 
 import { reqStr, optStr, reqInt, validateCustomFields, isHttpUrl } from '../lib/validate';
 import {
   issueUploadToken, finalizeGatewayUpload, storeD1Media, magicMime, mediaUrl,
-  getMedia, assertMediaOwnership, markMediaAttached, detachMedia, softDeleteMedia, storageUsedBytes, IMAGE_MIME,
+  getMedia, assertMediaOwnership, markMediaAttached, detachMedia, softDeleteMedia, storageUsedBytes, IMAGE_MIME, AUDIO_MIME,
 } from '../lib/media';
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
@@ -121,6 +121,37 @@ app.post('/media/upload', async (c) => {
     visibility: 'public',
   });
   return c.json({ ok: true, media: { id: media.id, url: mediaUrl(env, media), size_bytes: media.size_bytes, driver: 'd1' } });
+});
+
+/**
+ * Voice-note upload (MP3/M4A/OGG/WEBM/WAV). Kept separate from the image
+ * route so the image contract (and its tests) stay untouched. Voice notes
+ * are small; 8MB is far more than a few minutes of speech.
+ */
+app.post('/media/upload-audio', async (c) => {
+  const env = c.env;
+  const { user, business } = await requireVendor(env, c);
+  assertBusinessWritable(business.status);
+  const ct = c.req.header('content-type') || '';
+  if (!ct.startsWith('multipart/form-data')) throw badRequest('Upload the audio file directly (multipart/form-data).');
+  const form = await c.req.formData().catch(() => null);
+  const file = form?.get('file');
+  if (!(file instanceof File)) throw badRequest('Choose an audio file (field "file").');
+  if (file.size > 8 * 1048576) throw badRequest('Audio must be 8MB or smaller.');
+  await assertStorageQuota(env, business.id, file.size);
+  const buf = await file.arrayBuffer();
+  const mime = await magicMime(buf);
+  if (!mime || !AUDIO_MIME.has(mime)) throw validationError('Only MP3, M4A, OGG, WEBM or WAV audio is allowed.');
+  const media = await storeD1Media(env, {
+    businessId: business.id,
+    userId: user.id,
+    blob: buf,
+    mime,
+    originalName: file.name.slice(0, 255),
+    visibility: 'public',
+    kind: 'audio',
+  });
+  return c.json({ ok: true, media: { id: media.id, url: mediaUrl(env, media), size_bytes: media.size_bytes, kind: 'audio', driver: 'd1' } });
 });
 
 app.post('/media/finalize', async (c) => {
@@ -325,6 +356,25 @@ async function attachMedia(env: Env, listingId: number, mediaIds: unknown, busin
   }
 }
 
+/**
+ * One voice note per listing. `null` clears it; a number must be an owned
+ * audio media row (IDOR-checked like every other media attach).
+ */
+async function attachAudio(env: Env, listingId: number, audioMediaId: unknown, businessId: number): Promise<void> {
+  if (audioMediaId === null) {
+    await env.DB.prepare(`UPDATE listings SET audio_media_id = NULL WHERE id = ? AND business_id = ?`).bind(listingId, businessId).run();
+    await env.DB.prepare(`UPDATE media SET entity_type = NULL, entity_id = NULL, status = 'unused' WHERE entity_type = 'listing' AND entity_id = ?`).bind(listingId).run();
+    return;
+  }
+  const id = Number(audioMediaId);
+  if (!Number.isInteger(id) || id < 1) return;
+  const row = await assertMediaOwnership(env, id, businessId);
+  if (row.kind !== 'audio') return;
+  await env.DB.prepare(`UPDATE media SET entity_type = NULL, entity_id = NULL, status = 'unused' WHERE entity_type = 'listing' AND entity_id = ?`).bind(listingId).run();
+  await env.DB.prepare(`UPDATE listings SET audio_media_id = ? WHERE id = ? AND business_id = ?`).bind(id, listingId, businessId).run();
+  await env.DB.prepare(`UPDATE media SET entity_type = 'listing', entity_id = ?, status = 'attached' WHERE id = ?`).bind(listingId, id).run();
+}
+
 app.post('/items', async (c) => {
   const { business } = await requireVendor(c.env, c);
   assertBusinessWritable(business.status);
@@ -342,6 +392,7 @@ app.post('/items', async (c) => {
   ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null).run();
   const id = Number(res.meta.last_row_id);
   await attachMedia(c.env, id, (body as Record<string, unknown> | null)?.media_ids, business.id);
+  await attachAudio(c.env, id, (body as Record<string, unknown> | null)?.audio_media_id, business.id);
   return c.json({ ok: true, id, slug, status });
 });
 
@@ -363,12 +414,17 @@ app.get('/items/:id', async (c) => {
   ).bind(business.id, id, business.id, id).first()) as { views: number; inquiries: number };
   let custom: Record<string, unknown> = {};
   try { custom = JSON.parse((row as { custom_fields: string | null }).custom_fields || '{}'); } catch { custom = {}; }
+  const audioId = (row as { audio_media_id: number | null }).audio_media_id;
+  const audio = audioId
+    ? ((await c.env.DB.prepare(`SELECT id, driver, storage_key FROM media WHERE id = ? AND deleted_at IS NULL`).bind(audioId).first()) as { id: number; driver: 'd1' | 'gateway'; storage_key: string } | null)
+    : null;
   return c.json({
     ok: true,
     item: {
       ...row,
       custom_fields: custom,
       images: media.map((m) => ({ id: m.id, url: mediaUrl(c.env, m), width: m.width, height: m.height, alt: m.alt_text })),
+      audio: audio ? { id: audio.id, url: mediaUrl(c.env, audio) } : null,
       stats: counts,
     },
   });
@@ -395,6 +451,10 @@ app.put('/items/:id', async (c) => {
   if (Array.isArray((body as Record<string, unknown>)?.media_ids)) {
     await c.env.DB.prepare('DELETE FROM item_media WHERE listing_id = ?').bind(id).run();
     await attachMedia(c.env, id, (body as Record<string, unknown>).media_ids, business.id);
+  }
+  // voice note: present key means "set or clear" (null clears)
+  if ((body as Record<string, unknown> | null) && 'audio_media_id' in (body as Record<string, unknown>)) {
+    await attachAudio(c.env, id, (body as Record<string, unknown>).audio_media_id, business.id);
   }
   return c.json({ ok: true });
 });

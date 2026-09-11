@@ -7,6 +7,8 @@ import type { ItemPageOut } from '@/lib/types';
 import Gallery from '@/components/Gallery';
 import WaCta from '@/components/WaCta';
 import StickyWa from '@/components/StickyWa';
+import WaveAudio from '@/components/WaveAudio';
+import { AddToCart } from '@/components/CartFx';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
 import { categoryTheme } from '@/lib/theme';
@@ -165,7 +167,12 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 )
               )}
             </Reveal>
-            <Reveal i={1} className="cascade">
+            {item.audio && (
+              <Reveal i={1} className="cascade">
+                <WaveAudio src={item.audio.url} label={`Voice note from ${business.name}`} />
+              </Reveal>
+            )}
+            <Reveal i={2} className="cascade">
               <WaCta
                 businessId={business.id}
                 listingId={item.id}
@@ -175,6 +182,22 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 withDetails
                 messagePreview={wa.message ? `\n${wa.message}` : undefined}
               />
+            </Reveal>
+            <Reveal i={3} className="cascade">
+              <AddToCart
+                bizId={business.id}
+                bizName={business.name}
+                listingId={item.id}
+                name={item.name}
+                priceKobo={item.price_type === 'fixed' || item.price_type === 'from' ? item.price_kobo : null}
+                priceDisplay={item.price_display}
+                image={item.images[0]?.url ?? null}
+                label="Add to cart"
+              />
+              <p className="cart-hint">
+                Picking up a few things? Add more and we’ll message the vendor one WhatsApp with the
+                whole list.
+              </p>
             </Reveal>
           </div>
         </div>

@@ -178,6 +178,11 @@ describe('catalogue media upload (D1 driver)', () => {
     const file = await fetch(`${BASE_URL}/api/media/file/${mediaId}`);
     expect(file.status).toBe(200);
     expect((file.headers.get('content-type') || '').startsWith('image/png')).toBe(true);
+    // served bytes must be byte-identical to what was uploaded (guards
+    // against blob→string coercion corrupting the body)
+    const served = new Uint8Array(await file.arrayBuffer());
+    expect(served.length).toBe(70);
+    expect(Array.from(served.slice(0, 8))).toEqual([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
     const list = await api('/api/vendor/media', { cookie });
     expect(list.status).toBe(200);

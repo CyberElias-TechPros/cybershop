@@ -38,7 +38,8 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
 
 ## D-007 — "Inquiries/leads", not "orders"
 - **Decision:** The platform records *intent* (inquiry rows + analytics events). There is no checkout, no order state machine on the platform side. Lead status tracking is a Phase-2 CRM.
-- **Evidence:** Plan §1, §4 (sale happens on WhatsApp).
+- **Cart clarification (Wave 3):** the lightweight **WhatsApp Cart** (Plan §30) is a *convenience for composing one message*, not an order. Selecting multiple items and tapping "Contact vendor on WhatsApp" creates **a single inquiry row** (`source='cart'`, `items_json` holds the full list, `listing_id` = first item) and opens one `wa.me` deep link with the numbered list + estimated total. Nothing is "placed"; the sale still closes in the conversation. Every `listing_id` in the cart is re-validated server-side (IDOR-safe) before the message is composed.
+- **Evidence:** Plan §1, §4 (sale happens on WhatsApp); Plan §30 (Cart — But Not Traditional Checkout).
 - **Status:** Final.
 
 ## D-008 — Server-rendered public pages (OG tags + SEO)
@@ -153,22 +154,42 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
     earth, Fashion→rose, Real-estate→teal, Auto→gold, Health→teal-green; default
     emerald/gold) applied to the storefront accents/ambient glow AND the vendor's own
     dashboard, so the vendor recognises their brand surface.
-  - **Not built (contradictions, documented not faked):** "add to cart" fly-to-cart —
-    the product has **no cart** (D-001/D-007: purchase = the WhatsApp conversation;
-    the swipe-to-buy slider IS the liquid purchase gesture). Voice record button +
-    liquid waveforms — the data model has **no audio yet** (would be a schema feature,
-    not styling). "SFTP tunnel upload" — media rides the cPanel gateway (D-002/D-011);
-    shimmers track real loads instead of a tunnel. Gyro on iOS needs a permission
-    prompt on user gesture — we don't prompt (Android fires freely; iOS gets the
-    static ambient instead).
+  - **Built in Wave 3 after owner chose `cart+voice`** (initially excluded as
+    contradictions, then the owner explicitly requested them — so they were designed
+    to fit the product rather than faked): the **fly-to-cart** animation now has real
+    state behind it (see below), and **voice notes** became a first-class media type.
+  - **Still not built (contradictions, documented not faked):** "SFTP tunnel upload"
+    — media rides the cPanel gateway (D-002/D-011); shimmers track real loads instead
+    of a tunnel. Gyro on iOS needs a permission prompt on user gesture — we don't
+    prompt (Android fires freely; iOS gets the static ambient instead).
+  - **Wave 3 — WhatsApp Cart (Plan §30):** per-business, guest-friendly cart stored in
+    `localStorage` (client-only; the server trusts nothing from it). A **floating chip**
+    + **drawer** let the buyer edit quantities, then one button POSTs the item list to
+    the inquiry endpoint, which re-validates every `listing_id` (IDOR-safe) and returns
+    a single `wa.me` link with the numbered list, estimated total, and an availability
+    ask. Adding an item fires the **fly-to-cart** ball (image arcs on a bezier into the
+    chip, chip "pops", haptic double-tap) — the gesture from this blueprint, now backed
+    by real cart state instead of being decorative. Still a lead (D-007), never an order.
+  - **Wave 3 — Voice notes:** audio is now a real media `kind` (migration 0004 rebuilt
+    the `media` table to add it; `listings.audio_media_id` FK, SET NULL). Vendors record
+    with a **neomorphic record button** whose ring scales with live mic amplitude
+    (`MediaRecorder` + `AnalyserNode`), upload with a real XHR progress liquid fill, and
+    the item page plays it through a **liquid waveform player** that decodes the file to
+    its true peaks and fills a gold→emerald gradient left→right as it plays (deterministic
+    pseudo-wave fallback if the codec can't decode). Uploads are magic-byte + MIME +
+    size-validated and ownership-checked like every other media (IDOR-safe).
 - **Evidence:** Owner blueprint 2026-09-11 ("fluid like liquid, tactile like physical
-  paper… premium editorial"); D-001/D-007 (no cart), D-002 (media path), D-015
-  (no fake features).
+  paper… premium editorial"); owner `cart+voice` scope selection 2026-09-11; D-001,
+  D-007 (inquiry/lead, not order), D-002 (media path), D-015 (no fake features).
 - **Risk:** Flip morph edge cases (deep-link back, off-screen cards, aspect-ratio
   changes) → mitigated: rAF polling for targets, scroll-into-view before the reverse
   fly, 4s staleness timeout, 900ms no-navigation recovery in `flipBack()`, and the
   whole layer is inert under `prefers-reduced-motion` (plain navigation + button CTA).
-  Popup blockers: slider path falls back to same-tab `location.href` if
-  `window.open` is blocked.
-- **Status:** Final (v3).
+  Popup blockers: slider + cart CTA paths fall back to same-tab `location.href` if
+  `window.open` is blocked. Cart: localStorage-only state means a cleared browser
+  drops the cart (acceptable — it's convenience, never a source of truth). Voice:
+  `MediaRecorder` codec support varies; we pick the first supported of
+  webm/opus→webm→mp4→ogg and the player degrades to a static wave + `<audio>`
+  controls if `decodeAudioData` can't read the codec.
+- **Status:** Final (v3 + Wave 3: cart & voice, 2026-09-11).
 

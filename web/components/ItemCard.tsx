@@ -1,5 +1,6 @@
 import type { ItemOut } from '@/lib/types';
 import type { BusinessOut } from '@/lib/types';
+import { AddToCart } from '@/components/CartFx';
 
 export default function ItemCard({ item, biz }: { item: ItemOut; biz: BusinessOut }) {
   const href = `/business/${biz.slug}/${item.url_segment}/${item.slug}`;
@@ -23,6 +24,15 @@ export default function ItemCard({ item, biz }: { item: ItemOut; biz: BusinessOu
             🏷️
           </div>
         )}
+        <AddToCart
+          bizId={biz.id}
+          bizName={biz.name}
+          listingId={item.id}
+          name={item.name}
+          priceKobo={item.price_type === 'fixed' || item.price_type === 'from' ? item.price_kobo : null}
+          priceDisplay={item.price_display}
+          image={img?.url ?? null}
+        />
       </div>
       <div className="item-body">
         <p className="item-name">{item.name}</p>

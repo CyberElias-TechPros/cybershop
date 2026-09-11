@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import type { Env } from '../config';
 import { notFound, forbidden } from '../lib/errors';
-import { getMedia } from '../lib/media';
+import { getMedia, blobToBuffer } from '../lib/media';
 import { requireUser } from '../lib/auth';
 import { reqInt } from '../lib/validate';
 
@@ -22,7 +22,7 @@ app.get('/file/:id', async (c) => {
     const user = await requireUser(env, c);
     if (user.role !== 'admin') throw forbidden('Private media requires admin access.');
   }
-  const bytes = row.d1_blob;
+  const bytes = blobToBuffer(row.d1_blob);
   const disposition = row.visibility === 'private' ? `attachment; filename="${row.storage_key.split('/').pop()}"` : 'inline';
   return new Response(bytes, {
     headers: {

@@ -1,0 +1,39 @@
+{
+  "name": "cybershop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant, WhatsApp-first business storefront + catalogue platform",
+  "scripts": {
+    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "build": "next build",
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "lint": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx scripts/db.ts migrate",
+    "db:seed": "tsx scripts/db.ts seed",
+    "db:reset": "tsx scripts/db.ts reset",
+    "jobs:run": "tsx scripts/db.ts jobs",
+    "verify": "tsx scripts/db.ts verify"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "^0.3.11",
+    "clsx": "^2.1.1",
+    "drizzle-orm": "^0.44.6",
+    "next": "^15.5.4",
+    "postgres": "^3.4.7",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.14",
+    "@types/node": "^22.18.8",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.1",
+    "drizzle-kit": "^0.31.5",
+    "tailwindcss": "^4.1.14",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

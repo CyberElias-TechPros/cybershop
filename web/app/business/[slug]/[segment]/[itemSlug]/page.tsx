@@ -117,7 +117,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
 
         <div className="item-layout">
           <div>
-            <Reveal>
+            <Reveal className="item-media">
               <Gallery images={item.images} name={item.name} flipId={flipId} />
             </Reveal>
             {fields.length > 0 && (

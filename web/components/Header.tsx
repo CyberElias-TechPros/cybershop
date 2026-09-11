@@ -1,6 +1,7 @@
 import { api } from '@/lib/api';
 import type { HomeOut } from '@/lib/types';
 import SearchForm from './SearchForm';
+import NavLinks from './NavLinks';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,12 +21,12 @@ export default async function Header() {
           Cyber<span className="dot">Shop</span>
         </a>
         <nav className="main-nav" aria-label="Primary">
-          <a href="/businesses">Businesses</a>
-          {categories.map((c) => (
-            <a key={c.slug} href={`/categories/${c.slug}`}>
-              {c.name}
-            </a>
-          ))}
+          <NavLinks
+            links={[
+              { href: '/businesses', label: 'Businesses' },
+              ...categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name })),
+            ]}
+          />
         </nav>
         <div className="header-search">
           <SearchForm />

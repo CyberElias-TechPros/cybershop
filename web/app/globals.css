@@ -3560,3 +3560,28 @@ a.card.tilt:hover {
   box-shadow: inset 0 -2px 0 0 rgba(242, 200, 121, 0.8);
   border-radius: 999px 999px 0 0;
 }
+
+/* Business page: scroll-driven intro — as the cover leaves the viewport it
+   slowly magnifies (depth) while the title lifts and lets go. Pure CSS
+   scroll-timeline; no transform conflict with the Ken Burns breathe (that
+   lives on the inner <img>, this on its wrapper). */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .store-hero .cover-wrap {
+      animation: cover-settle linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 46vh;
+    }
+    .store-hero .inner {
+      animation: title-settle linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0 34vh;
+    }
+  }
+}
+@keyframes cover-settle {
+  to { transform: scale(1.085); }
+}
+@keyframes title-settle {
+  to { transform: translate3d(0, -26px, 0); opacity: 0.3; }
+}

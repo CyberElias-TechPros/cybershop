@@ -27,7 +27,7 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 | [`docs/architecture.md`](docs/architecture.md) | Topology, request flows, data model, security, env reference, build status |
 | [`docs/deployment.md`](docs/deployment.md) | Step-by-step production deployment (Cloudflare + Vercel + cPanel) |
 | [`docs/feature-matrix.md`](docs/feature-matrix.md) | Phase 1 feature matrix + test priority |
-| [`docs/decisions.md`](docs/decisions.md) | Decision ledger (D-001…D-017) |
+| [`docs/decisions.md`](docs/decisions.md) | Decision ledger (D-001…D-018) |
 | [`docs/schema.sql`](docs/schema.sql) | Canonical relational design (D1 migrations in `worker/migrations/` are the runtime source of truth) |
 
 ## Key decisions (summary — full text in `docs/decisions.md`)
@@ -64,6 +64,8 @@ worker/         Cloudflare Worker (Hono) + D1: auth, catalogue, billing,
                 payments, webhooks, cron jobs; vitest suite
 media-gateway/  PHP 8 upload endpoint for the cPanel host (+ config, .htaccess,
                 test-upload.sh E2E harness, contract-check.py)
+scripts/        bootstrap-dev.sh (one-command local env) + seed-demo.sh
+                (idempotent demo data, assets under scripts/seed-demo/)
 docs/           architecture · deployment · decisions · feature-matrix · schema
 ```
 
@@ -71,6 +73,16 @@ docs/           architecture · deployment · decisions · feature-matrix · sch
 
 Prereqs: Node 20+, npm. (Optional: PHP 8 for the media gateway — dev mode
 doesn't need it.)
+
+```bash
+# One-command local environment (deps + env files + migrations), then start:
+./scripts/bootstrap-dev.sh --seed    # --seed also creates the demo store
+cd worker && npm run dev             # API  → http://127.0.0.1:8787
+cd web && npm run dev                # web  → http://localhost:3000
+```
+
+<details>
+<summary>Manual equivalent (no bootstrap)</summary>
 
 ```bash
 # 1. API Worker + local D1  →  http://127.0.0.1:8787
@@ -84,6 +96,7 @@ cd web && npm ci
 cp .env.local.example .env.local
 npm run dev
 ```
+</details>
 
 - Admin (auto-seeded on first request): **admin@test.ng / AdminPass123**
 - Demo vendor: register as a vendor and pick the **Free** plan (instant
@@ -95,10 +108,11 @@ npm run dev
 ## Tests
 
 ```bash
-cd worker && npm test        # 29 tests: wa.me prefill units + full integration
+cd worker && npm test        # 34 tests: wa.me prefill units + full integration
                              # suite (onboarding, both payment paths, media
                              # upload + gateway-token finalize/single-use,
-                             # IDOR isolation, public pages, rate limits)
+                             # IDOR isolation, public pages, rate limits,
+                             # WhatsApp multi-item cart, voice-note audio)
 cd web && npx tsc --noEmit && npm run build
 python3 media-gateway/contract-check.py   # worker tokens vs gateway validation
 ```
@@ -114,7 +128,9 @@ checklist. Free-tier headroom and the scaling path are in
 
 - **Phase 1 (MVP):** ✅ built — onboarding + both payment paths, dynamic
   categories/fields, catalogue CRUD, media + quotas, SSR storefronts (OG +
-  structured data), wa.me CTA + lead capture, vendor dashboard, full admin
+  structured data), wa.me CTA + lead capture, **WhatsApp multi-item cart
+  (Plan §30 — still a lead, never a checkout)**, **vendor voice notes**
+  (record → waveform player on item pages), vendor dashboard, full admin
   console, audit logs, scheduled jobs (expiry/grace, orphan cleanup, rollups).
 - **Phase 2:** leads CRM polish, CSV import/export, QR codes, smart number
   routing UI, better search/filters.

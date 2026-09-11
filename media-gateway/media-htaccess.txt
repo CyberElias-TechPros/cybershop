@@ -1,0 +1,20 @@
+# Deploy this file as:  public_html/media/.htaccess
+# (copy the contents of this file; the filename here is only so it ships
+# in git — .htaccess files inside subdirectories cannot be committed
+# reliably across all hosting upload flows.)
+#
+# The media tree serves ONLY static images. No scripts, no indexes.
+Options -Indexes
+<IfModule mod_php7.c>
+  php_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+  php_flag engine off
+</IfModule>
+<FilesMatch "\.(php|phtml|phar|pl|py|cgi|sh)$">
+  Require all denied
+</FilesMatch>
+# Also block any request for a .htaccess file inside the media tree
+<Files ".htaccess">
+  Require all denied
+</Files>

@@ -1,0 +1,28 @@
+# CyberShop API — environment
+# Copy to .dev.vars for local dev (wrangler dev auto-loads .dev.vars)
+
+# --- secrets (change in production!) ---
+AUTH_SECRET=dev-only-change-me-0123456789abcdef
+INTERNAL_SECRET=dev-only-proxy-secret-0123456789abcdef
+GATEWAY_SECRET=dev-only-gateway-secret-0123456789abcdef
+
+# --- app ---
+APP_URL=http://localhost:3000
+WEB_ORIGIN=http://localhost:3000
+SESSION_SECURE=0
+IP_SALT=dev-ip-salt
+
+# --- media ---
+# driver: d1 (dev/demo, files in D1) | gateway (prod, files on cPanel host)
+MEDIA_DRIVER=d1
+# public base URL for media (browser + OG images). In prod: your cPanel domain.
+MEDIA_BASE_URL=http://localhost:3000
+# gateway public URL (browser uploads go here in gateway driver)
+GATEWAY_PUBLIC_URL=http://localhost:8081
+
+# --- paystack ---
+PAYSTACK_MOCK=1
+PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxx
+PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxx
+# in prod: https://<worker-domain>/api/webhooks/paystack
+PAYSTACK_WEBHOOK_URL=http://localhost:8787/api/webhooks/paystack

@@ -1,0 +1,174 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { capi, extractError } from '@/lib/client-api';
+
+interface Inquiry {
+  id: number;
+  buyer_name: string | null;
+  buyer_phone: string | null;
+  message: string | null;
+  wa_url: string | null;
+  source: string;
+  status: string;
+  note: string | null;
+  item_name: string | null;
+  created_at: string;
+}
+
+const STATUSES = ['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'] as const;
+const LABELS: Record<string, string> = {
+  new: 'New',
+  contacted: 'Contacted',
+  interested: 'Interested',
+  negotiating: 'Negotiating',
+  converted: 'Converted',
+  lost: 'Lost',
+};
+
+export default function LeadsPage() {
+  const [items, setItems] = useState<Inquiry[]>([]);
+  const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [pages, setPages] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      const d = await capi<{ inquiries: Inquiry[]; total: number; page: number; pages: number }>(
+        `/vendor/inquiries?status=${filter}&page=${page}`
+      );
+      setItems(d.inquiries);
+      setTotal(d.total);
+      setPage(d.page);
+      setPages(d.pages);
+    } catch (e) {
+      setError(extractError(e));
+    }
+  }, [filter, page]);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function setStatus(id: number, status: string) {
+    setBusyId(id);
+    try {
+      await capi(`/vendor/inquiries/${id}`, { method: 'PUT', body: JSON.stringify({ status }) });
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveNote(id: number, note: string) {
+    setBusyId(id);
+    try {
+      await capi(`/vendor/inquiries/${id}`, { method: 'PUT', body: JSON.stringify({ note }) });
+      setItems((xs) => xs.map((x) => (x.id === id ? { ...x, note } : x)));
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div>
+      <div className="dash-head">
+        <h1>Leads</h1>
+        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{total} total</span>
+      </div>
+      {error && <div className="form-msg error">{error}</div>}
+
+      <div className="biz-cats" style={{ marginBottom: 16 }}>
+        {['all', ...STATUSES].map((s) => (
+          <span key={s} className="chip">
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                setFilter(s);
+                setPage(1);
+              }}
+              style={{ color: filter === s ? '#fff' : undefined, background: filter === s ? 'var(--green)' : undefined, display: 'inline-block', borderRadius: 999 }}
+            >
+              {s === 'all' ? 'All' : LABELS[s]}
+            </a>
+          </span>
+        ))}
+      </div>
+
+      {items.length === 0 ? (
+        <div className="empty">
+          <h2>No leads yet</h2>
+          <p>When a buyer taps “Enquire on WhatsApp” on your store, the lead lands here with the exact message they sent.</p>
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 12 }}>
+          {items.map((q) => (
+            <div className="card panel" key={q.id}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'baseline' }}>
+                <div>
+                  <strong>{q.buyer_name || 'Buyer'}</strong>
+                  {q.buyer_phone && <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}> · {q.buyer_phone}</span>}
+                  <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
+                    {new Date(q.created_at).toLocaleString('en-NG')} · {q.source.replace('_', ' ')}
+                    {q.item_name ? ` · ${q.item_name}` : ''}
+                  </div>
+                </div>
+                <span className={`status-pill ${q.status}`}>{LABELS[q.status] ?? q.status}</span>
+              </div>
+              {q.message && (
+                <p style={{ whiteSpace: 'pre-line', fontSize: '0.92rem', background: 'var(--bg)', borderRadius: 10, padding: '10px 12px', margin: '10px 0' }}>
+                  {q.message}
+                </p>
+              )}
+              {q.wa_url && (
+                <a className="mini-btn" href={q.wa_url} target="_blank" rel="noopener">
+                  Open WhatsApp chat ↗
+                </a>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select className="select" style={{ width: 'auto' }} defaultValue={q.status} onChange={(e) => setStatus(q.id, e.target.value)} disabled={busyId === q.id}>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {LABELS[s]}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="input"
+                  style={{ flex: 1, minWidth: 180 }}
+                  placeholder="Add a note (optional)"
+                  defaultValue={q.note ?? ''}
+                  key={`${q.id}-${q.note ?? ''}`}
+                  onBlur={(e) => {
+                    if (e.target.value !== (q.note ?? '')) saveNote(q.id, e.target.value);
+                  }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pages > 1 && (
+        <div className="pager">
+          {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
+            <a key={p} href="#" className={p === page ? 'current' : ''} onClick={(e) => { e.preventDefault(); setPage(p); }}>
+              {p}
+            </a>
+          ))}
+        </div>
+      )}
+      <p style={{ fontSize: '0.85rem', color: 'var(--muted)', marginTop: 18 }}>
+        Tip: reply fast — leads converted within the first hour are the ones that stick. <Link href="/dashboard/whatsapp">Check your WhatsApp numbers</Link> are all active.
+      </p>
+    </div>
+  );
+}

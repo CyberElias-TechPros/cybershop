@@ -1,0 +1,8 @@
+node_modules/
+.wrangler/
+.vitest-state/
+.dev.vars
+dist/
+coverage/
+*.log
+.next/

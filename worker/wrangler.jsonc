@@ -4,13 +4,24 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-06-01",
   "compatibility_flags": ["nodejs_compat"],
+  "account_id": "ccb3266ecc6459c52ea1236c173107e2",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "cybershop",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_id": "63b9daa8-87cc-4dee-a66b-ac6a28f732ea"
     }
   ],
+  "vars": {
+    "APP_URL": "https://cybershop.freegameplay.site",
+    "WEB_ORIGIN": "https://cybershop.freegameplay.site",
+    "SESSION_SECURE": "1",
+    "MEDIA_DRIVER": "d1",
+    "MEDIA_BASE_URL": "https://cybershop.freegameplay.site",
+    "GATEWAY_PUBLIC_URL": "https://cybershop.freegameplay.site",
+    "PAYSTACK_MOCK": "1",
+    "PAYSTACK_WEBHOOK_URL": "https://cybershop.freegameplay.site/api/webhooks/paystack"
+  },
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true }
 }

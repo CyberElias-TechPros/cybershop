@@ -62,7 +62,9 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
           <div className="section-head">
             <div>
               <span className="eyebrow">The directory</span>
-              <h1>Every shop, one marketplace</h1>
+              <h1>
+                Every stall, <em>one night market</em>
+              </h1>
             </div>
             <span className="section-count">
               {data.total} business{data.total === 1 ? '' : 'es'}

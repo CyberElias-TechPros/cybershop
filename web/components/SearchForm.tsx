@@ -8,12 +8,12 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
   const [q, setQ] = useState(initial);
   return (
     <form
-      className="search-form"
+      className={`search-form${big ? ' big' : ''}`}
       role="search"
       onSubmit={(e) => {
         e.preventDefault();
         const query = q.trim();
-        router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/');
+        router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/search');
       }}
     >
       <input

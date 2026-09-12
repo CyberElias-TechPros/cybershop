@@ -95,7 +95,7 @@ app.get('/home', async (c) => {
   const settings = await platformSettings(env);
   const categories = (await env.DB.prepare('SELECT name, slug, description, icon FROM categories WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order').all()).results as Record<string, unknown>[];
   const featured = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.about, b.city, b.logo_media_id, b.status
+    `SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.logo_media_id, b.cover_media_id, b.status
      FROM businesses b WHERE b.status = 'active' AND b.deleted_at IS NULL
      ORDER BY b.is_featured DESC, b.created_at DESC LIMIT 12`
   ).all()).results as Record<string, unknown>[];
@@ -221,7 +221,16 @@ app.get('/item', async (c) => {
     : null;
   const audio = audioRow ? { url: mediaUrl(env, audioRow), size_bytes: audioRow.size_bytes } : null;
 
-  return c.json({ ok: true, item: { ...data, audio }, business, wa, related: [] });
+  const relatedRows = (await env.DB.prepare(
+    `SELECT l.*, t.name AS type_name, t.slug AS type_slug, t.url_segment, t.cta_label, t.seo_schema_type, t.whatsapp_template_key AS template_key
+     FROM listings l JOIN item_types t ON t.id = l.item_type_id
+     WHERE l.business_id = ? AND l.id != ? AND l.status = 'published' AND l.deleted_at IS NULL
+     ORDER BY l.featured DESC, l.published_at DESC LIMIT 8`
+  ).bind((biz as { id: number }).id, (item as { id: number }).id).all()).results as Record<string, unknown>[];
+  const related: Record<string, unknown>[] = [];
+  for (const r of relatedRows) related.push(await publicItem(env, r));
+
+  return c.json({ ok: true, item: { ...data, audio }, business, wa, related });
 });
 
 /** Global search (businesses + published items). */

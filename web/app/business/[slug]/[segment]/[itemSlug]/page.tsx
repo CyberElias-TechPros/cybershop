@@ -8,6 +8,7 @@ import Gallery from '@/components/Gallery';
 import WaCta from '@/components/WaCta';
 import StickyWa from '@/components/StickyWa';
 import WaveAudio from '@/components/WaveAudio';
+import ItemCard from '@/components/ItemCard';
 import { AddToCart } from '@/components/CartFx';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
@@ -59,7 +60,7 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
 
 export default async function ItemPage({ params }: { params: Promise<SP> }) {
   const sp = await params;
-  const { item, business, wa } = await fetchItem(sp, await clientIp());
+  const { item, business, wa, related } = await fetchItem(sp, await clientIp());
   const fields = Object.entries(item.custom_fields ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
 
   const jsonLd: Record<string, unknown> = {
@@ -201,6 +202,26 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
             </Reveal>
           </div>
         </div>
+
+        {related && related.length > 0 && (
+          <div className="type-group" style={{ marginTop: 56 }}>
+            <Reveal>
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Also from {business.name}</span>
+                  <h2>Keep looking</h2>
+                </div>
+              </div>
+            </Reveal>
+            <div className="grid grid-items">
+              {related.slice(0, 8).map((it, i) => (
+                <Reveal key={it.id} i={i % 4}>
+                  <ItemCard item={it} biz={business} />
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ export default function Footer() {
         <nav aria-label="Explore">
           <strong>Explore</strong>
           <a href="/listings">Listings</a>
+          <a href="/jobs">Jobs</a>
           <a href="/businesses">Businesses</a>
           <a href="/search">Search</a>
           <a href="/saved">Saved ads</a>

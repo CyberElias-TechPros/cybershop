@@ -14,6 +14,7 @@ export default function ListingCard({ it }: { it: MarketListing }) {
             🏷️
           </div>
         )}
+        {it.boosted && <span className="trust-chip">Boosted</span>}
         {it.verified && <span className="trust-chip">Verified</span>}
       </div>
       <div className="item-body">

@@ -352,7 +352,10 @@ app.post('/addons', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const body = await c.req.json().catch(() => null);
   const b = (body || {}) as Record<string, unknown>;
-  const types = ['extra_whatsapp_number', 'extra_storage', 'featured_listing', 'extra_category', 'staff_account', 'custom_domain', 'advanced_analytics'];
+  const types = [
+    'extra_whatsapp_number', 'extra_storage', 'featured_listing', 'extra_category', 'staff_account', 'custom_domain', 'advanced_analytics',
+    'in_app_chat', 'buyer_escrow', 'jobs_board', 'verified_id', 'reply_badge', 'inspection_reports',
+  ];
   if (!types.includes(String(b.type))) throw validationError('Unsupported add-on type.');
   const res = await c.env.DB.prepare('INSERT INTO addons (name, slug, description, type, unit, price, duration_days, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
     .bind(reqStr(b.name, { min: 2, max: 120 }), reqStr(b.slug, { min: 2, max: 130 }), optStr(b.description, 300), b.type, optStr(b.unit, 40) || '1', reqInt(b.price_kobo, { min: 1, max: 10_000_000_000 }), reqInt(b.duration_days ?? 30, { min: 1, max: 730 }), 1, reqInt(b.sort_order ?? 0, { min: 0, max: 1000 })).run();

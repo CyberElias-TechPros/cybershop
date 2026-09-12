@@ -17,6 +17,7 @@ import type { CSSProperties } from 'react';
 import MarketActions from '@/components/MarketActions';
 import SafetyTips from '@/components/SafetyTips';
 import ListingCard from '@/components/ListingCard';
+import PremiumBuyer from '@/components/PremiumBuyer';
 import { tenureLabel, timeAgo } from '@/lib/ui';
 
 export const dynamic = 'force-dynamic';
@@ -169,7 +170,9 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 ) : null}
               </p>
               <div className="trust-row">
-                {business.verification_status === 'verified' && <span className="trust-chip">Verified vendor</span>}
+                {business.verification_status === 'verified' && <span className="trust-chip">Verified ID</span>}
+                {item.featured && <span className="trust-chip">Boosted</span>}
+                {business.premium?.reply && <span className="trust-chip faint">{business.premium.reply}</span>}
                 {tenure && <span className="trust-chip faint">{tenure}</span>}
                 {typeof business.listing_count === 'number' && (
                   <span className="trust-chip faint">{business.listing_count} ads</span>
@@ -195,6 +198,14 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 <WaveAudio src={item.audio.url} label={`Voice note from ${business.name}`} />
               </Reveal>
             )}
+            {item.inspection?.notes && (
+              <Reveal i={1} className="cascade">
+                <div className="card panel">
+                  <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Inspection report</h2>
+                  <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{item.inspection.notes}</p>
+                </div>
+              </Reveal>
+            )}
             <Reveal i={2} className="cascade">
               <WaCta
                 businessId={business.id}
@@ -206,6 +217,17 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 messagePreview={wa.message ? `\n${wa.message}` : undefined}
               />
             </Reveal>
+            {(business.premium?.chat || business.premium?.escrow) && (
+              <Reveal i={3} className="cascade">
+                <PremiumBuyer
+                  businessId={business.id}
+                  listingId={item.id}
+                  askingKobo={item.price_kobo}
+                  chat={!!business.premium?.chat}
+                  escrow={!!business.premium?.escrow}
+                />
+              </Reveal>
+            )}
             <Reveal i={3} className="cascade">
               <AddToCart
                 bizId={business.id}
@@ -244,6 +266,39 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
             </Reveal>
           </div>
         </div>
+
+        {similar && similar.length > 0 && (
+          <div className="type-group" style={{ marginTop: 56 }}>
+            <Reveal>
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Find similar</span>
+                  <h2>More like this</h2>
+                </div>
+              </div>
+            </Reveal>
+            <div className="grid grid-items">
+              {similar.slice(0, 8).map((it, i) => (
+                <Reveal key={it.id} i={i % 4}>
+                  <ListingCard
+                    it={{
+                      id: it.id,
+                      name: it.name,
+                      slug: it.slug,
+                      url_segment: it.url_segment,
+                      biz_slug: it.biz_slug || business.slug,
+                      biz_name: it.biz_name || business.name,
+                      city: it.city ?? business.city,
+                      price_display: it.price_display,
+                      image: it.images[0]?.url ?? null,
+                      verified: undefined,
+                    }}
+                  />
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
 
         {related && related.length > 0 && (
           <div className="type-group" style={{ marginTop: 56 }}>

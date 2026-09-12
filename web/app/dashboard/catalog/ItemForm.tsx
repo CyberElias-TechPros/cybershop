@@ -60,6 +60,7 @@ interface ExistingItem {
   images: { id: number }[];
   audio: { id: number; url: string } | null;
   stats: { views: number; inquiries: number };
+  inspection_json?: string | null;
 }
 
 const TEXT_TYPES = new Set(['text', 'url', 'email', 'phone', 'location']);
@@ -94,6 +95,8 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
   const [custom, setCustom] = useState<Record<string, unknown>>({});
   const [selectedMedia, setSelectedMedia] = useState<number[]>([]);
   const [audio, setAudio] = useState<{ id: number; url: string } | null>(null);
+  const [inspectionNotes, setInspectionNotes] = useState('');
+  const [featuredSlots, setFeaturedSlots] = useState<{ used: number; limit: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -101,11 +104,13 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
 
   const load = useCallback(async () => {
     try {
-      const [it, wh, md] = await Promise.all([
+      const [it, wh, md, prem] = await Promise.all([
         capi<{ types: ItemType[]; categories: BizCategory[] }>('/vendor/item-types'),
         capi<{ numbers: WaNumber[] }>('/vendor/whatsapp'),
         capi<{ media: MediaItem[]; driver: 'd1' | 'gateway' }>('/vendor/media'),
+        capi<{ featured: { used: number; limit: number } }>('/vendor/premium').catch(() => null),
       ]);
+      if (prem?.featured) setFeaturedSlots(prem.featured);
       setTypes(it.types);
       setCats(it.categories);
       setNumbers(wh.numbers);
@@ -130,6 +135,12 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
         setCustom(x.custom_fields ?? {});
         setSelectedMedia(x.images.map((i) => i.id));
         setAudio(x.audio ?? null);
+        try {
+          const insp = x.inspection_json ? (JSON.parse(x.inspection_json) as { notes?: string }) : null;
+          setInspectionNotes(insp?.notes ?? '');
+        } catch {
+          setInspectionNotes('');
+        }
       } else {
         setPublish(true);
         setAudio(null);
@@ -221,6 +232,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
         price_type: priceType,
         stock_status: stockStatus,
         featured,
+        inspection_notes: inspectionNotes || null,
         whatsapp_number_id: waNumberId === '' ? null : waNumberId,
         seo_title: seoTitle || null,
         seo_description: seoDescription || null,

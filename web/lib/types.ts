@@ -28,6 +28,13 @@ export interface BusinessOut {
   categories: { name: string; slug: string; icon: string | null }[];
   logo: { url: string; alt: string } | null;
   cover: { url: string } | null;
+  premium?: {
+    chat: boolean;
+    escrow: boolean;
+    jobs: boolean;
+    verified_id: boolean;
+    reply: string | null;
+  };
 }
 
 export interface ItemImageOut {
@@ -59,6 +66,9 @@ export interface ItemOut {
   seo: { title: string; description: string | null };
   published_at: string | null;
   views?: number;
+  featured?: boolean;
+  type_slug?: string;
+  inspection?: { notes: string } | null;
 }
 
 export interface OfferOut {
@@ -121,6 +131,8 @@ export interface MarketListing {
   biz_name: string;
   city: string | null;
   verified?: boolean;
+  boosted?: boolean;
+  type_slug?: string;
   published_at?: string | null;
   price_kobo?: number | null;
   price_display: string;

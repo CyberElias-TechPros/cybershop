@@ -26,6 +26,7 @@ export default async function Header() {
           <NavLinks
             links={[
               { href: '/listings', label: 'Listings' },
+              { href: '/jobs', label: 'Jobs' },
               { href: '/businesses', label: 'Businesses' },
               ...extra,
             ]}

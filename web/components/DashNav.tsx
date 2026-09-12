@@ -14,6 +14,9 @@ const VENDOR_LINKS = [
   { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue' },
   { href: '/dashboard/media', icon: '🖼️', label: 'Media' },
   { href: '/dashboard/leads', icon: '💬', label: 'Leads' },
+  { href: '/dashboard/inbox', icon: '📥', label: 'Inbox' },
+  { href: '/dashboard/deposits', icon: '🔒', label: 'Deposits' },
+  { href: '/dashboard/verification', icon: '🪪', label: 'Verification' },
   { href: '/dashboard/whatsapp', icon: '📱', label: 'WhatsApp' },
   { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing' },
   { href: '/dashboard/settings', icon: '⚙️', label: 'Settings' },
@@ -27,6 +30,7 @@ const ADMIN_LINKS = [
   { href: '/admin/plans', icon: '🧩', label: 'Plans & Add-ons' },
   { href: '/admin/listings', icon: '🏷️', label: 'Listings' },
   { href: '/admin/reports', icon: '🚩', label: 'Reports' },
+  { href: '/admin/verifications', icon: '🪪', label: 'Verified ID' },
   { href: '/admin/audit', icon: '📜', label: 'Audit log' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings' },
 ];

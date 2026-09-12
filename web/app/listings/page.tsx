@@ -6,6 +6,7 @@ import type { CategoryOut, ListingsOut } from '@/lib/types';
 import ListingCard from '@/components/ListingCard';
 import Pager from '@/components/Pager';
 import { Reveal } from '@/components/Motion';
+import SaveSearch from '@/components/SaveSearch';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
@@ -67,7 +68,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
     /* optional */
   }
 
-  const hrefFor = (over: Partial<SP> & { page?: number }) => {
+  const hrefFor = (over: { q?: string; city?: string; category?: string; sort?: string; min?: string; max?: string; page?: number }) => {
     const u = new URLSearchParams();
     const next = { q, city, category, sort, min: sp.min, max: sp.max, page, ...over };
     if (next.q) u.set('q', next.q);
@@ -131,6 +132,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
             Filter
           </button>
         </form>
+        <SaveSearch search={{ q, city, category, min: sp.min, max: sp.max }} />
 
         {data.items.length === 0 ? (
           <div className="empty">

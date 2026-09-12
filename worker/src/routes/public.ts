@@ -9,6 +9,7 @@ import { renderTemplate } from '../lib/wa';
 import { formatNaira } from '../lib/money';
 import { clampInt } from '../lib/util';
 import { notify } from '../lib/notify';
+import { publicPremium } from '../lib/premium';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -31,7 +32,7 @@ async function publicItem(env: Env, listing: Record<string, unknown>): Promise<R
     price: number | null; currency: string; price_type: string; custom_fields: string | null;
     stock_status: string; seo_title: string | null; seo_description: string | null; published_at: string | null;
     type_name: string; type_slug: string; url_segment: string; cta_label: string; seo_schema_type: string;
-    template_key: string;
+    template_key: string; featured?: number; inspection_json?: string | null;
   };
   const media = (await env.DB.prepare(
     `SELECT m.id, m.mime_type, m.size_bytes, m.width, m.height, m.original_name, m.driver, m.storage_key, m.visibility, im.position, im.is_primary, im.alt_text
@@ -41,6 +42,10 @@ async function publicItem(env: Env, listing: Record<string, unknown>): Promise<R
   const images = media.map((m) => ({ id: m.id, url: mediaUrl(env, { driver: m.driver as 'd1', storage_key: m.storage_key, id: m.id }), width: m.width, height: m.height, alt: m.alt_text || l.name, primary: !!m.is_primary }));
   let custom: Record<string, unknown> = {};
   try { custom = JSON.parse(l.custom_fields || '{}'); } catch { custom = {}; }
+  let inspection: { notes: string } | null = null;
+  try {
+    if (l.inspection_json) inspection = JSON.parse(l.inspection_json) as { notes: string };
+  } catch { inspection = null; }
   return {
     id: l.id,
     name: l.name,
@@ -54,15 +59,18 @@ async function publicItem(env: Env, listing: Record<string, unknown>): Promise<R
     custom_fields: custom,
     images,
     url_segment: l.url_segment,
+    type_slug: l.type_slug,
     cta_label: l.cta_label,
     schema_type: l.seo_schema_type,
     seo: { title: l.seo_title || l.name, description: l.seo_description },
     published_at: l.published_at,
+    featured: !!l.featured,
+    inspection,
   };
 }
 
 async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const b = biz as { id: number; name: string; slug: string; about: string | null; description: string | null; city: string | null; state_region: string | null; phone: string | null; website: string | null; social: string | null; status: string; logo_media_id: number | null; cover_media_id: number | null };
+  const b = biz as { id: number; name: string; slug: string; about: string | null; description: string | null; city: string | null; state_region: string | null; phone: string | null; website: string | null; social: string | null; status: string; logo_media_id: number | null; cover_media_id: number | null; verification_status?: string; created_at?: string | null };
   const cats = (await env.DB.prepare(
     `SELECT c.name, c.slug, c.icon FROM business_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.business_id = ?`
   ).bind(b.id).all()).results as { name: string; slug: string; icon: string }[];
@@ -76,6 +84,7 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
   const listingCount = ((await env.DB.prepare(
     `SELECT COUNT(*) AS n FROM listings WHERE business_id = ? AND status = 'published' AND deleted_at IS NULL`
   ).bind(b.id).first()) as { n: number }).n;
+  const premium = await publicPremium(env, b.id, (b.verification_status as string | undefined) ?? 'unverified');
   return {
     id: b.id,
     name: b.name,
@@ -94,6 +103,7 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     whatsapp_number: waNumber?.number ?? null,
     logo: logo ? { url: mediaUrl(env, logo), alt: b.name } : null,
     cover: cover ? { url: mediaUrl(env, cover) } : null,
+    premium,
   };
 }
 
@@ -287,6 +297,7 @@ app.get('/listings', async (c) => {
   const q = c.req.query('q')?.trim().slice(0, 80) || '';
   const city = c.req.query('city')?.trim().slice(0, 80) || '';
   const cat = c.req.query('category')?.trim().slice(0, 60) || '';
+  const type = c.req.query('type')?.trim().slice(0, 40) || '';
   const sort = (c.req.query('sort') || 'newest').slice(0, 20);
   const minPrice = c.req.query('min_price') ? Number(c.req.query('min_price')) : null;
   const maxPrice = c.req.query('max_price') ? Number(c.req.query('max_price')) : null;
@@ -297,6 +308,7 @@ app.get('/listings', async (c) => {
   if (q) { where += ` AND (l.name LIKE ? OR l.description LIKE ? OR b.name LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM categories c WHERE c.id = l.category_id AND c.slug = ?)`; params.push(cat); }
+  if (type) { where += ` AND EXISTS (SELECT 1 FROM item_types t0 WHERE t0.id = l.item_type_id AND t0.slug = ?)`; params.push(type); }
   if (minPrice !== null && Number.isFinite(minPrice) && minPrice >= 0) { where += ` AND l.price IS NOT NULL AND l.price >= ?`; params.push(Math.round(minPrice)); }
   if (maxPrice !== null && Number.isFinite(maxPrice) && maxPrice >= 0) { where += ` AND l.price IS NOT NULL AND l.price <= ?`; params.push(Math.round(maxPrice)); }
   const order =
@@ -305,7 +317,7 @@ app.get('/listings', async (c) => {
     `l.featured DESC, l.published_at DESC`;
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
-    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, t.url_segment,
+    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, l.featured, t.url_segment, t.slug AS type_slug,
             b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status,
             (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
             (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
@@ -314,11 +326,12 @@ app.get('/listings', async (c) => {
      ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
   ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const items = rows.map((it) => {
-    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; url_segment: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
+    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
     return {
-      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment,
+      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, type_slug: i.type_slug,
       biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
       verified: i.verification_status === 'verified',
+      boosted: !!i.featured,
       published_at: i.published_at,
       price_kobo: i.price,
       price_display: i.price_type === 'negotiable' ? 'Price on request' : i.price_type === 'free' ? 'Free' : formatNaira(i.price),

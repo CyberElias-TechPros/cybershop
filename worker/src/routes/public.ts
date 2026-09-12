@@ -73,6 +73,9 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
   const waNumber = (await env.DB.prepare(
     `SELECT number FROM whatsapp_numbers WHERE business_id = ? AND is_default = 1 AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1`
   ).bind(b.id).first()) as { number: string } | null;
+  const listingCount = ((await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM listings WHERE business_id = ? AND status = 'published' AND deleted_at IS NULL`
+  ).bind(b.id).first()) as { n: number }).n;
   return {
     id: b.id,
     name: b.name,
@@ -84,6 +87,9 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     website: b.website,
     social,
     status: b.status,
+    verification_status: b.verification_status ?? 'unverified',
+    created_at: b.created_at ?? null,
+    listing_count: listingCount,
     categories: cats,
     whatsapp_number: waNumber?.number ?? null,
     logo: logo ? { url: mediaUrl(env, logo), alt: b.name } : null,
@@ -96,7 +102,7 @@ app.get('/home', async (c) => {
   const settings = await platformSettings(env);
   const categories = (await env.DB.prepare('SELECT name, slug, description, icon FROM categories WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order').all()).results as Record<string, unknown>[];
   const featured = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.logo_media_id, b.cover_media_id, b.status
+    `SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.logo_media_id, b.cover_media_id, b.status, b.verification_status, b.created_at
      FROM businesses b WHERE b.status = 'active' AND b.deleted_at IS NULL
      ORDER BY b.is_featured DESC, b.created_at DESC LIMIT 12`
   ).all()).results as Record<string, unknown>[];
@@ -111,12 +117,14 @@ app.get('/businesses', async (c) => {
   const env = c.env;
   const q = c.req.query('q')?.trim().slice(0, 80) || '';
   const cat = c.req.query('category')?.trim().slice(0, 60) || '';
+  const city = c.req.query('city')?.trim().slice(0, 80) || '';
   const page = clampInt(c.req.query('page'), 1, 1000, 1);
   const perPage = 24;
   let where = `WHERE b.status = 'active' AND b.deleted_at IS NULL`;
   const params: (string | number)[] = [];
   if (q) { where += ` AND (b.name LIKE ? OR b.about LIKE ? OR b.city LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM business_categories bc WHERE bc.business_id = b.id AND bc.category_id = (SELECT id FROM categories WHERE slug = ?))`; params.push(cat); }
+  if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(`SELECT b.* FROM businesses b ${where} ORDER BY b.is_featured DESC, b.created_at DESC LIMIT ? OFFSET ?`).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const businesses = await Promise.all(rows.map((b) => publicBusiness(env, b)));
@@ -231,33 +239,155 @@ app.get('/item', async (c) => {
   const related: Record<string, unknown>[] = [];
   for (const r of relatedRows) related.push(await publicItem(env, r));
 
-  return c.json({ ok: true, item: { ...data, audio }, business, wa, related });
+  const views = ((await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM analytics_events WHERE listing_id = ? AND event_type = 'item_view'`
+  ).bind((item as { id: number }).id).first()) as { n: number }).n;
+
+  const catId = (item as { category_id: number | null }).category_id;
+  const similarRows = (await env.DB.prepare(
+    `SELECT l.*, t.name AS type_name, t.slug AS type_slug, t.url_segment, t.cta_label, t.seo_schema_type, t.whatsapp_template_key AS template_key,
+            b.slug AS biz_slug, b.name AS biz_name, b.city
+     FROM listings l JOIN item_types t ON t.id = l.item_type_id JOIN businesses b ON b.id = l.business_id
+     WHERE l.id != ? AND l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.deleted_at IS NULL
+       AND (${catId ? 'l.category_id = ?' : 'l.item_type_id = ?'})
+     ORDER BY l.featured DESC, l.published_at DESC LIMIT 8`
+  ).bind((item as { id: number }).id, catId ?? (item as { item_type_id: number }).item_type_id).all()).results as Record<string, unknown>[];
+  const similar: Record<string, unknown>[] = [];
+  for (const r of similarRows) {
+    const it = await publicItem(env, r);
+    similar.push({ ...it, biz_slug: r.biz_slug, biz_name: r.biz_name, city: r.city });
+  }
+
+  return c.json({
+    ok: true,
+    item: { ...data, audio, views },
+    business,
+    wa,
+    related,
+    similar,
+  });
+});
+
+/** Distinct cities with live stores — location-first discovery (Jiji-style). */
+app.get('/cities', async (c) => {
+  const rows = (await c.env.DB.prepare(
+    `SELECT b.city AS city, COUNT(*) AS n FROM businesses b
+     WHERE b.status = 'active' AND b.deleted_at IS NULL AND b.city IS NOT NULL AND TRIM(b.city) != ''
+     GROUP BY b.city ORDER BY n DESC, b.city ASC LIMIT 40`
+  ).all()).results as { city: string; n: number }[];
+  return c.json({ ok: true, cities: rows });
+});
+
+/**
+ * Classifieds feed: published listings across the market.
+ * Filters: q, city, category, min/max price (kobo), sort.
+ */
+app.get('/listings', async (c) => {
+  const env = c.env;
+  const q = c.req.query('q')?.trim().slice(0, 80) || '';
+  const city = c.req.query('city')?.trim().slice(0, 80) || '';
+  const cat = c.req.query('category')?.trim().slice(0, 60) || '';
+  const sort = (c.req.query('sort') || 'newest').slice(0, 20);
+  const minPrice = c.req.query('min_price') ? Number(c.req.query('min_price')) : null;
+  const maxPrice = c.req.query('max_price') ? Number(c.req.query('max_price')) : null;
+  const page = clampInt(c.req.query('page'), 1, 500, 1);
+  const perPage = 24;
+  let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.deleted_at IS NULL`;
+  const params: (string | number)[] = [];
+  if (q) { where += ` AND (l.name LIKE ? OR l.description LIKE ? OR b.name LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
+  if (cat) { where += ` AND EXISTS (SELECT 1 FROM categories c WHERE c.id = l.category_id AND c.slug = ?)`; params.push(cat); }
+  if (minPrice !== null && Number.isFinite(minPrice) && minPrice >= 0) { where += ` AND l.price IS NOT NULL AND l.price >= ?`; params.push(Math.round(minPrice)); }
+  if (maxPrice !== null && Number.isFinite(maxPrice) && maxPrice >= 0) { where += ` AND l.price IS NOT NULL AND l.price <= ?`; params.push(Math.round(maxPrice)); }
+  const order =
+    sort === 'price_asc' ? `l.price IS NULL, l.price ASC, l.published_at DESC` :
+    sort === 'price_desc' ? `l.price IS NULL, l.price DESC, l.published_at DESC` :
+    `l.featured DESC, l.published_at DESC`;
+  const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id ${where}`).bind(...params).first()) as { n: number }).n;
+  const rows = (await env.DB.prepare(
+    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, t.url_segment,
+            b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status,
+            (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
+            (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
+            (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0
+     FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
+     ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
+  ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+  const items = rows.map((it) => {
+    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; url_segment: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
+    return {
+      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment,
+      biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
+      verified: i.verification_status === 'verified',
+      published_at: i.published_at,
+      price_kobo: i.price,
+      price_display: i.price_type === 'negotiable' ? 'Price on request' : i.price_type === 'free' ? 'Free' : formatNaira(i.price),
+      image: i.media_id0 && i.storage_key0 && i.driver0 ? mediaUrl(env, { driver: i.driver0, storage_key: i.storage_key0, id: i.media_id0 }) : null,
+    };
+  });
+  return c.json({ ok: true, items, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+});
+
+/** Guest-friendly report (Jiji “Report Abuse”). Login optional. */
+app.post('/reports', async (c) => {
+  const env = c.env;
+  const ip = IP(c);
+  await rateLimit(env, 'report', ip, 8, 3600);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
+  const entityType = String((body as { entity_type?: string }).entity_type || '');
+  if (!['business', 'listing'].includes(entityType)) throw validationError('Invalid report target.');
+  const entityId = Number((body as { entity_id?: number }).entity_id);
+  if (!Number.isInteger(entityId) || entityId < 1) throw validationError('Invalid report target.');
+  const reason = String((body as { reason?: string }).reason || 'other');
+  if (!['spam', 'fraud', 'misleading', 'abusive', 'other'].includes(reason)) throw validationError('Choose a reason.');
+  const details = typeof (body as { details?: unknown }).details === 'string' ? (body as { details: string }).details.trim().slice(0, 2000) : null;
+  if (entityType === 'listing') {
+    const row = (await env.DB.prepare('SELECT id FROM listings WHERE id = ? AND deleted_at IS NULL').bind(entityId).first()) as { id: number } | null;
+    if (!row) throw notFound('Listing not found.');
+  } else {
+    const row = (await env.DB.prepare('SELECT id FROM businesses WHERE id = ? AND deleted_at IS NULL').bind(entityId).first()) as { id: number } | null;
+    if (!row) throw notFound('Business not found.');
+  }
+  const user = await getSession(env, c);
+  await env.DB.prepare(
+    `INSERT INTO reports (reporter_user_id, entity_type, entity_id, reason, details) VALUES (?, ?, ?, ?, ?)`
+  ).bind(user?.id ?? null, entityType, entityId, reason, details).run();
+  return c.json({ ok: true, message: 'Thanks. Our team will review this.' });
 });
 
 /** Global search (businesses + published items). */
 app.get('/search', async (c) => {
   const env = c.env;
   const q = (c.req.query('q') || '').trim();
+  const city = c.req.query('city')?.trim().slice(0, 80) || '';
   const page = clampInt(c.req.query('page'), 1, 100, 1);
-  if (q.length < 2) return c.json({ ok: true, businesses: [], items: [], total: 0 });
+  if (q.length < 2) return c.json({ ok: true, businesses: [], items: [], total: 0, page });
   const like = `%${q.slice(0, 60)}%`;
+  let bizWhere = `WHERE b.status = 'active' AND b.deleted_at IS NULL AND b.name LIKE ?`;
+  const bizParams: (string | number)[] = [like];
+  if (city) { bizWhere += ` AND LOWER(b.city) = LOWER(?)`; bizParams.push(city); }
   const businesses = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.city FROM businesses b WHERE b.status = 'active' AND b.deleted_at IS NULL AND b.name LIKE ? LIMIT 8`
-  ).bind(like).all()).results as Record<string, unknown>[];
+    `SELECT b.id, b.name, b.slug, b.city FROM businesses b ${bizWhere} LIMIT 8`
+  ).bind(...bizParams).all()).results as Record<string, unknown>[];
+  let itemWhere = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND (l.name LIKE ? OR l.description LIKE ?)`;
+  const itemParams: (string | number)[] = [like, like];
+  if (city) { itemWhere += ` AND LOWER(b.city) = LOWER(?)`; itemParams.push(city); }
   const items = (await env.DB.prepare(
-    `SELECT l.id, l.name, l.slug, l.price, l.price_type, t.url_segment, b.slug AS biz_slug, b.name AS biz_name,
+    `SELECT l.id, l.name, l.slug, l.price, l.price_type, t.url_segment, b.slug AS biz_slug, b.name AS biz_name, b.city,
             (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
-            (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0
+            (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
+            (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
-     WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND (l.name LIKE ? OR l.description LIKE ?)
+     ${itemWhere}
      ORDER BY l.featured DESC, l.published_at DESC LIMIT 24`
-  ).bind(like, like).all()).results as Record<string, unknown>[];
+  ).bind(...itemParams).all()).results as Record<string, unknown>[];
   const itemsOut = items.map((it) => {
-    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; url_segment: string; biz_slug: string; biz_name: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null };
+    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; url_segment: string; biz_slug: string; biz_name: string; city: string | null; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
     return {
-      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, biz_slug: i.biz_slug, biz_name: i.biz_name,
+      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
       price_display: i.price_type === 'negotiable' ? 'Price on request' : formatNaira(i.price),
-      image: i.storage_key0 && i.driver0 ? mediaUrl(env, { driver: i.driver0, storage_key: i.storage_key0, id: i.id }) : null,
+      image: i.media_id0 && i.storage_key0 && i.driver0 ? mediaUrl(env, { driver: i.driver0, storage_key: i.storage_key0, id: i.media_id0 }) : null,
     };
   });
   return c.json({ ok: true, businesses, items: itemsOut, total: businesses.length + itemsOut.length, page });

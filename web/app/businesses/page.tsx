@@ -14,6 +14,7 @@ export const metadata = { title: 'Browse businesses' };
 interface SP {
   q?: string;
   category?: string;
+  city?: string;
   page?: string;
 }
 
@@ -29,21 +30,29 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
   const q = (sp.q ?? '').trim().slice(0, 80);
   const category = (sp.category ?? '').trim().slice(0, 60);
+  const city = (sp.city ?? '').trim().slice(0, 80);
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
 
   const query = new URLSearchParams();
   if (q) query.set('q', q);
   if (category) query.set('category', category);
+  if (city) query.set('city', city);
   query.set('page', String(page));
 
   const ip = await clientIp();
   const data = await api<BusinessesOut>(`/public/businesses?${query}`, { ip });
   let cats: { name: string; slug: string }[] = [];
+  let cities: { city: string }[] = [];
   try {
     const home = await api<{ categories: { name: string; slug: string }[] }>('/public/home', { ip });
     cats = home.categories;
   } catch {
     /* filter chips are optional */
+  }
+  try {
+    cities = (await api<{ cities: { city: string }[] }>('/public/cities', { ip })).cities;
+  } catch {
+    /* optional */
   }
 
   const base = (p: number) => {
@@ -85,8 +94,26 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
               </span>
               {cats.map((c) => (
                 <span key={c.slug} className={`chip${category === c.slug ? ' current' : ''}`}>
-                  <a href={`/businesses?category=${c.slug}${q ? `&q=${encodeURIComponent(q)}` : ''}`}>
+                  <a href={`/businesses?category=${c.slug}${q ? `&q=${encodeURIComponent(q)}` : ''}${city ? `&city=${encodeURIComponent(city)}` : ''}`}>
                     {c.name}
+                  </a>
+                </span>
+              ))}
+            </div>
+          </Reveal>
+        )}
+        {cities.length > 0 && (
+          <Reveal i={3}>
+            <div className="biz-cats" style={{ marginBottom: 22 }}>
+              <span className={`chip${!city ? ' current' : ''}`}>
+                <a href={`/businesses${q || category ? `?${new URLSearchParams({ ...(q ? { q } : {}), ...(category ? { category } : {}) }).toString()}` : ''}`}>
+                  All Nigeria
+                </a>
+              </span>
+              {cities.map((c) => (
+                <span key={c.city} className={`chip${city === c.city ? ' current' : ''}`}>
+                  <a href={`/businesses?city=${encodeURIComponent(c.city)}${q ? `&q=${encodeURIComponent(q)}` : ''}${category ? `&category=${category}` : ''}`}>
+                    {c.city}
                   </a>
                 </span>
               ))}

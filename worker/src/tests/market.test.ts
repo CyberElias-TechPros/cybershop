@@ -1,0 +1,90 @@
+import { describe, it, expect } from 'vitest';
+import { setupIntegration, api } from './harness';
+
+setupIntegration();
+
+async function registerVendor(suffix: string, city = 'Lagos') {
+  const email = `vendor-mk-${suffix}@test.ng`;
+  let r = await api('/api/auth/register', {
+    method: 'POST',
+    body: {
+      role: 'vendor', name: `Vendor MK ${suffix}`, email, phone: '+2348031111111', password: 'Passw0rd123',
+      business_name: `MK Store ${suffix}`, category_slug: 'fashion', whatsapp_number: '08031111111', city,
+    },
+  });
+  expect(r.status, JSON.stringify(r.json)).toBe(200);
+  const cookie = r.cookie!;
+  r = await api('/api/vendor/payment-intent', { method: 'POST', body: { plan_slug: 'free', method: 'bank_transfer' }, cookie });
+  expect(r.status, JSON.stringify(r.json)).toBe(200);
+  const me = await api('/api/auth/me', { cookie });
+  return { cookie, businessId: me.json.business.id as number, businessSlug: me.json.business.slug as string };
+}
+
+async function createItem(cookie: string, name: string, priceKobo: number) {
+  const r = await api('/api/vendor/items', {
+    method: 'POST', cookie,
+    body: {
+      name, item_type_slug: 'product', category_slug: 'fashion',
+      price_kobo: priceKobo, price_type: 'fixed', publish: true, stock_status: 'in_stock',
+    },
+  });
+  expect(r.status, JSON.stringify(r.json)).toBe(200);
+  return r.json as { id: number; slug: string };
+}
+
+describe('classifieds feed + reports (Jiji-style, no checkout)', () => {
+  it('lists published ads, filters by city and price, and exposes seller tenure', async () => {
+    const lagos = await registerVendor('lag', 'Lagos');
+    const abj = await registerVendor('abj', 'Abuja');
+    const cheap = await createItem(lagos.cookie, 'Ankara Shirt', 500000);
+    await createItem(lagos.cookie, 'Gold Hoops', 8000000);
+    await createItem(abj.cookie, 'Abuja Gown', 2500000);
+
+    const all = await api('/api/public/listings');
+    expect(all.status).toBe(200);
+    const names = (all.json.items as { name: string }[]).map((i) => i.name);
+    expect(names).toContain('Ankara Shirt');
+    expect(names).toContain('Abuja Gown');
+
+    const city = await api('/api/public/listings?city=Abuja');
+    const cityNames = (city.json.items as { name: string; city: string }[]).map((i) => i.name);
+    expect(cityNames).toEqual(['Abuja Gown']);
+
+    const cheapOnly = await api('/api/public/listings?max_price=600000');
+    const cheapNames = (cheapOnly.json.items as { name: string }[]).map((i) => i.name);
+    expect(cheapNames).toContain('Ankara Shirt');
+    expect(cheapNames).not.toContain('Gold Hoops');
+
+    const cities = await api('/api/public/cities');
+    expect(cities.status).toBe(200);
+    expect((cities.json.cities as { city: string }[]).some((c) => c.city === 'Lagos')).toBe(true);
+
+    const item = await api(`/api/public/item?biz=${lagos.businessSlug}&segment=products&slug=${cheap.slug}`);
+    expect(item.status).toBe(200);
+    expect(item.json.business.listing_count).toBeGreaterThanOrEqual(2);
+    expect(item.json.item.views).toBeGreaterThanOrEqual(1);
+    expect(item.json.business.created_at).toBeTruthy();
+  });
+
+  it('accepts a guest report on a real listing and 404s a fake id', async () => {
+    const v = await registerVendor('rep', 'Ikeja');
+    const item = await createItem(v.cookie, 'Report Me Dress', 1200000);
+    const ok = await api('/api/public/reports', {
+      method: 'POST',
+      body: { entity_type: 'listing', entity_id: item.id, reason: 'misleading', details: 'Stock photos' },
+    });
+    expect(ok.status, JSON.stringify(ok.json)).toBe(200);
+
+    const missing = await api('/api/public/reports', {
+      method: 'POST',
+      body: { entity_type: 'listing', entity_id: 999999, reason: 'spam' },
+    });
+    expect(missing.status).toBe(404);
+
+    const bad = await api('/api/public/reports', {
+      method: 'POST',
+      body: { entity_type: 'listing', entity_id: item.id, reason: 'not-a-reason' },
+    });
+    expect(bad.status).toBeGreaterThanOrEqual(400);
+  });
+});

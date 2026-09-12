@@ -25,6 +25,7 @@ export default async function Header() {
         <nav className="main-nav" aria-label="Primary">
           <NavLinks
             links={[
+              { href: '/listings', label: 'Listings' },
               { href: '/businesses', label: 'Businesses' },
               ...extra,
             ]}

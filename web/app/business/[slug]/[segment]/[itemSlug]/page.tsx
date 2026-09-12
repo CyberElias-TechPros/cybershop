@@ -14,6 +14,10 @@ import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
 import { categoryTheme } from '@/lib/theme';
 import type { CSSProperties } from 'react';
+import MarketActions from '@/components/MarketActions';
+import SafetyTips from '@/components/SafetyTips';
+import ListingCard from '@/components/ListingCard';
+import { tenureLabel, timeAgo } from '@/lib/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +64,9 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
 
 export default async function ItemPage({ params }: { params: Promise<SP> }) {
   const sp = await params;
-  const { item, business, wa, related } = await fetchItem(sp, await clientIp());
+  const { item, business, wa, related, similar } = await fetchItem(sp, await clientIp());
+  const tenure = tenureLabel(business.created_at);
+  const posted = timeAgo(item.published_at);
   const fields = Object.entries(item.custom_fields ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
 
   const jsonLd: Record<string, unknown> = {
@@ -153,6 +159,22 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
               </p>
               <h1>{item.name}</h1>
               <div className="price-big">{item.price_display}</div>
+              <p className="listing-meta">
+                {posted ? <span>{posted}</span> : null}
+                {typeof item.views === 'number' ? (
+                  <>
+                    {posted ? <span aria-hidden> · </span> : null}
+                    <span>{item.views} view{item.views === 1 ? '' : 's'}</span>
+                  </>
+                ) : null}
+              </p>
+              <div className="trust-row">
+                {business.verification_status === 'verified' && <span className="trust-chip">Verified vendor</span>}
+                {tenure && <span className="trust-chip faint">{tenure}</span>}
+                {typeof business.listing_count === 'number' && (
+                  <span className="trust-chip faint">{business.listing_count} ads</span>
+                )}
+              </div>
               {item.stock_status === 'in_stock' ? (
                 <div className="stock-note">
                   <span className="pulse-dot" aria-hidden="true" style={{ marginRight: 7, verticalAlign: 1 }} />
@@ -199,6 +221,26 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 Picking up a few things? Add more and we’ll message the vendor one WhatsApp with the
                 whole list.
               </p>
+            </Reveal>
+            <Reveal i={4} className="cascade">
+              <MarketActions
+                entityType="listing"
+                entityId={item.id}
+                ad={{
+                  listing_id: item.id,
+                  name: item.name,
+                  price_display: item.price_display,
+                  image: item.images[0]?.url ?? null,
+                  biz_name: business.name,
+                  biz_slug: business.slug,
+                  url_segment: item.url_segment,
+                  slug: item.slug,
+                  city: business.city,
+                }}
+              />
+            </Reveal>
+            <Reveal i={5} className="cascade">
+              <SafetyTips compact />
             </Reveal>
           </div>
         </div>

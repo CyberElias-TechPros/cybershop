@@ -13,9 +13,12 @@ export default function Footer() {
         </div>
         <nav aria-label="Explore">
           <strong>Explore</strong>
+          <a href="/listings">Listings</a>
           <a href="/businesses">Businesses</a>
           <a href="/search">Search</a>
+          <a href="/saved">Saved ads</a>
           <a href="/cart">WhatsApp cart</a>
+          <a href="/safety">Safety</a>
           <a href="/categories/academy">Academies</a>
           <a href="/categories/fashion">Fashion</a>
         </nav>

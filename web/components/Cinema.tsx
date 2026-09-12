@@ -118,10 +118,10 @@ export function CategoryBento({ cats }: { cats: CategoryOut[] }) {
 }
 
 const BUBBLES = [
-  { who: 'you', text: 'Hi — I found your storefront on CyberShop.' },
-  { who: 'them', text: 'Welcome. What can I set aside for you?' },
-  { who: 'you', text: 'The 12-week course. Is the October cohort open?' },
-  { who: 'them', text: 'Yes. I’ll send the enrolment form now. ✨' },
+  { who: 'you', text: 'Hi — I found Cyber Elias Academy on CyberShop.' },
+  { who: 'them', text: 'Welcome. From zero to expert, together. Which skill?' },
+  { who: 'you', text: 'Web Development — the 6-week class. Still open?' },
+  { who: 'them', text: 'Yes. Certificate on completion. I’ll send enrolment now. ✨' },
 ];
 
 /** Cinematic WhatsApp stage — a conversation, not a screenshot. */
@@ -142,7 +142,7 @@ export function ChatStage({ categories }: { categories: CategoryOut[] }) {
         <div className="phone-bar">
           <span className="phone-ava">CS</span>
           <div>
-            <strong>Ada Tech Academy</strong>
+            <strong>Cyber Elias Academy</strong>
             <em>online · WhatsApp</em>
           </div>
         </div>

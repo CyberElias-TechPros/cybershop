@@ -95,7 +95,7 @@ export default function RegisterPage() {
           </div>
           <div className="field">
             <label htmlFor="business_name">Business name</label>
-            <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Ada Tech Academy" value={form.business_name} onChange={set('business_name')} />
+            <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Cyber Elias Academy" value={form.business_name} onChange={set('business_name')} />
           </div>
           <div className="form-row">
             <div className="field">

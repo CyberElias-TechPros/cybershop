@@ -99,4 +99,4 @@ Done. Start the servers:
 
 Admin:   admin@test.ng / AdminPass123
 EOF
-[ "$SEED" = "1" ] && echo "Vendor:  ada@test.ng / Passw0rd123 (Ada Tech Academy, with demo catalogue)"
+[ "$SEED" = "1" ] && echo "Vendor:  cea@test.ng / Passw0rd123 (Cyber Elias Academy, Port Harcourt catalogue)"

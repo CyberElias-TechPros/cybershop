@@ -130,7 +130,7 @@ export default function SettingsPage() {
               <span style={{ alignSelf: 'center', color: 'var(--muted)', fontSize: '0.9rem' }}>/business/</span>
               <input id="s-slug" className="input" required minLength={2} maxLength={170} value={form.slug} onChange={set('slug')} />
             </div>
-            <div className="hint">Short and memorable — e.g. ada-tech-academy</div>
+            <div className="hint">Short and memorable — e.g. cyber-elias-academy</div>
           </div>
           <div className="field">
             <label htmlFor="s-about">About your business</label>

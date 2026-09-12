@@ -8,6 +8,7 @@ import { mediaUrl, getMedia, storeD1Media, magicMime } from '../lib/media';
 import { renderTemplate } from '../lib/wa';
 import { formatNaira } from '../lib/money';
 import { clampInt } from '../lib/util';
+import { notify } from '../lib/notify';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -277,6 +278,7 @@ app.post('/inquiries', async (c) => {
   const quantity = body.quantity ? clampInt(body.quantity, 1, 999, 1) : 1;
   const name = typeof body.name === 'string' ? body.name.trim().slice(0, 120) : null;
   const phone = typeof body.phone === 'string' ? body.phone.replace(/[^\d+]/g, '').slice(0, 20) : null;
+  const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : null;
   const biz = (await env.DB.prepare('SELECT * FROM businesses WHERE id = ? AND status = "active" AND deleted_at IS NULL').bind(bizId).first()) as Record<string, unknown> | null;
   if (!biz) throw notFound('Business not found.');
   interface InquiryItem { id: number; name: string; item_type_id: number; item_type_slug: string; url_segment: string; slug: string; price: number | null; whatsapp_number_id: number | null }
@@ -300,14 +302,15 @@ app.post('/inquiries', async (c) => {
     if (ids.length === 0) throw badRequest('Your cart is empty.');
     const qm = ids.map(() => '?').join(',');
     const rows = (await env.DB.prepare(
-      `SELECT l.id, l.name, l.price, l.whatsapp_number_id FROM listings l
+      `SELECT l.id, l.name, l.slug, l.price, l.whatsapp_number_id, t.url_segment
+       FROM listings l JOIN item_types t ON t.id = l.item_type_id
        WHERE l.business_id = ? AND l.status = 'published' AND l.deleted_at IS NULL AND l.id IN (${qm})`
-    ).bind(bizId, ...ids).all()).results as { id: number; name: string; price: number | null; whatsapp_number_id: number | null }[];
+    ).bind(bizId, ...ids).all()).results as { id: number; name: string; slug: string; price: number | null; whatsapp_number_id: number | null; url_segment: string }[];
     cartItems = rows
       .sort((a, b) => a.id - b.id)
       .map((r) => ({
         id: r.id, name: r.name, price: r.price, whatsapp_number_id: r.whatsapp_number_id,
-        item_type_id: 0, item_type_slug: '', url_segment: '', slug: '', qty: seen.get(r.id) ?? 1,
+        item_type_id: 0, item_type_slug: '', url_segment: r.url_segment, slug: r.slug, qty: seen.get(r.id) ?? 1,
       }));
     if (cartItems.length === 0) throw notFound('Item not found.');
     item = { ...cartItems[0]! };
@@ -352,12 +355,16 @@ app.post('/inquiries', async (c) => {
       total > 0
         ? formatNaira(total) + (priced.length < cartItems.length ? ' (some items priced on request)' : '')
         : 'Price on request';
+    const greeting = name
+      ? `Hello ${(biz as { name: string }).name}, I'm ${name}. I found you on CyberShop and I'd like to enquire about these items:`
+      : `Hello ${(biz as { name: string }).name}, I found you on CyberShop and I'd like to enquire about these items:`;
     message = [
-      `Hello ${(biz as { name: string }).name}, I found you on CyberShop and I'd like to enquire about these items:`,
+      greeting,
       '',
       ...cartItems.map((i, n) => `${n + 1}. ${i.name} × ${i.qty} — ${i.price !== null ? formatNaira(i.price) : 'Price on request'}`),
       '',
       `Estimated total: ${totalLabel}`,
+      ...(note ? ['', `Note: ${note}`] : []),
       '',
       'Please confirm availability and final price.',
       '',
@@ -373,6 +380,7 @@ app.post('/inquiries', async (c) => {
       quantity: String(quantity),
       customer_name: name || '',
     });
+    if (note) message = `${message}\n\nNote: ${note}`;
   }
   const waUrl = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
 
@@ -381,12 +389,18 @@ app.post('/inquiries', async (c) => {
     `SELECT id FROM whatsapp_numbers WHERE business_id = ? AND number = ? AND status = 'active' ORDER BY is_default DESC LIMIT 1`
   ).bind(bizId, number).first()) as { id: number } | null;
   const itemsJson = cartItems
-    ? JSON.stringify(cartItems.map((i) => ({ listing_id: i.id, quantity: i.qty, name: i.name })))
+    ? JSON.stringify(cartItems.map((i) => ({
+        listing_id: i.id,
+        quantity: i.qty,
+        name: i.name,
+        price: i.price,
+        url: i.slug && i.url_segment ? `${env.APP_URL}/business/${(biz as { slug: string }).slug}/${i.url_segment}/${i.slug}` : null,
+      })))
     : null;
-  await env.DB.prepare(
+  const inserted = await env.DB.prepare(
     `INSERT INTO inquiries (business_id, listing_id, whatsapp_number_id, buyer_user_id, buyer_name, buyer_phone, message, wa_url, source, items_json)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 2000), waUrl.slice(0, 500), cartItems ? 'cart' : item ? 'item_page' : 'storefront', itemsJson).run();
+  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 4000), waUrl.slice(0, 2000), cartItems ? 'cart' : item ? 'item_page' : 'storefront', itemsJson).run();
   await trackEvent(env, c, {
     businessId: bizId,
     eventType: 'wa_click',
@@ -394,7 +408,20 @@ app.post('/inquiries', async (c) => {
     userId: user?.id ?? null,
     meta: cartItems ? { items: cartItems.length, quantity: cartItems.reduce((s, i) => s + i.qty, 0) } : { quantity },
   });
-  return c.json({ ok: true, wa_url: waUrl });
+  const ownerId = (biz as { owner_user_id: number }).owner_user_id;
+  if (ownerId) {
+    const summary = cartItems
+      ? `${cartItems.length} item${cartItems.length === 1 ? '' : 's'} · ${cartItems.reduce((s, i) => s + i.qty, 0)} qty`
+      : item?.name || 'a general enquiry';
+    await notify(env, {
+      userId: ownerId,
+      type: 'inquiry.new',
+      title: name ? `${name} just enquired` : 'New WhatsApp enquiry',
+      body: summary,
+      data: { inquiry_id: Number(inserted.meta.last_row_id), source: cartItems ? 'cart' : 'item_page' },
+    });
+  }
+  return c.json({ ok: true, wa_url: waUrl, message, inquiry_id: Number(inserted.meta.last_row_id) });
 });
 
 export default app;

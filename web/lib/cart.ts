@@ -110,3 +110,48 @@ export function cartCount(businessId: number): number {
 export function activeBusinessId(): number | null {
   return load().active ?? null;
 }
+
+export function lineQty(businessId: number, listingId: number): number {
+  return load()[businessId]?.items[listingId]?.qty ?? 0;
+}
+
+export function listCarts(): { id: number; name: string; count: number }[] {
+  const s = load();
+  return Object.entries(s)
+    .filter(([k]) => k !== 'active' && Number.isFinite(Number(k)))
+    .map(([id, v]) => {
+      const biz = v as { items: Record<number, CartLine>; name: string };
+      return {
+        id: Number(id),
+        name: biz.name,
+        count: Object.values(biz.items).reduce((n, l) => n + l.qty, 0),
+      };
+    })
+    .filter((c) => c.count > 0);
+}
+
+export function setActive(businessId: number) {
+  const s = load();
+  if (!s[businessId]) return;
+  s.active = businessId;
+  save(s);
+}
+
+const BUYER_KEY = 'cs-buyer';
+
+export function getBuyer(): { name: string; phone: string } {
+  try {
+    const j = JSON.parse(localStorage.getItem(BUYER_KEY) ?? '{}') as { name?: string; phone?: string };
+    return { name: typeof j.name === 'string' ? j.name : '', phone: typeof j.phone === 'string' ? j.phone : '' };
+  } catch {
+    return { name: '', phone: '' };
+  }
+}
+
+export function saveBuyer(b: { name: string; phone: string }) {
+  try {
+    localStorage.setItem(BUYER_KEY, JSON.stringify({ name: b.name.slice(0, 120), phone: b.phone.slice(0, 20) }));
+  } catch {
+    /* ignore */
+  }
+}

@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     template: '%s · CyberShop',
   },
   description:
-    'Browse catalogues from real businesses, then talk directly to the business on WhatsApp. No carts, no checkout — just a conversation.',
+    'Browse catalogues from real Nigerian businesses, then send a WhatsApp list — never a checkout. The vendor replies. You deal in the thread.',
   openGraph: {
     type: 'website',
     locale: 'en_NG',

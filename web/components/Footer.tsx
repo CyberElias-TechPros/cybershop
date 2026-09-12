@@ -8,13 +8,14 @@ export default function Footer() {
           </span>
           <p>
             The night market that never closes. Find a business. Talk to it on
-            WhatsApp — no cart, no checkout, no middlemen.
+            WhatsApp — no checkout, no middlemen.
           </p>
         </div>
         <nav aria-label="Explore">
           <strong>Explore</strong>
           <a href="/businesses">Businesses</a>
           <a href="/search">Search</a>
+          <a href="/cart">WhatsApp cart</a>
           <a href="/categories/academy">Academies</a>
           <a href="/categories/fashion">Fashion</a>
         </nav>

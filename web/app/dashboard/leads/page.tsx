@@ -15,6 +15,7 @@ interface Inquiry {
   note: string | null;
   item_name: string | null;
   created_at: string;
+  items?: { listing_id: number; quantity: number; name: string; price?: number | null; url?: string | null }[] | null;
 }
 
 const STATUSES = ['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'] as const;
@@ -106,7 +107,11 @@ export default function LeadsPage() {
       {items.length === 0 ? (
         <div className="empty">
           <h2>No leads yet</h2>
-          <p>When a buyer taps “Enquire on WhatsApp” on your store, the lead lands here with the exact message they sent.</p>
+          <p>
+            When a buyer taps “Enquire on WhatsApp” or sends a cart list, the lead lands here with
+            the exact message they sent — even if they never hit send in WhatsApp, the enquiry is
+            already yours.
+          </p>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 12 }}>
@@ -118,11 +123,27 @@ export default function LeadsPage() {
                   {q.buyer_phone && <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}> · {q.buyer_phone}</span>}
                   <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
                     {new Date(q.created_at).toLocaleString('en-NG')} · {q.source.replace('_', ' ')}
-                    {q.item_name ? ` · ${q.item_name}` : ''}
+                    {q.item_name && q.source !== 'cart' ? ` · ${q.item_name}` : ''}
                   </div>
                 </div>
                 <span className={`status-pill ${q.status}`}>{LABELS[q.status] ?? q.status}</span>
               </div>
+              {q.source === 'cart' && Array.isArray(q.items) && q.items.length > 0 && (
+                <ul className="lead-items">
+                  {q.items.map((it) => (
+                    <li key={it.listing_id}>
+                      <span>
+                        {it.name} × {it.quantity}
+                      </span>
+                      {it.url && (
+                        <a href={it.url} target="_blank" rel="noopener">
+                          view
+                        </a>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
               {q.message && (
                 <p style={{ whiteSpace: 'pre-line', fontSize: '0.92rem', background: 'var(--bg)', borderRadius: 10, padding: '10px 12px', margin: '10px 0' }}>
                   {q.message}

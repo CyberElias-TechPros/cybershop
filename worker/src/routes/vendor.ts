@@ -689,17 +689,38 @@ app.get('/inquiries', async (c) => {
     `SELECT i.*, l.name AS item_name FROM inquiries i LEFT JOIN listings l ON l.id = i.listing_id
      ${where} ORDER BY i.created_at DESC LIMIT ? OFFSET ?`
   ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
-  return c.json({ ok: true, inquiries: rows, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+  const inquiries = rows.map((r) => {
+    let items: unknown = null;
+    try {
+      items = r.items_json ? JSON.parse(String(r.items_json)) : null;
+    } catch {
+      items = null;
+    }
+    return { ...r, items };
+  });
+  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
 });
 
 app.put('/inquiries/:id', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
   const body = await c.req.json().catch(() => null);
-  const status = body?.status;
-  if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(status))) throw badRequest('Invalid status.');
-  const note = optStr(body?.note, 2000);
-  const res = await c.env.DB.prepare(`UPDATE inquiries SET status = ?, note = COALESCE(?, note) WHERE id = ? AND business_id = ?`).bind(status, note, id, business.id).run();
+  if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
+  const sets: string[] = [];
+  const params: (string | null)[] = [];
+  if (body.status !== undefined) {
+    if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(body.status))) {
+      throw badRequest('Invalid status.');
+    }
+    sets.push('status = ?');
+    params.push(String(body.status));
+  }
+  if (body.note !== undefined) {
+    sets.push('note = ?');
+    params.push(optStr(body.note, 2000));
+  }
+  if (sets.length === 0) throw badRequest('Nothing to update.');
+  const res = await c.env.DB.prepare(`UPDATE inquiries SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).bind(...params, id, business.id).run();
   if (res.meta.changes === 0) throw notFound('Inquiry not found.');
   return c.json({ ok: true });
 });

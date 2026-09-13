@@ -21,10 +21,20 @@ export interface BusinessOut {
   website: string | null;
   social: Record<string, string>;
   status: string;
+  verification_status?: string;
+  created_at?: string | null;
+  listing_count?: number;
   whatsapp_number?: string | null;
   categories: { name: string; slug: string; icon: string | null }[];
   logo: { url: string; alt: string } | null;
   cover: { url: string } | null;
+  premium?: {
+    chat: boolean;
+    escrow: boolean;
+    jobs: boolean;
+    verified_id: boolean;
+    reply: string | null;
+  };
 }
 
 export interface ItemImageOut {
@@ -55,6 +65,10 @@ export interface ItemOut {
   schema_type?: string;
   seo: { title: string; description: string | null };
   published_at: string | null;
+  views?: number;
+  featured?: boolean;
+  type_slug?: string;
+  inspection?: { notes: string } | null;
 }
 
 export interface OfferOut {
@@ -105,6 +119,31 @@ export interface ItemPageOut {
   business: BusinessOut;
   wa: WaOut;
   related: ItemOut[];
+  similar?: (ItemOut & { biz_slug?: string; biz_name?: string; city?: string | null })[];
+}
+
+export interface MarketListing {
+  id: number;
+  name: string;
+  slug: string;
+  url_segment: string;
+  biz_slug: string;
+  biz_name: string;
+  city: string | null;
+  verified?: boolean;
+  boosted?: boolean;
+  type_slug?: string;
+  published_at?: string | null;
+  price_kobo?: number | null;
+  price_display: string;
+  image: string | null;
+}
+
+export interface ListingsOut {
+  items: MarketListing[];
+  total: number;
+  page: number;
+  pages: number;
 }
 
 export interface SearchOut {
@@ -116,6 +155,7 @@ export interface SearchOut {
     url_segment: string;
     biz_slug: string;
     biz_name: string;
+    city?: string | null;
     price_display: string;
     image: string | null;
   }[];

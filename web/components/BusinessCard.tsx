@@ -1,10 +1,10 @@
 import type { BusinessOut } from '@/lib/types';
 import { initials, location } from '@/lib/ui';
 
-export default function BusinessCard({ b }: { b: BusinessOut }) {
+export default function BusinessCard({ b, featured = false }: { b: BusinessOut; featured?: boolean }) {
   return (
     <a
-      className="card tilt"
+      className={`card tilt${featured ? ' biz-featured' : ''}`}
       href={`/business/${b.slug}`}
       style={{ color: 'inherit' }}
       data-flip={`biz:${b.slug}`}

@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: 'Search' };
 
 interface SP {
   q?: string;
+  city?: string;
 }
 
 export default function SearchPage({ searchParams }: { searchParams: Promise<SP> }) {
@@ -22,9 +23,19 @@ export default function SearchPage({ searchParams }: { searchParams: Promise<SP>
 }
 
 async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
-  const { q: raw } = await searchParams;
+  const { q: raw, city: cityRaw } = await searchParams;
   const q = (raw ?? '').trim();
-  const data = q.length >= 2 ? await api<SearchOut>(`/public/search?q=${encodeURIComponent(q)}`, { ip: await clientIp() }) : null;
+  const city = (cityRaw ?? '').trim();
+  const qs = new URLSearchParams();
+  if (q) qs.set('q', q);
+  if (city) qs.set('city', city);
+  const data = q.length >= 2 ? await api<SearchOut>(`/public/search?${qs}`, { ip: await clientIp() }) : null;
+  let cities: { city: string }[] = [];
+  try {
+    cities = (await api<{ cities: { city: string }[] }>('/public/cities', { ip: await clientIp() })).cities;
+  } catch {
+    /* optional */
+  }
 
   return (
     <section className="section" style={{ paddingTop: 'clamp(36px, 6vw, 64px)' }}>
@@ -38,9 +49,20 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
           </div>
         </Reveal>
         <Reveal i={1}>
-          <div style={{ maxWidth: 520, marginBottom: 28 }}>
-            <SearchForm initial={q} big />
-          </div>
+          <form className="market-filters" method="get" action="/search" style={{ marginBottom: 28 }}>
+            <input className="input" name="q" defaultValue={q} placeholder="What are you looking for?" aria-label="Search" />
+            <select className="input" name="city" defaultValue={city} aria-label="City">
+              <option value="">All Nigeria</option>
+              {cities.map((c) => (
+                <option key={c.city} value={c.city}>
+                  {c.city}
+                </option>
+              ))}
+            </select>
+            <button className="btn btn-gold" type="submit">
+              Search
+            </button>
+          </form>
         </Reveal>
         {!data && <p style={{ color: 'var(--ink-faint)' }}>Type at least 2 characters to search businesses and listings.</p>}
         {data && data.total === 0 && (
@@ -89,7 +111,8 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
                       <div>
                         <div className="result-name">{it.name}</div>
                         <div className="result-sub">
-                          {it.biz_name} · {it.price_display}
+                          {it.biz_name}
+                          {it.city ? ` · ${it.city}` : ''} · {it.price_display}
                         </div>
                       </div>
                     </a>

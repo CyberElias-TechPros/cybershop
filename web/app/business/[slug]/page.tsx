@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { absUrl } from '@/lib/config';
 import { clientIp } from '@/lib/ip';
-import { initials, location } from '@/lib/ui';
+import { initials, location, tenureLabel } from '@/lib/ui';
 import type { BusinessPageOut, ItemOut } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import ItemCard from '@/components/ItemCard';
@@ -135,6 +135,15 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
                 </>
               )}
             </p>
+            <div className="trust-row" style={{ marginTop: 10 }}>
+              {business.verification_status === 'verified' && <span className="trust-chip">Verified vendor</span>}
+              {tenureLabel(business.created_at) && (
+                <span className="trust-chip faint">{tenureLabel(business.created_at)}</span>
+              )}
+              {typeof business.listing_count === 'number' && (
+                <span className="trust-chip faint">{business.listing_count} ads</span>
+              )}
+            </div>
           </div>
         </div>
       </div>

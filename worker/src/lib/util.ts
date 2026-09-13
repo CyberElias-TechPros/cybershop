@@ -20,6 +20,7 @@ export function slugify(input: string): string {
 const RESERVED_SLUGS = new Set([
   'admin', 'api', 'dashboard', 'login', 'register', 'logout', 'search', 'businesses',
   'categories', 'settings', 'paystack', 'media', 'static', 'sitemap', 'robots', 'webhooks', 'www',
+  'jobs', 'inbox', 'saved', 'safety', 'listings', 'premium',
 ]);
 
 export function assertSlugAvailable(slug: string): void {

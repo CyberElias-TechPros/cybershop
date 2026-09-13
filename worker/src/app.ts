@@ -4,8 +4,11 @@ import { AppError, errorMessage } from './lib/errors';
 import { ensureAdmin } from './boot';
 import authRoutes from './routes/auth';
 import publicRoutes from './routes/public';
+import publicPremiumRoutes from './routes/public-premium';
 import vendorRoutes from './routes/vendor';
+import vendorPremiumRoutes from './routes/vendor-premium';
 import adminRoutes from './routes/admin';
+import adminPremiumRoutes from './routes/admin-premium';
 import webhookRoutes from './routes/webhook';
 import mediaFileRoutes from './routes/mediafile';
 import sitemapRoutes from './routes/sitemap';
@@ -45,8 +48,11 @@ export function buildApp(): Hono<{ Bindings: Env }> {
 
   app.route('/api/auth', authRoutes);
   app.route('/api/public', publicRoutes);
+  app.route('/api/public', publicPremiumRoutes);
   app.route('/api/vendor', vendorRoutes);
+  app.route('/api/vendor', vendorPremiumRoutes);
   app.route('/api/admin', adminRoutes);
+  app.route('/api/admin', adminPremiumRoutes);
   app.route('/api/webhooks', webhookRoutes);
   app.route('/api/media', mediaFileRoutes);
   app.route('/api/sitemap.xml', sitemapRoutes);

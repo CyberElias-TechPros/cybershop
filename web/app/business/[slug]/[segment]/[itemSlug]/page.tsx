@@ -8,11 +8,17 @@ import Gallery from '@/components/Gallery';
 import WaCta from '@/components/WaCta';
 import StickyWa from '@/components/StickyWa';
 import WaveAudio from '@/components/WaveAudio';
+import ItemCard from '@/components/ItemCard';
 import { AddToCart } from '@/components/CartFx';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
 import { categoryTheme } from '@/lib/theme';
 import type { CSSProperties } from 'react';
+import MarketActions from '@/components/MarketActions';
+import SafetyTips from '@/components/SafetyTips';
+import ListingCard from '@/components/ListingCard';
+import PremiumBuyer from '@/components/PremiumBuyer';
+import { tenureLabel, timeAgo } from '@/lib/ui';
 
 export const dynamic = 'force-dynamic';
 
@@ -59,7 +65,9 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
 
 export default async function ItemPage({ params }: { params: Promise<SP> }) {
   const sp = await params;
-  const { item, business, wa } = await fetchItem(sp, await clientIp());
+  const { item, business, wa, related, similar } = await fetchItem(sp, await clientIp());
+  const tenure = tenureLabel(business.created_at);
+  const posted = timeAgo(item.published_at);
   const fields = Object.entries(item.custom_fields ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
 
   const jsonLd: Record<string, unknown> = {
@@ -152,6 +160,24 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
               </p>
               <h1>{item.name}</h1>
               <div className="price-big">{item.price_display}</div>
+              <p className="listing-meta">
+                {posted ? <span>{posted}</span> : null}
+                {typeof item.views === 'number' ? (
+                  <>
+                    {posted ? <span aria-hidden> · </span> : null}
+                    <span>{item.views} view{item.views === 1 ? '' : 's'}</span>
+                  </>
+                ) : null}
+              </p>
+              <div className="trust-row">
+                {business.verification_status === 'verified' && <span className="trust-chip">Verified ID</span>}
+                {item.featured && <span className="trust-chip">Boosted</span>}
+                {business.premium?.reply && <span className="trust-chip faint">{business.premium.reply}</span>}
+                {tenure && <span className="trust-chip faint">{tenure}</span>}
+                {typeof business.listing_count === 'number' && (
+                  <span className="trust-chip faint">{business.listing_count} ads</span>
+                )}
+              </div>
               {item.stock_status === 'in_stock' ? (
                 <div className="stock-note">
                   <span className="pulse-dot" aria-hidden="true" style={{ marginRight: 7, verticalAlign: 1 }} />
@@ -172,6 +198,14 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 <WaveAudio src={item.audio.url} label={`Voice note from ${business.name}`} />
               </Reveal>
             )}
+            {item.inspection?.notes && (
+              <Reveal i={1} className="cascade">
+                <div className="card panel">
+                  <h2 style={{ fontSize: '1rem', marginTop: 0 }}>Inspection report</h2>
+                  <p style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{item.inspection.notes}</p>
+                </div>
+              </Reveal>
+            )}
             <Reveal i={2} className="cascade">
               <WaCta
                 businessId={business.id}
@@ -183,6 +217,17 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 messagePreview={wa.message ? `\n${wa.message}` : undefined}
               />
             </Reveal>
+            {(business.premium?.chat || business.premium?.escrow) && (
+              <Reveal i={3} className="cascade">
+                <PremiumBuyer
+                  businessId={business.id}
+                  listingId={item.id}
+                  askingKobo={item.price_kobo}
+                  chat={!!business.premium?.chat}
+                  escrow={!!business.premium?.escrow}
+                />
+              </Reveal>
+            )}
             <Reveal i={3} className="cascade">
               <AddToCart
                 bizId={business.id}
@@ -199,8 +244,81 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 whole list.
               </p>
             </Reveal>
+            <Reveal i={4} className="cascade">
+              <MarketActions
+                entityType="listing"
+                entityId={item.id}
+                ad={{
+                  listing_id: item.id,
+                  name: item.name,
+                  price_display: item.price_display,
+                  image: item.images[0]?.url ?? null,
+                  biz_name: business.name,
+                  biz_slug: business.slug,
+                  url_segment: item.url_segment,
+                  slug: item.slug,
+                  city: business.city,
+                }}
+              />
+            </Reveal>
+            <Reveal i={5} className="cascade">
+              <SafetyTips compact />
+            </Reveal>
           </div>
         </div>
+
+        {similar && similar.length > 0 && (
+          <div className="type-group" style={{ marginTop: 56 }}>
+            <Reveal>
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Find similar</span>
+                  <h2>More like this</h2>
+                </div>
+              </div>
+            </Reveal>
+            <div className="grid grid-items">
+              {similar.slice(0, 8).map((it, i) => (
+                <Reveal key={it.id} i={i % 4}>
+                  <ListingCard
+                    it={{
+                      id: it.id,
+                      name: it.name,
+                      slug: it.slug,
+                      url_segment: it.url_segment,
+                      biz_slug: it.biz_slug || business.slug,
+                      biz_name: it.biz_name || business.name,
+                      city: it.city ?? business.city,
+                      price_display: it.price_display,
+                      image: it.images[0]?.url ?? null,
+                      verified: undefined,
+                    }}
+                  />
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {related && related.length > 0 && (
+          <div className="type-group" style={{ marginTop: 56 }}>
+            <Reveal>
+              <div className="section-head">
+                <div>
+                  <span className="eyebrow">Also from {business.name}</span>
+                  <h2>Keep looking</h2>
+                </div>
+              </div>
+            </Reveal>
+            <div className="grid grid-items">
+              {related.slice(0, 8).map((it, i) => (
+                <Reveal key={it.id} i={i % 4}>
+                  <ItemCard item={it} biz={business} />
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

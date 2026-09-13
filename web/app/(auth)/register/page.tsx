@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { capi, extractError } from '@/lib/client-api';
 
 interface Cat {
@@ -31,18 +31,23 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  async function loadCats() {
-    try {
-      const res = await fetch('/api/public/home', { cache: 'no-store' });
-      if (res.ok) {
-        const j = await res.json();
-        if (Array.isArray(j.categories)) setCats(j.categories);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/public/home', { cache: 'no-store' });
+        if (res.ok) {
+          const j = await res.json();
+          if (alive && Array.isArray(j.categories)) setCats(j.categories);
+        }
+      } catch {
+        /* categories are optional for the form */
       }
-    } catch {
-      /* categories are optional for the form */
-    }
-  }
-  loadCats();
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -90,7 +95,7 @@ export default function RegisterPage() {
           </div>
           <div className="field">
             <label htmlFor="business_name">Business name</label>
-            <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Ada Tech Academy" value={form.business_name} onChange={set('business_name')} />
+            <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Cyber Elias Academy" value={form.business_name} onChange={set('business_name')} />
           </div>
           <div className="form-row">
             <div className="field">

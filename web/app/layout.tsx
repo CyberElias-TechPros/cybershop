@@ -1,12 +1,15 @@
 import type { Metadata, Viewport } from 'next';
 import Fraunces from 'next/font/local';
+import '@fontsource-variable/syne';
 import './globals.css';
+import './cine.css';
 import { SITE_URL } from '@/lib/config';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { HeaderFx, TransitionFx } from '@/components/Motion';
 import { FlipBridge } from '@/components/Fx';
 import CartChip from '@/components/CartFx';
+import Atmosphere from '@/components/Atmosphere';
 
 const fraunces = Fraunces({
   src: [{ path: './fonts/Fraunces.ttf', weight: '300 700', style: 'normal' }],
@@ -21,7 +24,7 @@ export const metadata: Metadata = {
     template: '%s · CyberShop',
   },
   description:
-    'Browse catalogues from real businesses, then talk directly to the business on WhatsApp. No carts, no checkout — just a conversation.',
+    'Browse catalogues from real Nigerian businesses, then send a WhatsApp list — never a checkout. The vendor replies. You deal in the thread.',
   openGraph: {
     type: 'website',
     locale: 'en_NG',
@@ -45,6 +48,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body>
+        <Atmosphere />
         <HeaderFx />
         <TransitionFx />
         <FlipBridge />

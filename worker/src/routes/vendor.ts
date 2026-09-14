@@ -9,6 +9,7 @@ import {
   getMedia, assertMediaOwnership, markMediaAttached, detachMedia, softDeleteMedia, storageUsedBytes, IMAGE_MIME, AUDIO_MIME,
 } from '../lib/media';
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
+import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
 import { normalizeWaNumber } from '../lib/wa';
@@ -271,6 +272,7 @@ interface ItemInput {
   name: string;
   slug: string | null;
   item_type_id: number;
+  item_type_slug: string;
   category_id: number | null;
   description: string | null;
   price: number | null;
@@ -278,6 +280,7 @@ interface ItemInput {
   custom_fields: string | null;
   stock_status: string;
   featured: boolean;
+  inspection_json: string | null;
   whatsapp_number_id: number | null;
   seo_title: string | null;
   seo_description: string | null;
@@ -331,13 +334,30 @@ async function parseItemBody(c: { env: Env }, businessId: number, body: unknown)
   let slug = optStr(b.slug, 210) || slugify(name);
   assertSlugAvailable(slug);
 
+  const inspectionJson = parseInspection(b.inspection_notes ?? b.inspection_json);
+
   return {
-    name, slug, item_type_id: (type as { id: number }).id, category_id: categoryId,
+    name, slug, item_type_id: (type as { id: number }).id, item_type_slug: typeSlug, category_id: categoryId,
     description: optStr(b.description, 20000), price, price_type: priceType,
     custom_fields: JSON.stringify(custom), stock_status: stockStatus,
-    featured: b.featured === true, whatsapp_number_id: waNumberId,
+    featured: b.featured === true, inspection_json: inspectionJson, whatsapp_number_id: waNumberId,
     seo_title: optStr(b.seo_title, 200), seo_description: optStr(b.seo_description, 300), publish,
   };
+}
+
+async function assertPremiumItemGates(env: Env, businessId: number, input: ItemInput, listingId: number | null): Promise<void> {
+  if (input.item_type_slug === 'job' || input.item_type_slug === 'cv') {
+    await assertAddon(env, businessId, 'jobs_board', 'Jobs and CVs need the Jobs & CVs add-on. Buy it under Plan & billing. WhatsApp enquiries stay free.');
+    const jobsCat = (await env.DB.prepare(`SELECT id FROM categories WHERE slug = 'jobs' AND deleted_at IS NULL`).first()) as { id: number } | null;
+    if (jobsCat) {
+      await env.DB.prepare(`INSERT OR IGNORE INTO business_categories (business_id, category_id) VALUES (?, ?)`).bind(businessId, jobsCat.id).run();
+      if (!input.category_id) input.category_id = jobsCat.id;
+    }
+  }
+  if (input.inspection_json) {
+    await assertAddon(env, businessId, 'inspection_reports', 'Inspection reports need the Inspection reports add-on.');
+  }
+  await assertFeaturedSlot(env, businessId, listingId, input.featured);
 }
 
 async function attachMedia(env: Env, listingId: number, mediaIds: unknown, businessId: number): Promise<void> {
@@ -381,15 +401,16 @@ app.post('/items', async (c) => {
   await assertListingQuota(c.env, business.id);
   const body = await c.req.json().catch(() => null);
   const input = await parseItemBody(c, business.id, body);
+  await assertPremiumItemGates(c.env, business.id, input, null);
   // ensure slug uniqueness within business
   const taken = (await c.env.DB.prepare('SELECT id FROM listings WHERE business_id = ? AND slug = ? AND deleted_at IS NULL').bind(business.id, input.slug).first()) as { id: number } | null;
   let slug = input.slug;
   if (taken) slug = `${input.slug}-${Math.floor(Math.random() * 9000 + 1000)}`;
   const status = input.publish ? 'published' : 'draft';
   const res = await c.env.DB.prepare(
-    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null).run();
+    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at, inspection_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json).run();
   const id = Number(res.meta.last_row_id);
   await attachMedia(c.env, id, (body as Record<string, unknown> | null)?.media_ids, business.id);
   await attachAudio(c.env, id, (body as Record<string, unknown> | null)?.audio_media_id, business.id);
@@ -437,14 +458,15 @@ app.put('/items/:id', async (c) => {
   if (!existing) throw notFound('Item not found.');
   const body = await c.req.json().catch(() => null);
   const input = await parseItemBody(c, business.id, body);
+  await assertPremiumItemGates(c.env, business.id, input, id);
   const res = await c.env.DB.prepare(
     `UPDATE listings SET name = ?, slug = ?, category_id = ?, item_type_id = ?, description = ?, price = ?, price_type = ?, custom_fields = ?,
-     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?,
+     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?, inspection_json = ?,
      status = CASE WHEN ? THEN 'published' WHEN status = 'published' AND ? = 0 THEN 'draft' ELSE status END,
      published_at = COALESCE(published_at, CASE WHEN ? THEN ? ELSE NULL END)
      WHERE id = ?`
   ).bind(input.name, input.slug, input.category_id, input.item_type_id, input.description, input.price, input.price_type, input.custom_fields,
-    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description,
+    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description, input.inspection_json,
     input.publish ? 1 : 0, input.publish ? 1 : 0, input.publish ? 1 : 0, nowIso(), id).run();
   if (res.meta.changes === 0) throw notFound('Item not found.');
   // replace media set when provided
@@ -689,17 +711,42 @@ app.get('/inquiries', async (c) => {
     `SELECT i.*, l.name AS item_name FROM inquiries i LEFT JOIN listings l ON l.id = i.listing_id
      ${where} ORDER BY i.created_at DESC LIMIT ? OFFSET ?`
   ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
-  return c.json({ ok: true, inquiries: rows, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+  const inquiries = rows.map((r) => {
+    let items: unknown = null;
+    try {
+      items = r.items_json ? JSON.parse(String(r.items_json)) : null;
+    } catch {
+      items = null;
+    }
+    return { ...r, items };
+  });
+  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
 });
 
 app.put('/inquiries/:id', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
   const body = await c.req.json().catch(() => null);
-  const status = body?.status;
-  if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(status))) throw badRequest('Invalid status.');
-  const note = optStr(body?.note, 2000);
-  const res = await c.env.DB.prepare(`UPDATE inquiries SET status = ?, note = COALESCE(?, note) WHERE id = ? AND business_id = ?`).bind(status, note, id, business.id).run();
+  if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
+  const sets: string[] = [];
+  const params: (string | null)[] = [];
+  if (body.status !== undefined) {
+    if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(body.status))) {
+      throw badRequest('Invalid status.');
+    }
+    sets.push('status = ?');
+    params.push(String(body.status));
+    if (String(body.status) !== 'new') {
+      sets.push('first_response_at = COALESCE(first_response_at, ?)');
+      params.push(nowIso());
+    }
+  }
+  if (body.note !== undefined) {
+    sets.push('note = ?');
+    params.push(optStr(body.note, 2000));
+  }
+  if (sets.length === 0) throw badRequest('Nothing to update.');
+  const res = await c.env.DB.prepare(`UPDATE inquiries SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).bind(...params, id, business.id).run();
   if (res.meta.changes === 0) throw notFound('Inquiry not found.');
   return c.json({ ok: true });
 });

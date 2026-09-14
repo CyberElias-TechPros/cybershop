@@ -28,8 +28,11 @@ export default function LoginPage() {
   return (
     <div className="auth-wrap">
       <div className="card auth-card">
+        <p className="cine-kicker" style={{ marginBottom: 10 }}>
+          Vendors &amp; house
+        </p>
         <h1>Welcome back</h1>
-        <p className="sub">Sign in to your vendor or admin account.</p>
+        <p className="sub">Sign in to tend your stall — or the market itself.</p>
         {error && <div className="form-msg error">{error}</div>}
         <form onSubmit={submit}>
           <div className="field">

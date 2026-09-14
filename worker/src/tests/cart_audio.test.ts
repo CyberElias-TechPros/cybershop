@@ -73,17 +73,30 @@ describe('WhatsApp cart (multi-item inquiries, plan §30)', () => {
     const b = await createItem(cookie, 'Beach Bag', 1200000);
     const r = await api('/api/public/inquiries', {
       method: 'POST',
-      body: { business_id: businessId, items: [{ listing_id: a.id, quantity: 1 }, { listing_id: b.id, quantity: 3 }] },
+      body: {
+        business_id: businessId,
+        name: 'Kemi Ade',
+        note: 'Pickup in Ikeja tomorrow',
+        items: [{ listing_id: a.id, quantity: 1 }, { listing_id: b.id, quantity: 3 }],
+      },
     });
     expect(r.status).toBe(200);
+    const msg = messageFrom(r.json.wa_url);
+    expect(msg).toContain("I'm Kemi Ade");
+    expect(msg).toContain('Note: Pickup in Ikeja tomorrow');
     const list = await api('/api/vendor/inquiries', { cookie });
     expect(list.status).toBe(200);
     const lead = list.json.inquiries[0];
     expect(lead.source).toBe('cart');
-    const items = JSON.parse(lead.items_json);
+    expect(lead.buyer_name).toBe('Kemi Ade');
+    const items = Array.isArray(lead.items) ? lead.items : JSON.parse(lead.items_json);
     expect(items.map((i: { listing_id: number; quantity: number }) => [i.listing_id, i.quantity]).sort()).toEqual(
       [[a.id, 1], [b.id, 3]].sort()
     );
+    const notes = await api('/api/vendor/notifications', { cookie });
+    expect(notes.status).toBe(200);
+    const titles = (notes.json.notifications as { title: string }[]).map((n) => n.title);
+    expect(titles.some((t) => t.includes('Kemi Ade'))).toBe(true);
   });
 
   it('rejects another vendor\'s items (IDOR) and empty carts', async () => {

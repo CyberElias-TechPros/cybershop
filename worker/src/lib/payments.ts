@@ -6,6 +6,7 @@ import { notify } from './notify';
 import { verifyPaystackReference } from './paystack';
 import { paystackMock } from '../config';
 import type { SessionUser } from './auth';
+import { markDepositPaid } from './premium';
 
 export interface PaymentRow {
   id: number;
@@ -199,6 +200,9 @@ export async function rejectPayment(
  * In mock mode, verification is the mock callback (development only).
  */
 export async function handlePaystackWebhook(env: Env, reference: string, ip: string | null): Promise<{ ok: boolean; detail: string }> {
+  const depositHit = await markDepositPaid(env, reference, ip);
+  if (depositHit.detail !== 'deposit not found') return depositHit;
+
   const p = (await env.DB.prepare('SELECT * FROM payments WHERE reference = ? OR paystack_reference = ?').bind(reference, reference).first()) as PaymentRow | null;
   if (!p) return { ok: false, detail: 'payment not found' };
   if (p.status === 'approved') return { ok: true, detail: 'already approved (idempotent)' };

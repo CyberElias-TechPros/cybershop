@@ -2,6 +2,7 @@ import type { Env } from '../config';
 import { nowIso, todayStr } from '../lib/util';
 import { notify } from '../lib/notify';
 import { pruneRateLimits } from '../lib/ratelimit';
+import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from '../lib/premium';
 
 /** Hourly maintenance job (Cloudflare Cron Trigger). Idempotent. */
 export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string, number> }> {
@@ -92,7 +93,12 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   }
   summary.rollups = rollups.length;
 
-  // 8. Housekeeping
+  // 8. Premium housekeeping: unboost overflow, drop expired Verified ID, saved-search alerts
+  summary.featured_trimmed = await trimFeaturedOverflow(env);
+  summary.verified_expired = await expireVerifiedBadges(env);
+  summary.saved_search_alerts = await notifySavedSearches(env);
+
+  // 9. Housekeeping
   await pruneRateLimits(env);
   await env.DB.prepare(`DELETE FROM upload_tokens WHERE expires_at < ? AND used_at IS NOT NULL`).bind(Math.floor(Date.now() / 1000) - 86400).run();
   await env.DB.prepare(`DELETE FROM sessions WHERE last_activity < ?`).bind(Math.floor(Date.now() / 1000) - 30 * 86400).run();

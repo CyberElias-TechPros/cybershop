@@ -85,7 +85,7 @@ def check(name, cond):
 def main():
     secret = env("GATEWAY_SECRET")
     _, _, jar = call("POST", "/api/auth/login",
-                     {"email": "ada@test.ng", "password": "Passw0rd123"})
+                     {"email": "cea@test.ng", "password": "Passw0rd123"})
     if not jar:
         sys.exit("login failed — is the demo vendor present?")
     cookie = jar.split("cs_session=")[1].split(";")[0]

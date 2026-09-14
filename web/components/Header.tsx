@@ -2,6 +2,7 @@ import { api } from '@/lib/api';
 import type { HomeOut } from '@/lib/types';
 import SearchForm from './SearchForm';
 import NavLinks from './NavLinks';
+import HeaderCta from './HeaderCta';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export default async function Header() {
   } catch {
     /* Worker unreachable — render header without category links */
   }
+  const extra = categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name }));
   return (
     <header className="site-header">
       <div className="inner">
@@ -23,14 +25,17 @@ export default async function Header() {
         <nav className="main-nav" aria-label="Primary">
           <NavLinks
             links={[
+              { href: '/listings', label: 'Listings' },
+              { href: '/jobs', label: 'Jobs' },
               { href: '/businesses', label: 'Businesses' },
-              ...categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name })),
+              ...extra,
             ]}
           />
         </nav>
         <div className="header-search">
           <SearchForm />
         </div>
+        <HeaderCta extra={extra} />
       </div>
     </header>
   );

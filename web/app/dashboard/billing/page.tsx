@@ -348,8 +348,11 @@ export default function BillingPage() {
                 <div className="price">{a.price_display}</div>
                 <div className="feat">{a.duration_days > 0 ? `Lasts ${a.duration_days} days` : 'Until removed'}</div>
                 <div style={{ marginTop: 'auto' }}>
-                  <button className="btn btn-ghost" style={{ width: '100%', padding: '9px' }} onClick={() => startPayment({ addon_slug: a.slug }, 'bank_transfer')} disabled={busy}>
+                  <button className="btn btn-ghost" style={{ width: '100%', padding: '9px', marginBottom: 6 }} onClick={() => startPayment({ addon_slug: a.slug }, 'bank_transfer')} disabled={busy}>
                     {busy ? '…' : 'Buy — bank transfer'}
+                  </button>
+                  <button className="btn btn-primary" style={{ width: '100%', padding: '9px' }} onClick={() => startPayment({ addon_slug: a.slug }, 'paystack')} disabled={busy}>
+                    Pay with card
                   </button>
                 </div>
               </div>

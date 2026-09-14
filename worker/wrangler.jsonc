@@ -13,14 +13,14 @@
     }
   ],
   "vars": {
-    "APP_URL": "https://cybershop.freegameplay.site",
-    "WEB_ORIGIN": "https://cybershop.freegameplay.site",
+    "APP_URL": "https://shop.freegameplay.site",
+    "WEB_ORIGIN": "https://shop.freegameplay.site",
     "SESSION_SECURE": "1",
     "MEDIA_DRIVER": "d1",
-    "MEDIA_BASE_URL": "https://cybershop.freegameplay.site",
-    "GATEWAY_PUBLIC_URL": "https://cybershop.freegameplay.site",
+    "MEDIA_BASE_URL": "https://shop.freegameplay.site",
+    "GATEWAY_PUBLIC_URL": "https://shop.freegameplay.site",
     "PAYSTACK_MOCK": "1",
-    "PAYSTACK_WEBHOOK_URL": "https://cybershop.freegameplay.site/api/webhooks/paystack"
+    "PAYSTACK_WEBHOOK_URL": "https://shop.freegameplay.site/api/webhooks/paystack"
   },
   "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true }

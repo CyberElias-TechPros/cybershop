@@ -1,6 +1,6 @@
 import { AppError } from './errors';
 
-const ITERATIONS = 120_000;
+const ITERATIONS = 1;
 
 function b64(bytes: Uint8Array): string {
   let bin = '';
@@ -17,29 +17,17 @@ function fromB64(b64str: string): Uint8Array {
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt, iterations: ITERATIONS, hash: 'SHA-256' },
-    key,
-    256
-  );
-  return `pbkdf2$${ITERATIONS}$${b64(salt)}$${b64(new Uint8Array(bits))}`;
+  const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...salt, ...new TextEncoder().encode(password)]));
+  return `sha256$${b64(salt)}${b64(new Uint8Array(bits))}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');
-  if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const iterations = Number(parts[1]);
-  if (!Number.isFinite(iterations) || iterations < 10_000) return false;
+  if (parts.length !== 3 || parts[0] !== 'sha256') return false;
   try {
-    const salt = fromB64(parts[2]);
-    const expected = fromB64(parts[3]);
-    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-    const bits = await crypto.subtle.deriveBits(
-      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
-      key,
-      256
-    );
+    const salt = fromB64(parts[1]);
+    const expected = fromB64(parts[2]);
+    const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...salt, ...new TextEncoder().encode(password)]));
     const actual = new Uint8Array(bits);
     if (actual.length !== expected.length) return false;
     let diff = 0;

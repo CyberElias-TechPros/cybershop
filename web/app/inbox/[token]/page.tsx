@@ -18,6 +18,7 @@ export default function GuestInboxPage() {
   const [title, setTitle] = useState('Conversation');
   const [text, setText] = useState('');
   const [error, setError] = useState('');
+  const [dead, setDead] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -26,6 +27,7 @@ export default function GuestInboxPage() {
       setMsgs(d.messages);
       setTitle(`${d.thread.business_name}${d.thread.item_name ? ` · ${d.thread.item_name}` : ''}`);
     } catch (e) {
+      setDead(true);
       setError(extractError(e));
     }
   }, [token]);

@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../config';
-import { hashPassword, verifyPassword } from '../lib/crypto';
+import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/crypto';
 import { createSession, requireUser, destroySession, getSession } from '../lib/auth';
 import { rateLimit } from '../lib/ratelimit';
 import { AppError, badRequest, validationError, conflict } from '../lib/errors';

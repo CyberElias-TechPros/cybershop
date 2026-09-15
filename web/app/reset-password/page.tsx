@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { capi, extractError } from '@/lib/client-api';
+import AuthShell from '@/components/AuthShell';
 
 function ResetInner() {
   const router = useRouter();
@@ -32,32 +33,43 @@ function ResetInner() {
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="card auth-card">
-        <h1>Choose a new password</h1>
-        <p className="sub">Your reset link is single-use and expires in an hour.</p>
-        {error && <div className="form-msg error">{error}</div>}
-        {done ? (
-          <div className="form-msg success">Password updated — taking you to sign in…</div>
-        ) : (
-          <form onSubmit={submit}>
-            <div className="field">
-              <label htmlFor="password">New password</label>
-              <input id="password" className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" />
-            </div>
-            <div className="field">
-              <label htmlFor="confirm">Confirm new password</label>
-              <input id="confirm" className="input" type="password" required minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" />
-            </div>
-            <div className="form-actions">
-              <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
-                {busy ? 'Updating…' : 'Update password'}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </div>
+    <AuthShell
+      kicker="The WhatsApp-first night market · always open"
+      title={
+        <>
+          A fresh key for <em>your stall.</em>
+        </>
+      }
+      lede="Choose something you'll remember tomorrow — the market reopens the moment you're back in."
+      head={{ kicker: 'Account recovery', title: 'Choose a new password', sub: 'Your reset link is single-use and expires in an hour.' }}
+    >
+      {error && (
+        <div className="form-msg error" style={{ ['--i' as string]: 0.5 }} role="alert">
+          {error}
+        </div>
+      )}
+      {done ? (
+        <div className="form-msg success" style={{ ['--i' as string]: 0.6 }}>
+          Password updated — taking you to sign in…
+        </div>
+      ) : (
+        <form onSubmit={submit}>
+          <div className="field" style={{ ['--i' as string]: 1 }}>
+            <label htmlFor="password">New password</label>
+            <input id="password" className="input" type="password" required minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="new-password" placeholder="••••••••••••" />
+          </div>
+          <div className="field" style={{ ['--i' as string]: 2 }}>
+            <label htmlFor="confirm">Confirm new password</label>
+            <input id="confirm" className="input" type="password" required minLength={8} value={confirm} onChange={(e) => setConfirm(e.target.value)} autoComplete="new-password" placeholder="••••••••••••" />
+          </div>
+          <div className="form-actions" style={{ ['--i' as string]: 3 }}>
+            <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
+              {busy ? 'Updating…' : 'Update password'}
+            </button>
+          </div>
+        </form>
+      )}
+    </AuthShell>
   );
 }
 

@@ -8,5 +8,8 @@ export default defineConfig({
     include: ['src/tests/**/*.test.ts'],
     testTimeout: 60000,
     hookTimeout: 120000,
+    // Integration files share one live worker port + D1 state dir: they must
+    // never run concurrently (a second boot would kill/wipe the first's DB).
+    fileParallelism: false,
   },
 });

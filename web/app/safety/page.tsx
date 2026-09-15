@@ -2,6 +2,9 @@ import type { Metadata } from 'next';
 import SafetyTips from '@/components/SafetyTips';
 
 export const metadata: Metadata = {
+  alternates: { canonical: '/safety' },
+  openGraph: { url: '/safety' },
+
   title: 'How to buy and sell safely',
   description: 'CyberShop is a classifieds night market. Talk on WhatsApp. Inspect. Pay the vendor — never us.',
 };

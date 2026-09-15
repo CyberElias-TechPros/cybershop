@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import type { HomeOut } from '@/lib/types';
@@ -6,6 +7,11 @@ import { CountUp, HeroWords, Reveal } from '@/components/Motion';
 import { Act, BusinessReel, CategoryBento, ChatStage } from '@/components/Cinema';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = {
+  alternates: { canonical: '/' },
+  openGraph: { url: '/' },
+};
 
 const EMPTY: HomeOut = {
   platform: { name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng' },

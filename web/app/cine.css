@@ -1595,3 +1595,404 @@ html.menu-open {
     filter: none !important;
   }
 }
+
+/* ==================================================================
+   Wave 7 — Growth & support surfaces
+   Storefront tools, receipts, admin toolbar/tables, legal prose,
+   contact, footer mail, templates, hero quick-links, exports.
+   ================================================================== */
+
+/* ---------- hero quick category links ---------- */
+.hero-quick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 12px;
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+  animation: auth-rise 0.8s var(--ease) 0.5s backwards;
+}
+.hero-quick-link {
+  color: var(--ink);
+  text-decoration: none;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass);
+  transition: border-color 0.2s var(--ease), background 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.hero-quick-link:hover {
+  border-color: rgba(44, 229, 142, 0.5);
+  background: rgba(44, 229, 142, 0.08);
+  transform: translateY(-1px);
+}
+
+/* ---------- storefront growth tools ---------- */
+.store-tools {
+  margin-top: 26px;
+  display: flex;
+  gap: 22px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.store-tools-copy h2 {
+  margin: 0 0 6px;
+  font-family: var(--font-display);
+  font-weight: 540;
+  font-size: 1.25rem;
+}
+.store-tools-copy p {
+  margin: 0 0 14px;
+  color: var(--ink-dim);
+  font-size: 0.92rem;
+  max-width: 52ch;
+}
+.store-tools-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.store-tools-qr {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: #fff;
+  text-decoration: none;
+  transition: transform 0.3s var(--ease), box-shadow 0.3s var(--ease);
+}
+.store-tools-qr:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-1);
+}
+.store-tools-qr img {
+  display: block;
+}
+.store-tools-qr span {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #060b09;
+}
+
+/* ---------- receipt ---------- */
+.receipt-wrap {
+  max-width: 620px;
+  margin: 0 auto;
+  padding: clamp(28px, 5vw, 56px) 20px 80px;
+}
+.receipt-card h1 {
+  font-family: var(--font-display);
+  font-weight: 540;
+  margin: 8px 0 2px;
+}
+.receipt-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.receipt-sub {
+  color: var(--ink-faint);
+  margin: 0 0 20px;
+  font-size: 0.92rem;
+}
+.receipt-rows {
+  margin: 0;
+  display: grid;
+  gap: 12px;
+}
+.receipt-rows > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.receipt-rows dt {
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+}
+.receipt-rows dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+.receipt-total {
+  border-bottom: none !important;
+  border-top: 1px solid var(--line-2);
+  padding-top: 14px !important;
+}
+.receipt-total dd {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  color: var(--em-soft);
+}
+.receipt-note {
+  margin-top: 18px;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+.receipt-actions {
+  margin-top: 18px;
+}
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+
+/* ---------- admin toolbar + tables ---------- */
+.admin-toolbar {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+@media (max-width: 560px) {
+  .admin-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.data-table th {
+  text-align: left;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-2);
+}
+.data-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+.row-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mini-link {
+  font-size: 0.84rem;
+  color: var(--em-soft);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(111, 240, 176, 0.4);
+}
+.mini-link:hover {
+  color: var(--em);
+}
+.dash-sub {
+  color: var(--ink-faint);
+  font-size: 0.86rem;
+  align-self: center;
+}
+
+/* ---------- billing exports ---------- */
+.billing-exports {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -6px 0 12px;
+}
+.billing-exports .btn {
+  font-size: 0.85rem;
+  padding: 8px 14px;
+}
+
+/* ---------- legal / contact prose ---------- */
+.prose-page {
+  padding-top: clamp(36px, 6vw, 64px);
+}
+.prose {
+  max-width: 68ch;
+}
+.prose h1 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(1.8rem, 3cqi + 0.8rem, 2.6rem);
+  margin-bottom: 6px;
+}
+.prose h1 em {
+  font-style: italic;
+  background: linear-gradient(94deg, var(--gold-soft), var(--em));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.prose h2 {
+  font-family: var(--font-display);
+  font-weight: 540;
+  font-size: 1.2rem;
+  margin: 30px 0 8px;
+}
+.prose p,
+.prose li {
+  color: var(--ink-dim);
+  line-height: 1.75;
+}
+.prose strong {
+  color: var(--ink);
+}
+.prose a {
+  color: var(--em-soft);
+}
+.prose-updated {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  margin-top: 0;
+}
+.prose-lede {
+  font-size: 1.02rem;
+  color: var(--ink) !important;
+}
+.prose ul {
+  padding-left: 20px;
+}
+
+/* contact */
+.contact-card {
+  margin: 22px 0;
+  padding: 24px;
+}
+.contact-label {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.contact-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.contact-address {
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid rgba(44, 229, 142, 0.4);
+}
+.contact-address:hover {
+  color: var(--em-soft);
+}
+.contact-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.contact-hint {
+  margin: 14px 0 0;
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+}
+.contact-alt h2 {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  margin: 26px 0 10px;
+}
+
+/* footer mail button */
+.footer-mail {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--ink-dim);
+  cursor: pointer;
+  text-align: left;
+  transition: color 0.2s var(--ease);
+}
+.footer-mail:hover {
+  color: var(--em-soft);
+}
+
+/* ---------- WhatsApp templates admin ---------- */
+.template-vars {
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+}
+.template-vars code {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 2px 4px 2px 0;
+  border-radius: 6px;
+  background: var(--glass-2);
+  border: 1px solid var(--line);
+  font-size: 0.8rem;
+  color: var(--em-soft);
+}
+.template-list {
+  display: grid;
+  gap: 16px;
+}
+.template-card {
+  padding: 20px;
+}
+.template-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.template-type {
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  margin-left: 8px;
+}
+.template-toggle {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  font-size: 0.86rem;
+  color: var(--ink-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.template-toggle input {
+  accent-color: var(--em);
+}
+.template-body {
+  font-family: ui-monospace, monospace;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+/* ---------- a11y helper ---------- */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .store-tools-qr,
+  .hero-quick-link {
+    transition: none;
+  }
+  .hero-quick {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

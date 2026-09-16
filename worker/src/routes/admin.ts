@@ -10,6 +10,9 @@ import { clientIp } from '../lib/ip';
 import { approvePayment, rejectPayment } from '../lib/payments';
 import { formatNaira } from '../lib/money';
 import { getMedia, mediaUrl, softDeleteMedia, storageUsedBytes, blobToBuffer } from '../lib/media';
+import { randomToken } from '../lib/util';
+import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
+import { createSession } from '../lib/auth';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -147,6 +150,114 @@ app.post('/users/:id/activate', async (c) => {
   const res = await c.env.DB.prepare(`UPDATE users SET status = 'active' WHERE id = ? AND role != 'admin'`).bind(id).run();
   if (res.meta.changes === 0) throw notFound('User not found.');
   await audit(c.env, { actor: admin, action: 'user.activate', entityType: 'user', entityId: id, ip: ip(c) });
+  return c.json({ ok: true });
+});
+
+/** User directory search (support tool): by email / name / role. */
+app.get('/users', async (c) => {
+  await requireAdmin(c.env, c);
+  const q = c.req.query('q')?.trim().slice(0, 80) || '';
+  const role = c.req.query('role') || 'all';
+  const page = clampInt(c.req.query('page'), 1, 500, 1);
+  const perPage = 30;
+  let where = 'WHERE deleted_at IS NULL';
+  const params: (string | number)[] = [];
+  if (q) { where += ' AND (email LIKE ? OR name LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (['admin', 'vendor', 'buyer'].includes(role)) { where += ' AND role = ?'; params.push(role); }
+  const total = ((await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users ${where}`).bind(...params).first()) as { n: number }).n;
+  const rows = (await c.env.DB.prepare(
+    `SELECT id, role, name, email, phone, status, created_at, last_login_at FROM users ${where}
+     ORDER BY id DESC LIMIT ? OFFSET ?`
+  ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, users: rows, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+});
+
+/**
+ * Audited support impersonation: sign the admin in as the user (never as
+ * another admin). The session payload records the impersonator so
+ * /auth/impersonate/exit can restore the admin session.
+ */
+app.post('/users/:id/impersonate', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const target = (await c.env.DB.prepare('SELECT id, role, name, email, status FROM users WHERE id = ? AND deleted_at IS NULL').bind(id).first()) as
+    | { id: number; role: string; name: string; email: string; status: string }
+    | null;
+  if (!target) throw notFound('User not found.');
+  if (target.role === 'admin') throw forbidden('Impersonating another admin is not allowed.');
+  if (target.status !== 'active') throw conflict('Cannot sign in as a suspended user.');
+  let businessId: number | null = null;
+  if (target.role === 'vendor') {
+    businessId = ((await c.env.DB.prepare('SELECT id FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL').bind(target.id).first()) as { id: number } | null)?.id ?? null;
+  }
+  await createSession(c.env, c, { id: target.id, role: target.role as 'vendor' | 'buyer', name: target.name, email: target.email, business_id: businessId, imp: admin.id });
+  await audit(c.env, { actor: admin, action: 'user.impersonate', entityType: 'user', entityId: target.id, ip: ip(c) });
+  return c.json({ ok: true, user: { id: target.id, role: target.role, name: target.name } });
+});
+
+/** Generate (and email) a password-reset link for a user — the support desk's "resend reset". */
+app.post('/users/:id/reset-link', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const user = (await c.env.DB.prepare('SELECT id, email, name, status FROM users WHERE id = ? AND deleted_at IS NULL').bind(id).first()) as
+    | { id: number; email: string; name: string; status: string }
+    | null;
+  if (!user) throw notFound('User not found.');
+  const token = randomToken(24);
+  await c.env.DB.prepare('UPDATE users SET password_reset_token = ?, password_reset_expires = ? WHERE id = ?')
+    .bind(token, String(Math.floor(Date.now() / 1000) + 3600), user.id).run();
+  const resetUrl = `${c.env.APP_URL}/reset-password?token=${token}`;
+  await audit(c.env, { actor: admin, action: 'user.reset_link', entityType: 'user', entityId: user.id, ip: ip(c) });
+  if (mailConfigured(c.env)) {
+    await sendEmail(c.env, {
+      to: user.email,
+      subject: 'Reset your CyberShop password',
+      text: `Hi ${user.name},
+
+Support issued you a password reset link (valid 1 hour, single use):
+${resetUrl}
+
+— CyberShop`,
+      html: mailHtml('Reset your password', `Hi ${user.name.replace(/</g, '&lt;')} — support issued you a single-use reset link, valid for one hour.`, { label: 'Choose a new password', url: resetUrl }),
+    });
+    return c.json({ ok: true, sent: true, message: `Reset link emailed to ${user.email}.` });
+  }
+  // no mail provider: return the link so an operator can hand it over
+  return c.json({ ok: true, sent: false, reset_url: resetUrl, message: 'No mail provider configured — copy this link to the user.' });
+});
+
+// ---------------------------------------------------------------- WhatsApp templates
+
+app.get('/templates', async (c) => {
+  await requireAdmin(c.env, c);
+  const rows = (await c.env.DB.prepare(
+    `SELECT mt.id, mt.business_id, mt.item_type_id, mt.name AS label, mt.body, mt.is_active, t.name AS type_name
+     FROM message_templates mt LEFT JOIN item_types t ON t.id = mt.item_type_id
+     WHERE mt.business_id IS NULL ORDER BY mt.item_type_id IS NULL, mt.item_type_id`
+  ).all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, templates: rows });
+});
+
+app.put('/templates/:id', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const tpl = (await c.env.DB.prepare('SELECT id FROM message_templates WHERE id = ? AND business_id IS NULL').bind(id).first()) as { id: number } | null;
+  if (!tpl) throw notFound('Template not found.');
+  const sets: string[] = [];
+  const params: (string | number)[] = [];
+  if (body?.body !== undefined) {
+    const text = reqStr(body.body, { min: 5, max: 1500 });
+    sets.push('body = ?');
+    params.push(text);
+  }
+  if (body?.is_active !== undefined) {
+    sets.push('is_active = ?');
+    params.push(body.is_active ? 1 : 0);
+  }
+  if (!sets.length) throw badRequest('Nothing to update.');
+  await c.env.DB.prepare(`UPDATE message_templates SET ${sets.join(', ')} WHERE id = ?`).bind(...params, id).run();
+  await audit(c.env, { actor: admin, action: 'template.update', entityType: 'template', entityId: id, ip: ip(c) });
   return c.json({ ok: true });
 });
 

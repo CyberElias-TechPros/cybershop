@@ -16,6 +16,11 @@ export interface Env {
   PAYSTACK_WEBHOOK_URL: string;
   SEED_ADMIN_EMAIL?: string;
   SEED_ADMIN_PASSWORD?: string;
+  // --- transactional email (optional; mail is a logged no-op when unset) ---
+  RESEND_API_KEY?: string;
+  MAIL_FROM?: string;
+  MAIL_FROM_NAME?: string;
+  MAIL_ENDPOINT?: string;
 }
 
 export const SESSION_COOKIE = 'cs_session';

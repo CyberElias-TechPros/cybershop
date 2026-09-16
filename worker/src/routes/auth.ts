@@ -3,7 +3,7 @@ import type { Env } from '../config';
 import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/crypto';
 import { createSession, requireUser, destroySession, getSession } from '../lib/auth';
 import { rateLimit } from '../lib/ratelimit';
-import { AppError, badRequest, validationError, conflict } from '../lib/errors';
+import { AppError, badRequest, validationError, conflict, forbidden } from '../lib/errors';
 import { slugify, assertSlugAvailable, nowIso, randomToken } from '../lib/util';
 import { reqStr, reqEmail, reqPassword, optStr, isEmail, reqPhone } from '../lib/validate';
 import { activateFreePlan } from '../lib/payments';
@@ -98,6 +98,20 @@ app.post('/logout', async (c) => {
   return c.json({ ok: true });
 });
 
+/** Exit support impersonation: restore the impersonating admin's session. */
+app.post('/impersonate/exit', async (c) => {
+  const session = await getSession(c.env, c);
+  if (!session || session.imp === undefined) throw forbidden('Not an impersonated session.');
+  const admin = (await c.env.DB.prepare(`SELECT id, role, name, email FROM users WHERE id = ? AND role = 'admin' AND deleted_at IS NULL`).bind(session.imp).first()) as
+    | { id: number; role: 'admin'; name: string; email: string }
+    | null;
+  if (!admin) throw forbidden('Impersonating admin no longer exists.');
+  await c.env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(session.id).run();
+  destroySession(c.env, c);
+  await createSession(c.env, c, { id: admin.id, role: 'admin', name: admin.name, email: admin.email, business_id: null });
+  return c.json({ ok: true });
+});
+
 app.get('/me', async (c) => {
   const user = await requireUser(c.env, c);
   let business: Record<string, unknown> | null = null;
@@ -128,9 +142,25 @@ app.post('/forgot', async (c) => {
     const expires = Math.floor(Date.now() / 1000) + 3600;
     await c.env.DB.prepare(`UPDATE users SET password_reset_token = ?, password_reset_expires = ? WHERE id = ?`)
       .bind(token, String(expires), user.id).run();
+    const resetUrl = `${c.env.APP_URL}/reset-password?token=${token}`;
+    const { mailConfigured, sendEmail, mailHtml } = await import('../lib/mail');
+    if (mailConfigured(c.env)) {
+      const row = (await c.env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(user.id).first()) as { name: string } | null;
+      await sendEmail(c.env, {
+        to: email,
+        subject: 'Reset your CyberShop password',
+        text: `Hi ${row?.name || 'there'},\n\nReset your password with this link (valid for 1 hour, single use):\n${resetUrl}\n\nIf you didn't request this, ignore this email — your password stays as it is.\n\n— CyberShop`,
+        html: mailHtml(
+          'Reset your password',
+          `Hi ${row?.name ? row.name.replace(/</g, '&lt;') : 'there'} — here is your single-use reset link. It expires in one hour.`,
+          { label: 'Choose a new password', url: resetUrl }
+        ),
+      });
+      return c.json(generic);
+    }
     if (c.env.SESSION_SECURE === '0') {
-      // dev mode: no SMTP configured — surface the link so the flow is testable
-      return c.json({ ...generic, dev_mode: true, reset_url: `${c.env.APP_URL}/reset-password?token=${token}` });
+      // dev mode: no mail provider configured — surface the link so the flow is testable
+      return c.json({ ...generic, dev_mode: true, reset_url: resetUrl });
     }
   }
   return c.json(generic);

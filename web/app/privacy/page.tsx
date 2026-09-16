@@ -1,0 +1,111 @@
+import type { Metadata } from 'next';
+import Link from 'next/link';
+
+export const metadata: Metadata = {
+  title: 'Privacy Policy',
+  description: 'What CyberShop collects, why, and what we never do with it.',
+  alternates: { canonical: '/privacy' },
+};
+
+/**
+ * Plain-language privacy policy, matching what the platform actually does
+ * (NDPR-friendly structure: purpose limitation, minimisation, rights).
+ */
+export default function PrivacyPage() {
+  return (
+    <section className="section prose-page">
+      <div className="container prose">
+        <nav className="crumb" aria-label="Breadcrumb">
+          <Link href="/">Home</Link>
+          <span aria-hidden>/</span>
+          <span>Privacy</span>
+        </nav>
+        <h1>
+          Privacy <em>Policy</em>
+        </h1>
+        <p className="prose-updated">Last updated: September 2026</p>
+
+        <h2>The short version</h2>
+        <p>
+          We collect the minimum needed to run the market: your account details, your catalogue,
+          and coarse analytics. <strong>We never sell your data.</strong> We never take or hold
+          buyer payments. Buyer phone numbers belong to buyers — they only reach a vendor when the
+          buyer chooses to message that vendor on WhatsApp.
+        </p>
+
+        <h2>What we collect</h2>
+        <ul>
+          <li>
+            <strong>Accounts:</strong> name, email, phone (vendors), password (stored only as a
+            salted one-way hash).
+          </li>
+          <li>
+            <strong>Vendors:</strong> business profile, catalogue, WhatsApp numbers you publish,
+            and payment records for your platform subscription.
+          </li>
+          <li>
+            <strong>Buyers:</strong> nothing by default. If you create an account: your name,
+            email, and saved items. Guests browse with zero data beyond an anonymous session cookie.
+          </li>
+          <li>
+            <strong>Analytics:</strong> page views, WhatsApp-click counts, and an IP address that
+            is stored only as a salted one-way hash — we cannot reverse it to your IP.
+          </li>
+        </ul>
+
+        <h2>What we never do</h2>
+        <ul>
+          <li>We never sell or rent personal data.</li>
+          <li>We never charge buyers or touch buyer↔vendor money.</li>
+          <li>We never publish your private information (password hashes, payment proofs, your
+            non-public WhatsApp numbers).</li>
+        </ul>
+
+        <h2>Who processes data with us</h2>
+        <ul>
+          <li>
+            <strong>Cloudflare</strong> — application database and edge network.
+          </li>
+          <li>
+            <strong>Vercel</strong> — the website itself.
+          </li>
+          <li>
+            <strong>Paystack</strong> — only for vendor subscription payments to CyberShop (when
+            you pay by card).
+          </li>
+          <li>
+            <strong>Email provider</strong> — only to deliver transactional email you need
+            (password resets, payment receipts, renewal reminders).
+          </li>
+        </ul>
+
+        <h2>Your rights (NDPR-aligned)</h2>
+        <p>
+          You can request a copy of your data, ask us to correct it, or ask us to delete your
+          account and personal data. Vendors: note that deleting your account also unpublishes
+          your storefront and catalogue. Requests:{' '}
+          <Link href="/contact">contact us</Link> — we respond within 30 days.
+        </p>
+
+        <h2>Cookies</h2>
+        <p>
+          One session cookie (only when you sign in) and one anonymous visitor cookie used for
+          counting views and clicks. No advertising cookies, no third-party trackers.
+        </p>
+
+        <h2>Retention</h2>
+        <p>
+          Account and payment records are kept as long as your account is active, plus the period
+          Nigerian bookkeeping rules require for financial records. Analytics events are kept in
+          aggregate form.
+        </p>
+
+        <h2>Changes</h2>
+        <p>
+          If this policy changes materially, we announce it on the platform and email account
+          holders where appropriate.
+        </p>
+      </div>
+    </section>
+  );
+}

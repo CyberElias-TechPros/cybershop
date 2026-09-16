@@ -34,6 +34,7 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
         url: `/business/${business.slug}`,
         images: img ? [{ url: absUrl(img) }] : undefined,
       },
+      twitter: { card: 'summary_large_image', images: img ? [absUrl(img)] : undefined },
     };
   } catch {
     return { title: 'Business not found' };

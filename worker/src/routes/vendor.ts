@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../config';
 import { requireVendor } from '../lib/auth';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
@@ -417,6 +417,37 @@ app.post('/items', async (c) => {
   return c.json({ ok: true, id, slug, status });
 });
 
+/** Catalogue CSV export (Excel-friendly UTF-8 BOM). */
+app.get('/items/export', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const rows = (await c.env.DB.prepare(
+    `SELECT l.id, l.name, l.slug, t.name AS type, l.price, l.currency, l.status, l.created_at,
+            (SELECT COUNT(*) FROM analytics_events ae WHERE ae.listing_id = l.id AND ae.event_type = 'item_view') AS views,
+            (SELECT COUNT(*) FROM analytics_events ae WHERE ae.listing_id = l.id AND ae.event_type = 'wa_click') AS wa_clicks
+     FROM listings l JOIN item_types t ON t.id = l.item_type_id
+     WHERE l.business_id = ? AND l.deleted_at IS NULL ORDER BY l.id`
+  ).bind(business.id).all()).results as Record<string, unknown>[];
+  return csvResponse(c, [
+    ['id', 'name', 'slug', 'type', 'price_ngn', 'currency', 'status', 'views', 'whatsapp_clicks', 'created_at'],
+    ...rows.map((r) => [String(r.id), String(r.name), String(r.slug), String(r.type), String(Number(r.price ?? 0) / 100), String(r.currency ?? 'NGN'), String(r.status), String(r.views ?? 0), String(r.wa_clicks ?? 0), String(r.created_at ?? '')]),
+  ], `cybershop-${business.slug}-catalogue.csv`);
+});
+
+/** Leads CSV export. */
+app.get('/inquiries/export', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const rows = (await c.env.DB.prepare(
+    `SELECT i.id, i.created_at, COALESCE(l.name, '') AS item, COALESCE(i.buyer_name, '') AS buyer,
+            COALESCE(i.buyer_phone, '') AS phone, i.source, COALESCE(i.status, 'new') AS status
+     FROM inquiries i LEFT JOIN listings l ON l.id = i.listing_id
+     WHERE i.business_id = ? ORDER BY i.id DESC LIMIT 5000`
+  ).bind(business.id).all()).results as Record<string, unknown>[];
+  return csvResponse(c, [
+    ['id', 'when', 'item', 'buyer', 'phone', 'source', 'status'],
+    ...rows.map((r) => [String(r.id), String(r.created_at ?? ''), String(r.item), String(r.buyer), String(r.phone), String(r.source ?? ''), String(r.status)]),
+  ], `cybershop-${business.slug}-leads.csv`);
+});
+
 app.get('/items/:id', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
@@ -633,6 +664,19 @@ app.get('/plans', async (c) => {
   });
 });
 
+/** Single payment (ownership-checked) — powers the printable receipt. */
+app.get('/payments/:id', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const p = (await c.env.DB.prepare(
+    `SELECT p.*, pl.name AS plan_name, a.name AS addon_name FROM payments p
+     LEFT JOIN plans pl ON pl.id = p.plan_id LEFT JOIN addons a ON a.id = p.addon_id
+     WHERE p.id = ? AND p.business_id = ?`
+  ).bind(id, business.id).first()) as Record<string, unknown> | null;
+  if (!p) throw notFound('Payment not found.');
+  return c.json({ ok: true, payment: { ...p, amount_display: formatNaira(Number(p.amount)) } });
+});
+
 app.post('/payment-intent', async (c) => {
   const { user, business } = await requireVendor(c.env, c);
   assertBusinessWritable(business.status);
@@ -809,6 +853,21 @@ app.post('/notifications/read', async (c) => {
 
 function safeJson(v: string | null): unknown {
   try { return v ? JSON.parse(v) : null; } catch { return null; }
+}
+
+function csvResponse(c: Context, rows: (string | number)[][], filename: string): Response {
+  const esc = (v: string | number) => {
+    const s = String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const body = '\ufeff' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
+  return new Response(body, {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${filename}"`,
+      'cache-control': 'no-store',
+    },
+  });
 }
 
 export default app;

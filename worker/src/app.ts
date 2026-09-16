@@ -12,6 +12,7 @@ import adminPremiumRoutes from './routes/admin-premium';
 import webhookRoutes from './routes/webhook';
 import mediaFileRoutes from './routes/mediafile';
 import sitemapRoutes from './routes/sitemap';
+import qrRoutes from './routes/qr';
 import { runHourlyJobs } from './jobs/cron';
 
 /**
@@ -22,7 +23,7 @@ import { runHourlyJobs } from './jobs/cron';
  *  - /healthz
  * Everything else under /api/* is called by the Vercel proxy with x-internal-secret.
  */
-const PUBLIC_PREFIXES = ['/api/media/file/', '/api/sitemap.xml', '/api/webhooks/', '/healthz'];
+const PUBLIC_PREFIXES = ['/api/media/file/', '/api/sitemap.xml', '/api/webhooks/', '/api/qr.svg', '/healthz'];
 
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -55,6 +56,7 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/admin', adminPremiumRoutes);
   app.route('/api/webhooks', webhookRoutes);
   app.route('/api/media', mediaFileRoutes);
+  app.route('/api', qrRoutes);
   app.route('/api/sitemap.xml', sitemapRoutes);
 
   // cron trigger entrypoint (wrangler.jsonc crons)

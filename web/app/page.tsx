@@ -51,6 +51,17 @@ export default async function HomePage() {
           </p>
           <div className="hero-search">
             <SearchForm big />
+            {cats.length > 0 && (
+              <div className="hero-quick" aria-label="Popular categories">
+                <span>Popular:</span>
+                {cats.slice(0, 4).map((c) => (
+                  <a key={c.slug} className="hero-quick-link" href={`/categories/${c.slug}`}>
+                    {c.icon ? `${c.icon} ` : ''}
+                    {c.name}
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
           <div className="hero-stats">
             <div className="hero-stat">

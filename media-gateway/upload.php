@@ -119,7 +119,9 @@ function detectMime(string $bytes): ?string {
     return null;
 }
 
-/** Best-effort EXIF/metadata stripping by decoding + re-encoding via GD. */
+/** Best-effort EXIF/metadata stripping + downscale: vendor phone photos
+ *  arrive at 4–8 MB; buyers are on mobile data. Max dimension 1600 px,
+ *  re-encoded (quality 85) — never upscales, passes through on any failure. */
 function stripExif(string $bytes, string $mime): string {
     if (!function_exists('imagecreatetruecolor')) return $bytes; // GD unavailable → keep original
     try {
@@ -130,6 +132,25 @@ function stripExif(string $bytes, string $mime): string {
             default => false,
         };
         if ($img === false || $img === null) return $bytes;
+
+        // downscale to sane web dimensions (largest edge ≤ 1600)
+        $w = imagesx($img);
+        $h = imagesy($img);
+        $max = 1600;
+        if ($w > $max || $h > $max) {
+            $scale = $max / max($w, $h);
+            $nw = max(1, (int) round($w * $scale));
+            $nh = max(1, (int) round($h * $scale));
+            $resized = imagecreatetruecolor($nw, $nh);
+            if ($mime === 'image/png') {
+                imagealphablending($resized, false);
+                imagesavealpha($resized, true);
+            }
+            imagecopyresampled($resized, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
+            imagedestroy($img);
+            $img = $resized;
+        }
+
         ob_start();
         $ok = match ($mime) {
             'image/jpeg' => imagejpeg($img, null, 85),

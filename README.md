@@ -132,6 +132,12 @@ checklist. Free-tier headroom and the scaling path are in
   (Plan §30 — still a lead, never a checkout)**, **vendor voice notes**
   (record → waveform player on item pages), vendor dashboard, full admin
   console, audit logs, scheduled jobs (expiry/grace, orphan cleanup, rollups).
+- **Support & growth pass:** transactional email (Resend/MailChannels — resets,
+  receipts, renewal reminders, lead alerts), printable payment receipts, QR
+  codes + WhatsApp-Status sharing for storefronts, catalogue/leads CSV export,
+  admin user directory with audited sign-in-as + resend-reset, admin-editable
+  WhatsApp templates (live, no deploy), Terms/Privacy/Contact pages, default
+  OG share image, PWA install support, gateway image downscaling (1600px).
 - **Hardening pass (this branch):** fixed the password hash/verify mismatch that
   made **every login fail** (now PBKDF2-SHA256, 100k iterations, with
   transparent upgrade of legacy hashes at login); market feed pages

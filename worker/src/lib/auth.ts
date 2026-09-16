@@ -11,6 +11,8 @@ export interface SessionUser {
   name: string;
   email: string;
   business_id: number | null;
+  /** Set when an admin is impersonating this session (support tool). */
+  imp?: number;
 }
 
 interface SessionRow {

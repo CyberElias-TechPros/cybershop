@@ -107,6 +107,25 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
   };
 }
 
+/** Lightweight platform settings (footer/legal/contact surfaces). */
+app.get('/site', async (c) => {
+  const rows = (await c.env.DB.prepare('SELECT skey, svalue FROM platform_settings').all()).results as { skey: string; svalue: string }[];
+  const get = (k: string): string | null => {
+    const r = rows.find((x) => x.skey === k);
+    if (!r || !r.svalue) return null;
+    try { return (JSON.parse(r.svalue) as { value?: string }).value ?? r.svalue; } catch { return r.svalue; }
+  };
+  return c.json({
+    ok: true,
+    site: {
+      name: get('platform_name') || 'CyberShop',
+      tagline: get('platform_tagline') || 'Find a business. Talk to it on WhatsApp.',
+      support_email: get('support_email') || 'support@cybershop.ng',
+      whatsapp_support: get('support_whatsapp'),
+    },
+  });
+});
+
 app.get('/home', async (c) => {
   const env = c.env;
   const settings = await platformSettings(env);

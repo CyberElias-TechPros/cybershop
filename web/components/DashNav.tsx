@@ -25,6 +25,7 @@ const VENDOR_LINKS = [
 const ADMIN_LINKS = [
   { href: '/admin', icon: '📊', label: 'Overview' },
   { href: '/admin/vendors', icon: '🏢', label: 'Vendors' },
+  { href: '/admin/users', icon: '👥', label: 'Users' },
   { href: '/admin/payments', icon: '💳', label: 'Payments' },
   { href: '/admin/categories', icon: '🗂️', label: 'Categories' },
   { href: '/admin/plans', icon: '🧩', label: 'Plans & Add-ons' },
@@ -32,6 +33,7 @@ const ADMIN_LINKS = [
   { href: '/admin/reports', icon: '🚩', label: 'Reports' },
   { href: '/admin/verifications', icon: '🪪', label: 'Verified ID' },
   { href: '/admin/audit', icon: '📜', label: 'Audit log' },
+  { href: '/admin/templates', icon: '✉️', label: 'WA templates' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings' },
 ];
 

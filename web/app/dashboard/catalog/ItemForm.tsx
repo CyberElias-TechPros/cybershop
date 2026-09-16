@@ -631,7 +631,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
           {busy ? 'Saving…' : 'Save as draft'}
         </button>
         <button className="btn btn-primary" onClick={() => save(true)} disabled={busy}>
-          {busy ? 'Saving…' : 'Publish'}
+          {busy ? 'Publishing…' : 'Publish'}
         </button>
       </div>
     </div>

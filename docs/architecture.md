@@ -301,7 +301,7 @@ Key invariants enforced **server-side, on every mutation**:
 | Browser → Vercel | session cookie (`cs_session`, HttpOnly, SameSite=Lax, Secure in prod); all mutations via same-origin `/api/*` |
 | Vercel → Worker | `x-internal-secret` shared key; **only** `/api/media/file/*`, `/api/sitemap.xml`, `/api/webhooks/*`, `/healthz` are open to browsers |
 | Worker tenancy | `requireVendor` / `requireAdmin` guards; ownership checked against session; IDOR-tested in the suite |
-| Auth | Argon2id password hashing; per-IP salted rate limits (register 3/h, login fail 5/15min, forgot 3/h, reset 5/h, inquiry 5/min); password reset tokens (single-use, 1h) |
+| Auth | PBKDF2-SHA256 password hashing (100k iterations, WebCrypto-native, versioned storage format with transparent upgrade of legacy hashes at login); per-IP salted rate limits (register 3/h, login fail 5/15min, forgot 3/h, reset 5/h, inquiry 5/min); password reset tokens (single-use, 1h) |
 | Uploads | HMAC-SHA256 signed 10-min single-use tokens; magic-byte MIME (never client `type`); extension/MIME match; UUID keys; EXIF strip; private proofs never public |
 | Payments | bank proof = claim until admin approval; Paystack webhook body never trusted — activation only after server-to-server `transaction/verify` with the secret key; mock mode env-gated |
 | Data | soft deletes; salted IP hashes (no raw IPs); audit log for all admin mutations + payment transitions (system actors included via LEFT JOIN) |

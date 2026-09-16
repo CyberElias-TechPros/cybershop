@@ -1,4 +1,3 @@
-import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
@@ -9,10 +8,22 @@ import { Reveal } from '@/components/Motion';
 import SaveSearch from '@/components/SaveSearch';
 
 export const dynamic = 'force-dynamic';
-export const metadata: Metadata = {
-  title: 'Listings',
-  description: 'Browse ads from Nigerian businesses. Talk on WhatsApp — never pay CyberShop.',
-};
+export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+  const q = (sp.q ?? '').trim();
+  const city = (sp.city ?? '').trim();
+  const parts = [q ? `“${q}”` : null, city || null].filter(Boolean).join(' in ');
+  // Filtered combinations canonicalise to the clean feed; unfiltered pagination keeps ?page=N.
+  const filtered = Boolean(q || city || sp.category || sp.min || sp.max);
+  const canonical = filtered ? '/listings' : page > 1 ? `/listings?page=${page}` : '/listings';
+  return {
+    title: parts ? `${parts} — listings` : page > 1 ? `Listings — page ${page}` : 'Listings',
+    description: 'Browse ads from real Nigerian businesses. Pick one, talk on WhatsApp, inspect, pay the seller directly — CyberShop never takes your money.',
+    alternates: { canonical },
+    openGraph: { title: 'Listings', url: canonical },
+  };
+}
 
 interface SP {
   q?: string;
@@ -25,11 +36,9 @@ interface SP {
 }
 
 export default function ListingsPage({ searchParams }: { searchParams: Promise<SP> }) {
-  return (
-    <Suspense>
-      <Inner searchParams={searchParams} />
-    </Suspense>
-  );
+  // No Suspense shell: this is a core SEO surface — render the full feed
+  // inline so non-JS crawlers (WhatsApp, social unfurlers) see the market.
+  return <Inner searchParams={searchParams} />;
 }
 
 async function Inner({ searchParams }: { searchParams: Promise<SP> }) {

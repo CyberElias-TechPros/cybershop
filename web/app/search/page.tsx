@@ -1,4 +1,3 @@
-import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
@@ -15,11 +14,8 @@ interface SP {
 }
 
 export default function SearchPage({ searchParams }: { searchParams: Promise<SP> }) {
-  return (
-    <Suspense>
-      <Inner searchParams={searchParams} />
-    </Suspense>
-  );
+  // Inline SSR — results must be visible to non-JS crawlers.
+  return <Inner searchParams={searchParams} />;
 }
 
 async function Inner({ searchParams }: { searchParams: Promise<SP> }) {

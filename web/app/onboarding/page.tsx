@@ -142,8 +142,8 @@ export default function OnboardingPage() {
 
   if (!me) {
     return loadError ? (
-      <div className="auth-wrap">
-        <div className="card auth-card" style={{ textAlign: 'center' }}>
+      <div className="onb-shell">
+        <div className="card auth-card" style={{ textAlign: 'center', margin: '0 auto' }}>
           <div className="form-msg error">{loadError}</div>
           <Link className="btn btn-primary" href="/login">
             Sign in
@@ -151,8 +151,16 @@ export default function OnboardingPage() {
         </div>
       </div>
     ) : (
-      <div className="auth-wrap">
-        <p style={{ color: 'var(--muted)' }}>Loading…</p>
+      <div className="onb-shell" aria-busy="true" aria-label="Loading plans">
+        <p className="cine-kicker onb-kicker">
+          <span className="pulse-dot" aria-hidden /> Almost there
+        </p>
+        <h1 className="onb-title">Setting out your plans…</h1>
+        <div className="onb-skels">
+          {[0, 1, 2, 3].map((i) => (
+            <div key={i} className="skel" style={{ height: 240, borderRadius: 22 }} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -160,19 +168,32 @@ export default function OnboardingPage() {
   const plan = plans.find((p) => p.slug === selected);
 
   return (
-    <div className="auth-wrap" style={{ alignItems: 'flex-start', paddingTop: 40 }}>
-      <div className="card auth-card" style={{ maxWidth: 640 }}>
-        <h1>
-          {stage === 'done' ? '🎉 Your store is live!' : stage === 'waiting' ? 'We’re verifying your payment' : 'Choose your plan'}
+    <div className="onb-shell">
+      <div>
+        <p className="cine-kicker onb-kicker">
+          <span className="pulse-dot" aria-hidden /> Step 2 · {me.business!.name}
+        </p>
+        <h1 className="onb-title">
+          {stage === 'done' ? (
+            <>
+              Your store is <em>live.</em> 🎉
+            </>
+          ) : stage === 'waiting' ? (
+            'We’re verifying your payment'
+          ) : (
+            <>
+              Choose how your <em>stall</em> is tended
+            </>
+          )}
         </h1>
-        <p className="sub">
+        <p className="onb-sub">
           {stage === 'done'
             ? `${me.business!.name} is now on CyberShop. Add your catalogue and start receiving WhatsApp enquiries.`
             : stage === 'waiting'
               ? pendingPayment?.status === 'submitted'
                 ? 'Your bank transfer proof is in the review queue. An admin will verify it shortly — we’ll notify you here and on your dashboard.'
                 : 'A payment is in progress. Continue below to finish it.'
-              : `Monthly plans. Upgrade, downgrade or cancel any time from your dashboard.`}
+              : 'Monthly plans — upgrade, downgrade or cancel any time from your dashboard.'}
         </p>
 
         {stage === 'done' && (
@@ -189,27 +210,49 @@ export default function OnboardingPage() {
         {stage === 'choose' && (
           <>
             {error && <div className="form-msg error">{error}</div>}
-            <div className="billing-plan">
-              {plans.map((p) => (
-                <div key={p.slug} className="card" style={{ cursor: 'pointer', border: selected === p.slug ? '2px solid var(--green)' : '1px solid var(--line)' }} onClick={() => setSelected(p.slug)}>
-                  <div style={{ fontWeight: 700 }}>{p.name}</div>
-                  <div className="price">
+            <div className="onb-plans" role="group" aria-label="Plans">
+              {plans.map((p, i) => (
+                <div
+                  key={p.slug}
+                  className="onb-plan"
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected === p.slug}
+                  onClick={() => setSelected(p.slug)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setSelected(p.slug);
+                    }
+                  }}
+                  style={{ ['--i' as string]: i }}
+                >
+                  <span className="onb-check" aria-hidden>
+                    ✓
+                  </span>
+                  <span className="onb-plan-name">{p.name}</span>
+                  <span className="onb-plan-price">
                     {p.price === 0 ? 'Free' : p.price_display}
-                    {p.price > 0 && <span style={{ fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 500 }}>/month</span>}
-                  </div>
-                  {Array.isArray(p.features) &&
-                    p.features.slice(0, 5).map((f, i) => (
-                      <div key={i} className="feat">
-                        ✓ {typeof f === 'string' ? f : f.label}
-                      </div>
-                    ))}
-                  <div style={{ marginTop: 'auto' }}>
-                    <button className="btn" style={{ width: '100%', background: p.price === 0 ? 'var(--green)' : 'var(--ink)', color: '#fff', padding: '9px' }} onClick={() => choosePlan(p.slug)} disabled={busy}>
-                      {busy ? '…' : p.price === 0 ? 'Start free' : 'Choose'}
-                    </button>
-                  </div>
+                    {p.price > 0 && <small> /month</small>}
+                  </span>
+                  {p.description && <span className="onb-plan-desc">{p.description}</span>}
+                  {Array.isArray(p.features) && p.features.length > 0 && (
+                    <ul className="onb-feats">
+                      {p.features.slice(0, 5).map((f, j) => (
+                        <li key={j}>{typeof f === 'string' ? f : f.label}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <span className="onb-plan-cta" aria-hidden>
+                    {p.price === 0 ? 'Start free' : 'Select'}
+                  </span>
                 </div>
               ))}
+            </div>
+            <div className="form-actions" style={{ marginTop: 22 }}>
+              <button className="btn btn-primary" style={{ flex: 1 }} disabled={!selected || busy} onClick={() => selected && choosePlan(selected)}>
+                {busy ? 'Setting things up…' : !selected ? 'Select a plan to continue' : plans.find((p) => p.slug === selected)?.price === 0 ? 'Start on the free plan' : `Continue with ${plans.find((p) => p.slug === selected)?.name}`}
+              </button>
             </div>
           </>
         )}
@@ -225,14 +268,20 @@ export default function OnboardingPage() {
                 </span>
               </div>
             </div>
-            <div className="form-row">
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.92rem', cursor: 'pointer' }}>
-                <input type="radio" checked={method === 'bank_transfer'} onChange={() => setMethod('bank_transfer')} />
-                Bank transfer (free)
+            <div className="onb-methods" role="radiogroup" aria-label="Payment method">
+              <label className={`onb-method${method === 'bank_transfer' ? ' on' : ''}`}>
+                <input type="radio" name="pay-method" checked={method === 'bank_transfer'} onChange={() => setMethod('bank_transfer')} />
+                <span>
+                  <strong>Bank transfer</strong>
+                  <span>Pay by transfer, upload the receipt — an admin verifies it, usually within hours.</span>
+                </span>
               </label>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.92rem', cursor: 'pointer' }}>
-                <input type="radio" checked={method === 'paystack'} onChange={() => setMethod('paystack')} />
-                Paystack (card)
+              <label className={`onb-method${method === 'paystack' ? ' on' : ''}`}>
+                <input type="radio" name="pay-method" checked={method === 'paystack'} onChange={() => setMethod('paystack')} />
+                <span>
+                  <strong>Paystack — card</strong>
+                  <span>Card, USSD or bank. Verified automatically — your plan activates instantly.</span>
+                </span>
               </label>
             </div>
             <div className="form-actions">

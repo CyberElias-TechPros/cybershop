@@ -6,3 +6,7 @@ dist/
 coverage/
 *.log
 .next/
+
+# local runtime state (never commit)
+.manual-state/
+.vitest-state/

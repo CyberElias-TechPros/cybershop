@@ -28,22 +28,35 @@ if ! curl -s -o /dev/null --max-time 3 http://127.0.0.1:8787/healthz; then
   exit 1
 fi
 
-# already seeded?
-if [ -f "$COOKIE" ] \
-  && curl -s -b "$COOKIE" -H "x-internal-secret: $SECRET" -H "$J" \
-       -X POST $B/auth/login -d '{"email":"cea@test.ng","password":"Passw0rd123"}' \
-       | grep -q '"ok":true'; then
-  echo "✓ demo data already present (cea@test.ng) — nothing to do."
+# already fully seeded? (store exists AND has its 10 demo courses published —
+# a login alone proves nothing: an earlier run may have died mid-way)
+already_seeded() {
+  curl -s -H "x-internal-secret: $SECRET" \
+    "$B/public/business/cyber-elias-academy" \
+    | python3 -c 'import json,sys
+try: d = json.load(sys.stdin)
+except Exception: sys.exit(1)
+items = (d.get("business") or {}).get("items") or []
+sys.exit(0 if len(items) >= 10 else 1)' 2>/dev/null
+}
+if curl -s -o /dev/null --max-time 3 http://127.0.0.1:8787/healthz && already_seeded; then
+  echo "✓ demo data already present (cyber-elias-academy, 10 courses) — nothing to do."
   exit 0
 fi
 rm -f "$COOKIE"
 
 echo "→ registering demo vendor (Cyber Elias Academy)…"
-curl -s -c "$COOKIE" -H "x-internal-secret: $SECRET" -H "$J" -X POST $B/auth/register -d '{
+REG=$(curl -s -c "$COOKIE" -H "x-internal-secret: $SECRET" -H "$J" -X POST $B/auth/register -d '{
   "role":"vendor","name":"Cyber Elias","email":"cea@test.ng","password":"Passw0rd123","phone":"09058628386",
   "business_name":"Cyber Elias Academy","slug":"cyber-elias-academy","category_slug":"academy",
   "whatsapp_number":"09058628386","city":"Port Harcourt","state_region":"Rivers"
-}' | grep -q '"ok":true' || { echo "error: registration failed"; exit 1; }
+}')
+echo "$REG" | grep -q '"ok":true' || {
+  # vendor may already exist from a partially-failed run → log in instead
+  echo "   register skipped ($(echo "$REG" | json "['error']['code']" 2>/dev/null || echo 'exists')) — logging in…"
+  curl -s -c "$COOKIE" -H "x-internal-secret: $SECRET" -H "$J" -X POST $B/auth/login \
+    -d '{"email":"cea@test.ng","password":"Passw0rd123"}' | grep -q '"ok":true' || { echo "error: demo vendor exists but login failed"; exit 1; }
+}
 
 echo "→ activating free plan…"
 curl -s -b "$COOKIE" -H "x-internal-secret: $SECRET" -H "$J" \
@@ -74,10 +87,11 @@ WEB_ID=$(SECRET="$SECRET" COOKIE="$COOKIE" B="$B" A1="$A1" A2="$A2" python3 - <<
 import json, os, urllib.request
 
 secret, cookie, base = os.environ["SECRET"], open(os.environ["COOKIE"]).read(), os.environ["B"]
-# Netscape cookie file → cs_session value
+# Netscape cookie file → cs_session value. HttpOnly cookies are stored as
+# "#HttpOnly_<domain>…" — a '#' prefix that must NOT be treated as a comment.
 sid = ""
 for line in cookie.splitlines():
-    if "cs_session" in line and not line.startswith("#"):
+    if "cs_session" in line and (not line.startswith("#") or line.startswith("#HttpOnly_")):
         sid = line.split("\t")[-1].strip()
 a1, a2 = int(os.environ["A1"]), int(os.environ["A2"])
 
@@ -109,8 +123,14 @@ def post(path, payload):
     req.add_header("content-type", "application/json")
     req.add_header("x-internal-secret", secret)
     req.add_header("cookie", f"cs_session={sid}")
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read().decode())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()[:300]
+        if e.code == 409:  # slug already exists from a partially-failed earlier run
+            return {}
+        raise SystemExit(f"seed: POST {path} -> HTTP {e.code}: {body}")
 
 web_id = None
 for i, (name, desc, kobo, duration, curriculum) in enumerate(courses):
@@ -155,13 +175,15 @@ import json, os, urllib.request
 secret = """$SECRET"""
 sid = ""
 for line in open("$COOKIE"):
-    if "cs_session" in line and not line.startswith("#"):
+    # "#HttpOnly_…" lines are cookie records, not comments
+    if "cs_session" in line and (not line.startswith("#") or line.startswith("#HttpOnly_")):
         sid = line.split("\t")[-1].strip()
 req = urllib.request.Request("$B/vendor/items/$WEB_ID", method="GET")
 req.add_header("x-internal-secret", secret)
 req.add_header("cookie", f"cs_session={sid}")
 with urllib.request.urlopen(req) as r:
     item = json.loads(r.read().decode())["item"]
+
 body = {
     "name": item["name"],
     "item_type_slug": item.get("item_type_slug") or "course",

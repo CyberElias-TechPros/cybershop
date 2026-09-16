@@ -7,8 +7,10 @@ import { Reveal } from '@/components/Motion';
 
 export const dynamic = 'force-dynamic';
 export const metadata: Metadata = {
-  title: 'Jobs',
+  title: 'Jobs & CVs',
   description: 'Jobs and CVs from vendors who paid for the jobs board. Apply on WhatsApp — CyberShop is not a till.',
+  alternates: { canonical: '/jobs' },
+  openGraph: { title: 'Jobs & CVs', url: '/jobs' },
 };
 
 export default async function JobsPage() {

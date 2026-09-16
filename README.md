@@ -108,8 +108,8 @@ npm run dev
 ## Tests
 
 ```bash
-cd worker && npm test        # 34 tests: wa.me prefill units + full integration
-                             # suite (onboarding, both payment paths, media
+cd worker && npm test        # 46 tests: password-hashing + wa.me prefill units + full
+                             # integration suite (onboarding, both payment paths, media
                              # upload + gateway-token finalize/single-use,
                              # IDOR isolation, public pages, rate limits,
                              # WhatsApp multi-item cart, voice-note audio)
@@ -132,6 +132,19 @@ checklist. Free-tier headroom and the scaling path are in
   (Plan §30 — still a lead, never a checkout)**, **vendor voice notes**
   (record → waveform player on item pages), vendor dashboard, full admin
   console, audit logs, scheduled jobs (expiry/grace, orphan cleanup, rollups).
+- **Support & growth pass:** transactional email (Resend/MailChannels — resets,
+  receipts, renewal reminders, lead alerts), printable payment receipts, QR
+  codes + WhatsApp-Status sharing for storefronts, catalogue/leads CSV export,
+  admin user directory with audited sign-in-as + resend-reset, admin-editable
+  WhatsApp templates (live, no deploy), Terms/Privacy/Contact pages, default
+  OG share image, PWA install support, gateway image downscaling (1600px).
+- **Hardening pass (this branch):** fixed the password hash/verify mismatch that
+  made **every login fail** (now PBKDF2-SHA256, 100k iterations, with
+  transparent upgrade of legacy hashes at login); market feed pages
+  (/listings, /businesses, /search) now render fully server-side for crawlers;
+  canonical + og:url metadata on every public page; cinematic split-screen
+  auth + art-directed onboarding plan ceremony; seed script fixes
+  (#HttpOnly cookie parsing, resumable re-runs).
 - **Phase 2:** leads CRM polish, CSV import/export, QR codes, smart number
   routing UI, better search/filters.
 - **Phase 3:** staff accounts, custom domains/subdomains, reviews (once

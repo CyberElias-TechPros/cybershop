@@ -1,6 +1,25 @@
 import { AppError } from './errors';
 
-const ITERATIONS = 1;
+/**
+ * Password hashing for Cloudflare Workers.
+ *
+ * PBKDF2-SHA256 via WebCrypto (the only KDF reliably available in workerd).
+ * Storage format (versioned, future migrations can add formats):
+ *
+ *   pbkdf2$<iterations>$<saltB64>$<hashB64>
+ *
+ * Legacy formats (read-only, transparently upgraded on successful login):
+ *   sha256$<saltB64>$<hashB64>      3-part single digest (old intended format)
+ *   sha256$<saltB64><hashB64>       2-part concatenation bug (salt is always
+ *                                   16 bytes → 24 b64 chars; digest 32 bytes →
+ *                                   44 b64 chars, so the split is unambiguous)
+ */
+
+const PBKDF2_ITERATIONS = 100_000;
+const KEY_LEN_BITS = 256;
+const SALT_LEN = 16;
+
+const enc = new TextEncoder();
 
 function b64(bytes: Uint8Array): string {
   let bin = '';
@@ -8,45 +27,92 @@ function b64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
-function fromB64(b64str: string): Uint8Array {
-  const bin = atob(b64str);
+function fromB64(s: string): Uint8Array {
+  const bin = atob(s);
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;
 }
 
-export async function hashPassword(password: string): Promise<string> {
-  const salt = crypto.getRandomValues(new Uint8Array(16));
-  const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...salt, ...new TextEncoder().encode(password)]));
-  return `sha256$${b64(salt)}${b64(new Uint8Array(bits))}`;
+async function pbkdf2Bits(password: string, salt: Uint8Array, iterations: number): Promise<Uint8Array> {
+  const key = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations },
+    key,
+    KEY_LEN_BITS
+  );
+  return new Uint8Array(bits);
 }
 
-export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+async function sha256Bits(salt: Uint8Array, password: string): Promise<Uint8Array> {
+  const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...salt, ...enc.encode(password)]));
+  return new Uint8Array(bits);
+}
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(SALT_LEN));
+  const bits = await pbkdf2Bits(password, salt, PBKDF2_ITERATIONS);
+  return `pbkdf2$${PBKDF2_ITERATIONS}$${b64(salt)}$${b64(bits)}`;
+}
+
+/** True when `stored` is not the current format and should be re-hashed after a successful verify. */
+export function passwordNeedsUpgrade(stored: string): boolean {
+  return !stored.startsWith(`pbkdf2$${PBKDF2_ITERATIONS}$`);
+}
+
+async function verifyLegacy(password: string, stored: string): Promise<boolean> {
   const parts = stored.split('$');
-  if (parts.length !== 3 || parts[0] !== 'sha256') return false;
+  if (parts[0] !== 'sha256') return false;
   try {
-    const salt = fromB64(parts[1]);
-    const expected = fromB64(parts[2]);
-    const bits = await crypto.subtle.digest('SHA-256', new Uint8Array([...salt, ...new TextEncoder().encode(password)]));
-    const actual = new Uint8Array(bits);
-    if (actual.length !== expected.length) return false;
-    let diff = 0;
-    for (let i = 0; i < actual.length; i++) diff |= actual[i] ^ expected[i];
-    return diff === 0;
+    if (parts.length === 3) {
+      const salt = fromB64(parts[1]);
+      const expected = fromB64(parts[2]);
+      const actual = await sha256Bits(salt, password);
+      return timingSafeEq(actual, expected);
+    }
+    if (parts.length === 2) {
+      // hashPassword's delimiter bug: b64(salt) + b64(digest) share one '$'.
+      if (parts[1].length !== 24 + 44) return false;
+      const salt = fromB64(parts[1].slice(0, 24));
+      const expected = fromB64(parts[1].slice(24));
+      const actual = await sha256Bits(salt, password);
+      return timingSafeEq(actual, expected);
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
+function timingSafeEq(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+export async function verifyPassword(password: string, stored: string): Promise<boolean> {
+  if (!stored) return false;
+  if (stored.startsWith('pbkdf2$')) {
+    const parts = stored.split('$');
+    if (parts.length !== 4) return false;
+    const iterations = Number(parts[1]);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > 10_000_000) return false;
+    try {
+      const salt = fromB64(parts[2]);
+      const expected = fromB64(parts[3]);
+      const actual = await pbkdf2Bits(password, salt, iterations);
+      return timingSafeEq(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+  return verifyLegacy(password, stored);
+}
+
 export async function hmacHex(secret: string, data: string): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  const key = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, enc.encode(data));
   return Array.from(new Uint8Array(sig), (x) => x.toString(16).padStart(2, '0')).join('');
 }
 

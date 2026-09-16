@@ -26,3 +26,11 @@ PAYSTACK_PUBLIC_KEY=pk_test_xxxxxxxxxxxxxxxxxxxxxxxx
 PAYSTACK_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxx
 # in prod: https://<worker-domain>/api/webhooks/paystack
 PAYSTACK_WEBHOOK_URL=http://localhost:8787/api/webhooks/paystack
+
+# --- transactional email (optional; logged no-op when unset) ---
+# Resend (recommended): https://resend.com — set MAIL_FROM to a verified domain
+RESEND_API_KEY=
+MAIL_FROM=CyberShop <noreply@cybershop.ng>
+MAIL_FROM_NAME=CyberShop
+# alternative: any POST-JSON {from,to,subject,text,html} HTTP endpoint
+MAIL_ENDPOINT=

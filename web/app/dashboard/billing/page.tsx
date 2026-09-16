@@ -363,6 +363,10 @@ export default function BillingPage() {
 
       <div className="card panel">
         <h2 style={{ fontSize: '1.05rem' }}>Payment history</h2>
+          <div className="billing-exports">
+            <a className="btn btn-ghost" href="/api/vendor/items/export">Export catalogue CSV</a>
+            <a className="btn btn-ghost" href="/api/vendor/inquiries/export">Export leads CSV</a>
+          </div>
         {payments.length === 0 ? (
           <p style={{ color: 'var(--muted)', fontSize: '0.92rem', margin: 0 }}>No payments yet.</p>
         ) : (
@@ -375,6 +379,9 @@ export default function BillingPage() {
                   <th>Amount</th>
                   <th>Method</th>
                   <th>Status</th>
+                  <th>
+                    <span className="visually-hidden">Receipt</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -388,6 +395,13 @@ export default function BillingPage() {
                       <span className={`status-pill ${p.status}`}>{p.status}</span>
                       {p.rejection_reason && (
                         <div style={{ fontSize: '0.78rem', color: 'var(--danger)', marginTop: 4 }}>{p.rejection_reason}</div>
+                      )}
+                    </td>
+                    <td>
+                      {p.status === 'approved' && (
+                        <Link className="mini-link" href={`/dashboard/billing/receipt/${p.id}`}>
+                          Receipt
+                        </Link>
                       )}
                     </td>
                   </tr>

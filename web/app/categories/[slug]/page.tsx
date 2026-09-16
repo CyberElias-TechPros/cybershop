@@ -18,7 +18,8 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
     return {
       title: data.category.name,
       description: data.category.description || `Browse ${data.category.name} businesses on CyberShop.`,
-      openGraph: { title: data.category.name },
+      alternates: { canonical: `/categories/${slug}` },
+      openGraph: { title: data.category.name, url: `/categories/${slug}` },
     };
   } catch {
     return { title: 'Category not found' };

@@ -69,6 +69,8 @@ npx wrangler secret put GATEWAY_SECRET
 npx wrangler secret put IP_SALT
 npx wrangler secret put PAYSTACK_PUBLIC_KEY      # pk_live_… (or placeholder pre-launch)
 npx wrangler secret put PAYSTACK_SECRET_KEY      # sk_live_…
+npx wrangler secret put RESEND_API_KEY           # re_… (enables transactional email)
+npx wrangler secret put MAIL_FROM                # CyberShop <noreply@yourshop.ng>
 npx wrangler secret put SEED_ADMIN_EMAIL         # e.g. you@yourshop.ng
 npx wrangler secret put SEED_ADMIN_PASSWORD      # long random — you will change it after first login
 
@@ -184,6 +186,20 @@ the preview card must show the cover image.
    | `WORKER_URL` | `https://<worker>.<account>.workers.dev` |
    | `WORKER_INTERNAL_SECRET` | == Worker `INTERNAL_SECRET` |
    | `SITE_URL` | `https://yourshop.ng` |
+
+   The web app itself never sends email — transactional mail lives on the
+   Worker. Configure it there (step 3 of the Worker section):
+
+   | Worker secret | Required | Effect |
+   |---|---|---|
+   | `RESEND_API_KEY` | no (recommended) | Sends via Resend (`RESEND_API_KEY` + `MAIL_FROM`, e.g. `CyberShop <noreply@yourshop.ng>`) |
+   | `MAIL_ENDPOINT` | no (fallback) | Posts JSON `{from,to,subject,text,html}` to your own MailChannels-style relay |
+   | `MAIL_FROM` / `MAIL_FROM_NAME` | no | Sender identity; falls back to `MAIL_FROM_NAME <noreply@<SITE_URL host>>` |
+   | _(none of the above)_ | — | Emails are logged to Worker logs instead of sent (dev mode; password-reset links surface in the API response) |
+
+   Emails sent: password resets, payment approved/rejected (with receipt
+   link), subscription expiry reminders, business verification decisions,
+   new-lead alerts.
 
 3. Build & deploy (`next build` runs automatically).
 4. **Domain:** add `yourshop.ng` (Vercel → Domains) and set DNS in Cloudflare:

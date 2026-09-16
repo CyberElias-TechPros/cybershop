@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import StorefrontTools from '@/components/StorefrontTools';
 import { clientIp } from '@/lib/ip';
 import { requireVendor, sessionCookieHeader } from '@/lib/session';
 
@@ -172,6 +173,8 @@ export default async function DashboardOverviewPage() {
       <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
         Signed in as {me.user.name} · {me.user.email}
       </p>
+
+      <StorefrontTools storeUrl={`/business/${business.slug}`} storeName={business.name} />
     </div>
   );
 }

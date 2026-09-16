@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { capi, extractError } from '@/lib/client-api';
+import AuthShell from '@/components/AuthShell';
 
 interface Cat {
   name: string;
@@ -69,75 +70,81 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="auth-wrap" style={{ alignItems: 'flex-start', paddingTop: 40 }}>
-      <div className="card auth-card" style={{ maxWidth: 560 }}>
-        <h1>Create your business account</h1>
-        <p className="sub">
-          Free to start — list your business, publish a catalogue, and let buyers reach you on
-          WhatsApp. You’ll pick a plan on the next step.
-        </p>
-        {error && <div className="form-msg error">{error}</div>}
-        <form onSubmit={submit}>
-          <div className="form-row">
-            <div className="field">
-              <label htmlFor="name">Your name</label>
-              <input id="name" className="input" required minLength={2} maxLength={120} value={form.name} onChange={set('name')} autoComplete="name" />
-            </div>
-            <div className="field">
-              <label htmlFor="email">Email</label>
-              <input id="email" className="input" type="email" required value={form.email} onChange={set('email')} autoComplete="email" />
-            </div>
+    <AuthShell
+      kicker="The WhatsApp-first night market · always open"
+      title={
+        <>
+          Your business, <em>beautifully</em> found.
+        </>
+      }
+      lede="A storefront with a living catalogue, in minutes. Buyers walk in, tap once, and the conversation starts on your WhatsApp — where deals actually close."
+      head={{ kicker: 'Open a stall', title: 'Create your business account', sub: 'Free to start. You’ll pick a plan on the next step.' }}
+    >
+      {error && (
+        <div className="form-msg error" style={{ ['--i' as string]: 0.5 }} role="alert">
+          {error}
+        </div>
+      )}
+      <form onSubmit={submit} className="auth-pane-wide">
+        <div className="form-row">
+          <div className="field" style={{ ['--i' as string]: 1 }}>
+            <label htmlFor="name">Your name</label>
+            <input id="name" className="input" required minLength={2} maxLength={120} value={form.name} onChange={set('name')} autoComplete="name" placeholder="Ada Obi" />
           </div>
-          <div className="field">
-            <label htmlFor="password">Password</label>
-            <input id="password" className="input" type="password" required minLength={8} value={form.password} onChange={set('password')} autoComplete="new-password" />
-            <div className="hint">At least 8 characters.</div>
+          <div className="field" style={{ ['--i' as string]: 1 }}>
+            <label htmlFor="email">Email</label>
+            <input id="email" className="input" type="email" required value={form.email} onChange={set('email')} autoComplete="email" placeholder="you@business.ng" />
           </div>
-          <div className="field">
-            <label htmlFor="business_name">Business name</label>
-            <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Cyber Elias Academy" value={form.business_name} onChange={set('business_name')} />
-          </div>
-          <div className="form-row">
-            <div className="field">
-              <label htmlFor="category">What do you offer?</label>
-              <select id="category" className="select" required value={form.category_slug} onChange={set('category_slug')}>
-                <option value="" disabled>
-                  Choose a category…
+        </div>
+        <div className="field" style={{ ['--i' as string]: 2 }}>
+          <label htmlFor="password">Password</label>
+          <input id="password" className="input" type="password" required minLength={8} value={form.password} onChange={set('password')} autoComplete="new-password" placeholder="••••••••••••" />
+          <div className="hint">At least 8 characters.</div>
+        </div>
+        <div className="field" style={{ ['--i' as string]: 3 }}>
+          <label htmlFor="business_name">Business name</label>
+          <input id="business_name" className="input" required minLength={2} maxLength={120} placeholder="e.g. Cyber Elias Academy" value={form.business_name} onChange={set('business_name')} />
+        </div>
+        <div className="form-row">
+          <div className="field" style={{ ['--i' as string]: 4 }}>
+            <label htmlFor="category">What do you offer?</label>
+            <select id="category" className="select" required value={form.category_slug} onChange={set('category_slug')}>
+              <option value="" disabled>
+                Choose a category…
+              </option>
+              {cats.map((c) => (
+                <option key={c.slug} value={c.slug}>
+                  {c.icon ? `${c.icon} ` : ''}
+                  {c.name}
                 </option>
-                {cats.map((c) => (
-                  <option key={c.slug} value={c.slug}>
-                    {c.icon ? `${c.icon} ` : ''}
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="wa">WhatsApp number</label>
-              <input id="wa" className="input" required placeholder="0803 123 4567" value={form.whatsapp_number} onChange={set('whatsapp_number')} autoComplete="tel" />
-              <div className="hint">Buyers will message this number.</div>
-            </div>
+              ))}
+            </select>
           </div>
-          <div className="form-row">
-            <div className="field">
-              <label htmlFor="city">City</label>
-              <input id="city" className="input" value={form.city} onChange={set('city')} />
-            </div>
-            <div className="field">
-              <label htmlFor="state">State</label>
-              <input id="state" className="input" value={form.state_region} onChange={set('state_region')} />
-            </div>
+          <div className="field" style={{ ['--i' as string]: 4 }}>
+            <label htmlFor="wa">WhatsApp number</label>
+            <input id="wa" className="input" required placeholder="0803 123 4567" value={form.whatsapp_number} onChange={set('whatsapp_number')} autoComplete="tel" />
+            <div className="hint">Buyers will message this number.</div>
           </div>
-          <div className="form-actions">
-            <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
-              {busy ? 'Creating your account…' : 'Continue — choose a plan'}
-            </button>
+        </div>
+        <div className="form-row">
+          <div className="field" style={{ ['--i' as string]: 5 }}>
+            <label htmlFor="city">City</label>
+            <input id="city" className="input" placeholder="Lagos" value={form.city} onChange={set('city')} />
           </div>
-        </form>
-        <p className="auth-alt">
-          Already have an account? <Link href="/login">Sign in</Link>
-        </p>
-      </div>
-    </div>
+          <div className="field" style={{ ['--i' as string]: 5 }}>
+            <label htmlFor="state">State</label>
+            <input id="state" className="input" placeholder="Lagos" value={form.state_region} onChange={set('state_region')} />
+          </div>
+        </div>
+        <div className="form-actions" style={{ ['--i' as string]: 6 }}>
+          <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
+            {busy ? 'Creating your account…' : 'Continue — choose a plan'}
+          </button>
+        </div>
+      </form>
+      <p className="auth-alt" style={{ ['--i' as string]: 7 }}>
+        Already have an account? <Link href="/login">Sign in</Link>
+      </p>
+    </AuthShell>
   );
 }

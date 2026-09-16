@@ -1,4 +1,4 @@
-import { Suspense } from 'react';
+import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import type { BusinessesOut, CategoryOut } from '@/lib/types';
@@ -9,7 +9,17 @@ import { Reveal } from '@/components/Motion';
 
 export const dynamic = 'force-dynamic';
 
-export const metadata = { title: 'Browse businesses' };
+export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
+  const sp = await searchParams;
+  const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
+  return {
+    title: page > 1 ? `Browse businesses — page ${page}` : 'Browse businesses',
+    description:
+      'The directory of real Nigerian businesses on CyberShop — fashion, tech, academies, food, homes and services. Open a storefront, start a WhatsApp chat.',
+    alternates: { canonical: page > 1 ? `/businesses?page=${page}` : '/businesses' },
+    openGraph: { title: 'Browse businesses', url: '/businesses' },
+  };
+}
 
 interface SP {
   q?: string;
@@ -19,11 +29,8 @@ interface SP {
 }
 
 export default function BusinessesPage({ searchParams }: { searchParams: Promise<SP> }) {
-  return (
-    <Suspense>
-      <Inner searchParams={searchParams} />
-    </Suspense>
-  );
+  // Inline SSR — directory is a core SEO surface (see /listings note).
+  return <Inner searchParams={searchParams} />;
 }
 
 async function Inner({ searchParams }: { searchParams: Promise<SP> }) {

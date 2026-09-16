@@ -27,11 +27,14 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
     return {
       title: business.name,
       description: business.about?.slice(0, 200) || `${business.name} on CyberShop`,
+      alternates: { canonical: `/business/${business.slug}` },
       openGraph: {
         title: business.name,
         description: business.about?.slice(0, 200) || `${business.name} on CyberShop`,
+        url: `/business/${business.slug}`,
         images: img ? [{ url: absUrl(img) }] : undefined,
       },
+      twitter: { card: 'summary_large_image', images: img ? [absUrl(img)] : undefined },
     };
   } catch {
     return { title: 'Business not found' };

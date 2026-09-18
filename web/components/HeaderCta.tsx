@@ -1,7 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
+import { useDialogFocus } from '@/lib/useDialogFocus';
+
+const MENU_ID = 'cine-menu';
 
 export default function HeaderCta({
   extra,
@@ -10,15 +13,50 @@ export default function HeaderCta({
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const burgerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
+  const close = useCallback(() => setOpen(false), []);
+
+  // navigating away closes the menu
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
 
+  // drives `html.menu-open` (scroll lock) in cine.css
   useEffect(() => {
     document.documentElement.classList.toggle('menu-open', open);
     return () => document.documentElement.classList.remove('menu-open');
   }, [open]);
+
+  /* Escape closes, focus moves into the overlay and back to the burger, and
+     Tab is kept inside it — the overlay used to trap the visitor with no way
+     out but tapping a link. */
+  useDialogFocus(open, menuRef, close);
+
+  // a viewport that now shows the desktop nav must not stay locked
+  useEffect(() => {
+    if (!open) return;
+    const onResize = () => {
+      if (window.matchMedia('(min-width: 981px)').matches) close();
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [open, close]);
+
+  /* Everything the desktop nav and the footer offer, in one place: the menu is
+     the only navigation on a phone, so it cannot be a subset of it. */
+  const links: { href: string; label: string }[] = [
+    { href: '/listings', label: 'Listings' },
+    { href: '/businesses', label: 'Businesses' },
+    { href: '/jobs', label: 'Jobs' },
+    ...extra,
+    { href: '/search', label: 'Search' },
+    { href: '/saved', label: 'Saved' },
+    { href: '/cart', label: 'WhatsApp cart' },
+    { href: '/register', label: 'Sell on CyberShop' },
+    { href: '/login', label: 'Sign in' },
+  ];
 
   return (
     <>
@@ -32,42 +70,43 @@ export default function HeaderCta({
         <a className="btn btn-gold sheen hdr-sell" href="/register">
           Sell on CyberShop
         </a>
+        <a className="hdr-search-btn" href="/search" aria-label="Search CyberShop">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.6-3.6" strokeLinecap="round" />
+          </svg>
+        </a>
         <button
+          ref={burgerRef}
           type="button"
           className={`hdr-burger${open ? ' is-open' : ''}`}
           aria-label={open ? 'Close menu' : 'Open menu'}
           aria-expanded={open}
+          aria-controls={MENU_ID}
           onClick={() => setOpen((v) => !v)}
         >
           <span />
           <span />
         </button>
       </div>
-      <div className={`cine-menu${open ? ' is-open' : ''}`} hidden={!open}>
+      <div
+        id={MENU_ID}
+        ref={menuRef}
+        className={`cine-menu${open ? ' is-open' : ''}`}
+        role="dialog"
+        aria-modal={open}
+        aria-label="Site menu"
+        hidden={!open}
+      >
+        <button type="button" className="cine-menu-close" onClick={close}>
+          Close ✕
+        </button>
         <nav aria-label="Mobile">
-          <a href="/listings" style={{ ['--i' as string]: 0 }}>
-            <em>01</em> Listings
-          </a>
-          <a href="/businesses" style={{ ['--i' as string]: 1 }}>
-            <em>02</em> Businesses
-          </a>
-          {extra.map((l, i) => (
-            <a key={l.href} href={l.href} style={{ ['--i' as string]: i + 2 }}>
-              <em>{String(i + 3).padStart(2, '0')}</em> {l.label}
+          {links.map((l, i) => (
+            <a key={l.href} href={l.href} style={{ ['--i' as string]: i }}>
+              <em>{String(i + 1).padStart(2, '0')}</em> {l.label}
             </a>
           ))}
-          <a href="/saved" style={{ ['--i' as string]: extra.length + 2 }}>
-            <em>{String(extra.length + 3).padStart(2, '0')}</em> Saved
-          </a>
-          <a href="/search" style={{ ['--i' as string]: extra.length + 3 }}>
-            <em>{String(extra.length + 4).padStart(2, '0')}</em> Search
-          </a>
-          <a href="/register" style={{ ['--i' as string]: extra.length + 4 }}>
-            <em>{String(extra.length + 5).padStart(2, '0')}</em> Sell on CyberShop
-          </a>
-          <a href="/login" style={{ ['--i' as string]: extra.length + 5 }}>
-            <em>{String(extra.length + 6).padStart(2, '0')}</em> Sign in
-          </a>
         </nav>
       </div>
     </>

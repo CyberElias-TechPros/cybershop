@@ -41,16 +41,19 @@ export default function Gallery({ images, name, flipId }: { images: ItemImageOut
         <img key={img.id} src={img.url} alt={img.alt} width={img.width ?? undefined} height={img.height ?? undefined} />
       </div>
       {images.length > 1 && (
-        <div className="thumbs">
+        <div className="thumbs" role="group" aria-label={`${name} — photos`}>
           {images.map((im, i) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <button
+              type="button"
               key={im.id}
-              src={im.url}
-              alt={im.alt}
-              className={i === active ? 'active' : ''}
+              className={`thumb${i === active ? ' active' : ''}`}
               onClick={() => setActive(i)}
-            />
+              aria-label={`Show photo ${i + 1} of ${images.length}${im.alt ? `: ${im.alt}` : ''}`}
+              aria-current={i === active}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={im.url} alt="" loading="lazy" />
+            </button>
           ))}
         </div>
       )}

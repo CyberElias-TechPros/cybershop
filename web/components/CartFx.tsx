@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   addLine, cartCount, cartTotalKobo, clearCart, getBuyer, lineQty, listCarts,
   removeLine, saveBuyer, setActive, setQty, type CartLine,
 } from '@/lib/cart';
 import { haptic } from '@/lib/haptics';
+import { useDialogFocus } from '@/lib/useDialogFocus';
 
 /* ------------------------------------------------------------------ */
 /* fly-to-cart: the image sphere arcs into the chip                    */
@@ -449,14 +450,18 @@ export default function CartChip() {
     };
   }, []);
 
+  /* The floating chip occupies the bottom-right corner: let the page add
+     clearance so it never covers the footer's last row. */
   useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open]);
+    const on = bizId !== null && count > 0;
+    document.body.classList.toggle('cart-chip-on', on);
+    return () => document.body.classList.remove('cart-chip-on');
+  }, [bizId, count]);
+
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const closeDrawer = useCallback(() => setOpen(false), []);
+  // Escape, focus-in/focus-out, Tab containment and a scroll lock behind it
+  useDialogFocus(open, drawerRef, closeDrawer, { lockScroll: true });
 
   if (bizId === null && !open) return null;
 
@@ -484,6 +489,7 @@ export default function CartChip() {
         <div className="cart-drawer-backdrop" onClick={() => setOpen(false)}>
           <div
             className="cart-drawer"
+            ref={drawerRef}
             role="dialog"
             aria-modal="true"
             aria-label="Your WhatsApp cart"

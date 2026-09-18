@@ -28,7 +28,9 @@ export default async function Header() {
               { href: '/listings', label: 'Listings' },
               { href: '/jobs', label: 'Jobs' },
               { href: '/businesses', label: 'Businesses' },
-              ...extra,
+              // Only the top categories inline — the rest stay in the menu and
+              // the homepage bento, so nav links never hide behind a scroll.
+              ...extra.slice(0, 3),
             ]}
           />
         </nav>

@@ -24,6 +24,14 @@ export default function StickyWa({ name, waUrl, ctaLabel, after = 420 }: Props) 
     return () => window.removeEventListener('scroll', onScroll);
   }, [after]);
 
+  /* Tell the page the bottom of the viewport is occupied, so the last footer
+     row is not permanently buried under the bar. */
+  useEffect(() => {
+    const shown = visible && Boolean(waUrl);
+    document.body.classList.toggle('wa-bar-on', shown);
+    return () => document.body.classList.remove('wa-bar-on');
+  }, [visible, waUrl]);
+
   if (!waUrl) return null;
 
   return (

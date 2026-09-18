@@ -78,9 +78,20 @@ export default function WaCta(props: Props) {
 
   const onSlideLaunch = async () => {
     setFade(true);
-    await sleep(480);
+    await sleep(420);
     await doOpen();
-    setTimeout(() => setFade(false), 2600);
+    /* The blackout is a transition, not a wall: if WhatsApp actually took over
+       (page hidden) or the visitor comes back, lift it immediately instead of
+       holding the screen for the full beat. */
+    let timer = setTimeout(() => setFade(false), 1800);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        clearTimeout(timer);
+        timer = setTimeout(() => setFade(false), 350);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    setTimeout(() => document.removeEventListener('visibilitychange', onVisibility), 4000);
   };
 
   const disabled = !waUrl && busy;

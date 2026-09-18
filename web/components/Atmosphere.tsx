@@ -4,9 +4,14 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 
 /**
- * The living layer: intro curtain, custom cursor, particle field,
- * mouse-follow lighting, magnetic CTAs, and a scroll progress filament.
- * Skipped entirely for reduced-motion users and for dense dashboards.
+ * The living layer: custom cursor, particle field, mouse-follow lighting,
+ * magnetic CTAs, and a scroll progress filament.
+ *
+ * Skipped entirely for reduced-motion users and for dense dashboards. The
+ * intro curtain itself is server-rendered in app/layout.tsx (it has to cover
+ * the *first* paint — a client-mounted curtain lands on top of content that is
+ * already readable and blanks the screen for a second); this module only
+ * retires it early when the visitor starts interacting.
  */
 
 function reduced() {
@@ -17,36 +22,76 @@ function finePointer() {
   return typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches;
 }
 
+/**
+ * The particle field is a full-screen canvas repainted every frame with an
+ * O(n²) link pass — fine on a laptop, a battery/jank tax on the mid-range
+ * Androids most of this market is on. Skip it where it cannot be enjoyed
+ * (no pointer to follow, small screen, data saver, low-memory device) and
+ * throttle it everywhere else.
+ */
+function fieldWorthItsCost() {
+  if (typeof window === 'undefined') return false;
+  const nav = navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+    deviceMemory?: number;
+  };
+  if (nav.connection?.saveData) return false;
+  const et = nav.connection?.effectiveType;
+  if (et === 'slow-2g' || et === '2g') return false;
+  if (typeof nav.deviceMemory === 'number' && nav.deviceMemory <= 2) return false;
+  if (!finePointer()) return false; // the field follows the cursor; touch has none
+  if (window.innerWidth < 720) return false;
+  return true;
+}
+
 export default function Atmosphere() {
   const pathname = usePathname();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [intro, setIntro] = useState(false);
   const workbench = pathname.startsWith('/dashboard') || pathname.startsWith('/admin');
+  const [field, setField] = useState(false);
 
+  /* Decide once, on the client: is the animated field worth its cost here? */
   useEffect(() => {
-    if (reduced() || workbench) return;
-    try {
-      if (sessionStorage.getItem('cs-intro') === '1') return;
-      sessionStorage.setItem('cs-intro', '1');
-    } catch {
-      /* private mode */
-    }
-    setIntro(true);
-    const t = setTimeout(() => setIntro(false), 2200);
-    return () => clearTimeout(t);
+    setField(!workbench && !reduced() && fieldWorthItsCost());
+  }, [workbench]);
+
+  /* ----- retire the server-rendered intro curtain early ----- */
+  useEffect(() => {
+    if (workbench) return;
+    const el = document.querySelector('.cine-intro');
+    if (!el) return;
+    const drop = () => {
+      el.remove();
+      window.removeEventListener('pointerdown', drop);
+      window.removeEventListener('keydown', drop);
+      window.removeEventListener('wheel', drop);
+    };
+    el.addEventListener('animationend', drop, { once: true });
+    window.addEventListener('pointerdown', drop, { passive: true });
+    window.addEventListener('keydown', drop);
+    window.addEventListener('wheel', drop, { passive: true });
+    const failSafe = setTimeout(drop, 2000);
+    return () => {
+      clearTimeout(failSafe);
+      el.removeEventListener('animationend', drop);
+      window.removeEventListener('pointerdown', drop);
+      window.removeEventListener('keydown', drop);
+      window.removeEventListener('wheel', drop);
+    };
   }, [workbench]);
 
   /* ----- canvas particle field ----- */
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || reduced() || workbench) return;
-    const ctx = canvas.getContext('2d');
+    if (!canvas || !field) return;
+    const ctx = canvas.getContext('2d', { alpha: true });
     if (!ctx) return;
 
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     let w = 0;
     let h = 0;
     let raf = 0;
+    let running = true;
     let mx = 0.5;
     let my = 0.35;
 
@@ -61,7 +106,7 @@ export default function Atmosphere() {
       canvas.style.width = `${w}px`;
       canvas.style.height = `${h}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const n = Math.min(92, Math.floor((w * h) / 18000));
+      const n = Math.min(72, Math.floor((w * h) / 24000));
       pts = Array.from({ length: n }, () => ({
         x: Math.random() * w,
         y: Math.random() * h,
@@ -74,11 +119,17 @@ export default function Atmosphere() {
     };
 
     const onMove = (e: PointerEvent) => {
-      mx = e.clientX / w;
-      my = e.clientY / h;
+      mx = e.clientX / (w || 1);
+      my = e.clientY / (h || 1);
     };
 
-    const tick = () => {
+    // ~30fps: the field is ambience, not a game — half the frames, half the cost
+    let last = 0;
+    const tick = (now: number) => {
+      if (!running) return;
+      raf = requestAnimationFrame(tick);
+      if (now - last < 32) return;
+      last = now;
       ctx.clearRect(0, 0, w, h);
       const px = mx * w;
       const py = my * h;
@@ -94,44 +145,57 @@ export default function Atmosphere() {
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fill();
       }
-      for (let i = 0; i < pts.length; i++) {
-        for (let j = i + 1; j < pts.length; j++) {
-          const a = pts[i]!;
-          const b = pts[j]!;
-          const dx = a.x - b.x;
-          const dy = a.y - b.y;
-          const d2 = dx * dx + dy * dy;
-          if (d2 < 140 * 140) {
-            const alpha = (1 - Math.sqrt(d2) / 140) * 0.09;
-            ctx.strokeStyle = `rgba(237,245,241,${alpha})`;
-            ctx.lineWidth = 0.6;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
+      // link pass only when the field is small enough to stay cheap
+      if (pts.length <= 56) {
+        for (let i = 0; i < pts.length; i++) {
+          for (let j = i + 1; j < pts.length; j++) {
+            const a = pts[i]!;
+            const b = pts[j]!;
+            const dx = a.x - b.x;
+            const dy = a.y - b.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < 140 * 140) {
+              const alpha = (1 - Math.sqrt(d2) / 140) * 0.09;
+              ctx.strokeStyle = `rgba(237,245,241,${alpha})`;
+              ctx.lineWidth = 0.6;
+              ctx.beginPath();
+              ctx.moveTo(a.x, a.y);
+              ctx.lineTo(b.x, b.y);
+              ctx.stroke();
+            }
           }
         }
       }
-      raf = requestAnimationFrame(tick);
+    };
+
+    const onVisibility = () => {
+      const keep = document.visibilityState === 'visible';
+      if (keep === running) return;
+      running = keep;
+      if (running) raf = requestAnimationFrame(tick);
+      else cancelAnimationFrame(raf);
     };
 
     resize();
-    tick();
+    raf = requestAnimationFrame(tick);
     window.addEventListener('resize', resize);
     window.addEventListener('pointermove', onMove, { passive: true });
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
+      running = false;
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', onMove);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [workbench]);
+  }, [field]);
 
   /* ----- cursor + spotlight + magnetic + progress ----- */
   useEffect(() => {
     if (reduced() || workbench) return;
     const root = document.documentElement;
     root.classList.add('cine-on');
-    if (finePointer()) root.classList.add('cine-cursor');
+    const fine = finePointer();
 
     const dot = document.createElement('div');
     const ring = document.createElement('div');
@@ -140,7 +204,7 @@ export default function Atmosphere() {
     const bar = document.createElement('div');
     bar.className = 'cine-progress';
     bar.setAttribute('aria-hidden', 'true');
-    if (finePointer()) {
+    if (fine) {
       document.body.append(dot, ring);
     }
     document.body.append(bar);
@@ -159,7 +223,13 @@ export default function Atmosphere() {
       dot.style.transform = `translate3d(${x}px, ${y}px, 0)`;
       raf = requestAnimationFrame(loop);
     };
-    if (finePointer()) loop();
+    /* Hiding the native cursor is only safe once the replacement is actually
+       on screen and tracking — otherwise a failed effect leaves the visitor
+       with no cursor at all. */
+    if (fine) {
+      raf = requestAnimationFrame(loop);
+      root.classList.add('cine-cursor');
+    }
 
     const onMove = (e: PointerEvent) => {
       x = e.clientX;
@@ -171,7 +241,7 @@ export default function Atmosphere() {
       hover = Boolean(mag);
       ring.classList.toggle('hot', hover);
 
-      if (mag && mag.matches('.btn') && finePointer()) {
+      if (fine && mag && mag.matches('.btn')) {
         const r = mag.getBoundingClientRect();
         const dx = e.clientX - (r.left + r.width / 2);
         const dy = e.clientY - (r.top + r.height / 2);
@@ -201,6 +271,8 @@ export default function Atmosphere() {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('scroll', onScroll);
       root.classList.remove('cine-on', 'cine-cursor');
+      root.style.removeProperty('--spot-x');
+      root.style.removeProperty('--spot-y');
       dot.remove();
       ring.remove();
       bar.remove();
@@ -211,18 +283,6 @@ export default function Atmosphere() {
     };
   }, [workbench, pathname]);
 
-  return (
-    <>
-      {!workbench && <canvas ref={canvasRef} className="cine-field" aria-hidden="true" />}
-      {intro && (
-        <div className="cine-intro" aria-hidden="true">
-          <div className="cine-intro-line" />
-          <p className="cine-intro-mark">
-            Cyber<span>Shop</span>
-          </p>
-          <p className="cine-intro-sub">The night market, always open</p>
-        </div>
-      )}
-    </>
-  );
+  if (!field) return null;
+  return <canvas ref={canvasRef} className="cine-field" aria-hidden="true" />;
 }

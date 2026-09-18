@@ -48,7 +48,23 @@
     'Helvetica Neue', Arial, sans-serif;
   --font-display: var(--font-fraunces, Georgia, 'Times New Roman', serif);
 
-  /* page curtain (TransitionFx) */
+  /* page curtain (TransitionFx) — moved out of this block: style rules nested
+     inside a declaration block need native CSS nesting, so browsers without it
+     dropped the whole curtain (see globals.css `.page-veil`). */
+
+  /* legacy aliases (earlier inline styles) — mapped to the dark theme */
+  --muted: var(--ink-dim);
+  --green: #087f4b;
+  --green-dark: #0b8a55;
+  --green-soft: rgba(44, 229, 142, 0.12);
+  --wa-dark: #18a04e;
+  --bg: var(--bg-1);
+  --card: #101b16;
+}
+
+/* page curtain (TransitionFx) — top level, was accidentally nested inside
+   :root above (CSS nesting is not compiled away by Next's default PostCSS
+   preset, so browsers without native nesting dropped these rules). */
 .page-veil {
   position: fixed;
   inset: 0;
@@ -81,16 +97,6 @@
     opacity: 0;
     transform: translateY(-3%);
   }
-}
-
-  /* legacy aliases (earlier inline styles) — mapped to the dark theme */
-  --muted: var(--ink-dim);
-  --green: #087f4b;
-  --green-dark: #0b8a55;
-  --green-soft: rgba(44, 229, 142, 0.12);
-  --wa-dark: #18a04e;
-  --bg: var(--bg-1);
-  --card: #101b16;
 }
 
 * {
@@ -504,7 +510,13 @@ h3 {
   z-index: 60;
   padding: 10px 14px calc(10px + env(safe-area-inset-bottom));
   transform: translateY(110%);
-  transition: transform 0.5s var(--ease);
+  /* Hidden off-screen bar must also leave the tab order: it is aria-hidden
+     until it slides up, and aria-hidden + focusable is a WCAG 4.1.2 failure
+     (keyboard users tabbed into a "Chat now" link they could not see). */
+  visibility: hidden;
+  transition:
+    transform 0.5s var(--ease),
+    visibility 0.5s var(--ease);
   pointer-events: none;
 }
 /* the sidebar CTA is always visible on wide screens — bar is a mobile aid */
@@ -515,6 +527,7 @@ h3 {
 }
 .sticky-wa.visible {
   transform: none;
+  visibility: visible;
   pointer-events: auto;
 }
 .sticky-wa .inner {
@@ -613,6 +626,7 @@ html.hdr-scrolled .site-header {
   display: flex;
   gap: 4px;
   font-size: 0.9rem;
+  min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -638,7 +652,10 @@ html.hdr-scrolled .site-header {
   margin-left: auto;
   display: none;
 }
-@media (min-width: 860px) {
+/* The header is over-packed below 1280px (brand + 8 nav links + search +
+   three CTAs). Rather than silently clipping nav links behind a scrollbar,
+   the text search collapses into the icon button until there is real room. */
+@media (min-width: 1280px) {
   .header-search {
     display: block;
     width: 240px;
@@ -1657,12 +1674,17 @@ a.card:hover .item-img img {
   margin-top: 10px;
   flex-wrap: wrap;
 }
-.thumbs img {
+/* Thumbnails are real buttons: an <img onClick> is not reachable by keyboard
+   or screen reader, so the gallery could not be browsed without a mouse. */
+.thumbs .thumb {
   width: 64px;
   height: 64px;
-  object-fit: cover;
+  padding: 0;
+  flex: 0 0 auto;
+  overflow: hidden;
   border-radius: 10px;
   border: 2px solid var(--line);
+  background: var(--glass);
   cursor: pointer;
   opacity: 0.75;
   transition:
@@ -1670,11 +1692,16 @@ a.card:hover .item-img img {
     border-color var(--dur-fast) var(--ease),
     transform var(--dur-fast) var(--ease);
 }
-.thumbs img:hover {
+.thumbs .thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.thumbs .thumb:hover {
   opacity: 1;
   transform: translateY(-2px);
 }
-.thumbs img.active {
+.thumbs .thumb.active {
   border-color: var(--em);
   opacity: 1;
 }
@@ -3584,4 +3611,125 @@ a.card.tilt:hover {
 }
 @keyframes title-settle {
   to { transform: translate3d(0, -26px, 0); opacity: 0.3; }
+}
+
+/* The skip-link target is focusable so keyboard focus actually moves into the
+   page content; it should not draw an outline around the whole document. */
+#main:focus {
+  outline: none;
+}
+
+/* ============================================================
+   Route pending state (app/loading.tsx)
+   ============================================================ */
+
+.route-loading {
+  position: relative;
+  min-height: 60vh;
+  padding-top: clamp(28px, 6vw, 64px);
+}
+.route-loading-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  width: 100%;
+  transform-origin: 0 50%;
+  background: linear-gradient(90deg, var(--em), var(--gold));
+  animation: route-load 1.15s var(--ease) infinite;
+}
+@keyframes route-load {
+  0% {
+    transform: scaleX(0);
+  }
+  55% {
+    transform: scaleX(0.72);
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0.35;
+  }
+}
+.route-loading-body {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 20px;
+}
+.route-loading-text {
+  margin: 0 0 22px;
+  font-size: 0.86rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ink-faint);
+}
+.route-loading-skels {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+}
+.route-loading-skels span {
+  display: block;
+  height: 220px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0.03) 30%,
+    rgba(44, 229, 142, 0.07) 50%,
+    rgba(255, 255, 255, 0.03) 70%
+  );
+  background-size: 200% 100%;
+  animation: skel-wave 1.7s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-bar,
+  .route-loading-skels span {
+    animation: none;
+  }
+  .route-loading-bar {
+    transform: scaleX(1);
+    opacity: 0.5;
+  }
+}
+
+/* Overlay scroll lock (mobile menu, cart drawer) — set by useDialogFocus. */
+html.no-scroll {
+  overflow: hidden;
+}
+
+/* Floating bottom furniture (sticky WhatsApp bar, cart chip) must not bury the
+   last row of the footer — the page adds clearance while they are on screen. */
+@media (max-width: 900px) {
+  body.wa-bar-on .site-footer {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+  body.cart-chip-on .site-footer {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+  }
+  body.wa-bar-on.cart-chip-on .site-footer {
+    padding-bottom: calc(164px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The reveal's blur is the most expensive part of the transition (a full-layer
+   filter animation per card). On touch devices — where most of this market is —
+   the fade + rise carries the effect on its own. */
+@media (pointer: coarse) {
+  .js .reveal {
+    filter: none;
+  }
+}
+
+/* Keyboard focus on form fields. The `:focus` rules above drop `outline` in
+   favour of a border/glow colour change, which is too subtle to be a compliant
+   focus indicator (WCAG 2.4.11) — and the search field is the hero's primary
+   control. Declared last so it wins the cascade at equal specificity. */
+.search-form input:focus-visible,
+.search-form.big input:focus-visible,
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 2px;
 }

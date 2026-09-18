@@ -246,6 +246,15 @@ export function FlipBridge() {
   useEffect(() => {
     if (reduced()) return;
     let cur: HTMLElement | null = null;
+    /* Reading getBoundingClientRect() on every move event forces a layout pass
+       mid-scroll on phones (the finger is *on* a card while the page scrolls).
+       The rect is cached per card and invalidated on scroll/resize instead. */
+    let rectEl: HTMLElement | null = null;
+    let rect: DOMRect | null = null;
+    const invalidate = () => {
+      rectEl = null;
+      rect = null;
+    };
 
     const clear = (el: HTMLElement) => {
       el.classList.remove('tilt-on');
@@ -273,7 +282,12 @@ export function FlipBridge() {
         }
         return;
       }
-      const r = el.getBoundingClientRect();
+      if (el !== rectEl || !rect) {
+        rect = el.getBoundingClientRect();
+        rectEl = el;
+      }
+      const r = rect;
+      if (r.width < 4 || r.height < 4) return;
       apply(el, (e.clientX - r.left) / r.width - 0.5, (e.clientY - r.top) / r.height - 0.5);
     };
 
@@ -295,10 +309,14 @@ export function FlipBridge() {
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('touchmove', onTouch, { passive: true });
     window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('scroll', invalidate, { passive: true });
+    window.addEventListener('resize', invalidate);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('touchmove', onTouch);
       window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('scroll', invalidate);
+      window.removeEventListener('resize', invalidate);
     };
   }, []);
 

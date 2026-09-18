@@ -29,6 +29,7 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 | [`docs/feature-matrix.md`](docs/feature-matrix.md) | Phase 1 feature matrix + test priority |
 | [`docs/decisions.md`](docs/decisions.md) | Decision ledger (D-001…D-018) |
 | [`docs/schema.sql`](docs/schema.sql) | Canonical relational design (D1 migrations in `worker/migrations/` are the runtime source of truth) |
+| [`docs/usability-audit.md`](docs/usability-audit.md) | Front-end usability/accessibility audit: what blocked visitors, what was fixed, what is still recommended |
 
 ## Key decisions (summary — full text in `docs/decisions.md`)
 

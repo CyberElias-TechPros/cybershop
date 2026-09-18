@@ -22,10 +22,14 @@ const EMPTY: HomeOut = {
 
 export default async function HomePage() {
   let data: HomeOut = EMPTY;
+  let live = true;
   try {
     data = await api<HomeOut>('/public/home', { ip: await clientIp() });
   } catch {
-    /* cinematic empty market — never crash the front door */
+    /* The front door must never crash — but an outage must not be dressed up
+       as an empty market ("0 businesses", "categories arrive with the first
+       vendors"): that reads as a dead platform and costs sign-ups. */
+    live = false;
   }
   const platform = data.platform;
   const tagline = platform?.tagline ?? 'Find a business. Talk to it on WhatsApp.';
@@ -52,7 +56,7 @@ export default async function HomePage() {
           <div className="hero-search">
             <SearchForm big />
             {cats.length > 0 && (
-              <div className="hero-quick" aria-label="Popular categories">
+              <nav className="hero-quick" aria-label="Popular categories">
                 <span>Popular:</span>
                 {cats.slice(0, 4).map((c) => (
                   <a key={c.slug} className="hero-quick-link" href={`/categories/${c.slug}`}>
@@ -60,27 +64,45 @@ export default async function HomePage() {
                     {c.name}
                   </a>
                 ))}
-              </div>
+              </nav>
             )}
           </div>
-          <div className="hero-stats">
-            <div className="hero-stat">
-              <span className="n">
-                <CountUp value={data.business_count} />
-              </span>
-              <span className="l">active business{data.business_count === 1 ? '' : 'es'}</span>
-            </div>
-            <div className="hero-stat">
-              <span className="n">
-                <CountUp value={data.categories.length} />
-              </span>
-              <span className="l">industries</span>
-            </div>
-            <div className="hero-stat">
-              <span className="n">0</span>
-              <span className="l">accounts needed to enquire</span>
-            </div>
+          {/* A way in for visitors who are not searching for something specific
+              — above the fold on every screen, next to the search field. */}
+          <div className="hero-cta">
+            <a className="btn btn-gold sheen" href="/businesses">
+              Browse businesses
+            </a>
+            <a className="btn btn-ghost" href="/listings">
+              See latest listings
+            </a>
           </div>
+          {live ? (
+            <div className="hero-stats">
+              <div className="hero-stat">
+                <span className="n">
+                  <CountUp value={data.business_count} />
+                </span>
+                <span className="l">active business{data.business_count === 1 ? '' : 'es'}</span>
+              </div>
+              <div className="hero-stat">
+                <span className="n">
+                  <CountUp value={data.categories.length} />
+                </span>
+                <span className="l">industries</span>
+              </div>
+              <div className="hero-stat">
+                <span className="n">0</span>
+                <span className="l">accounts needed to enquire</span>
+              </div>
+            </div>
+          ) : (
+            <p className="hero-offline" role="status">
+              The catalogue is taking a moment to wake up.{' '}
+              <a href="/">Reload the page</a> — browsing and WhatsApp enquiries
+              still work on any storefront you already have open.
+            </p>
+          )}
         </div>
         <ChatStage categories={cats} />
         <a className="cine-scroll" href="#market">
@@ -120,10 +142,16 @@ export default async function HomePage() {
           {cats.length === 0 ? (
             <div className="empty">
               <span className="empty-icon floaty" aria-hidden>
-                🗂️
+                {live ? '🗂️' : '🕯️'}
               </span>
-              <h2>The stalls are being set</h2>
-              <p>Categories arrive with the first vendors. Check back soon.</p>
+              <h2>{live ? 'The stalls are being set' : 'The aisles are dark right now'}</h2>
+              <p>
+                {live
+                  ? 'Categories arrive with the first vendors. Check back soon.'
+                  : 'We could not reach the catalogue service. '}
+                {!live && <a href="/">Reload</a>}
+                {!live && ' to try again.'}
+              </p>
             </div>
           ) : (
             <Reveal>
@@ -194,10 +222,17 @@ export default async function HomePage() {
               <span className="empty-icon floaty" aria-hidden>
                 🏪
               </span>
-              <h2>No stalls yet</h2>
-              <p>
-                Be the first lantern in the market — <a href="/register">open your storefront free</a>.
-              </p>
+              <h2>{live ? 'No stalls yet' : 'The floor is unlit right now'}</h2>
+              {live ? (
+                <p>
+                  Be the first lantern in the market — <a href="/register">open your storefront free</a>.
+                </p>
+              ) : (
+                <p>
+                  We could not load the directory — <a href="/">reload</a> or{' '}
+                  <a href="/businesses">try the full list</a>.
+                </p>
+              )}
             </div>
           </div>
         ) : (

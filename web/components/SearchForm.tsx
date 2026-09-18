@@ -22,6 +22,7 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
         onChange={(e) => setQ(e.target.value)}
         placeholder={big ? 'Search businesses, courses, products…' : 'Search…'}
         aria-label="Search"
+        enterKeyHint="search"
       />
       <button type="submit" className={big ? 'btn btn-wa' : 'btn btn-primary'}>
         Search

@@ -1,12 +1,34 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { BusinessOut, CategoryOut } from '@/lib/types';
 import BusinessCard from './BusinessCard';
 
-/** Drag / wheel-friendly horizontal reel of featured storefronts. */
+const prefersReduced = () =>
+  typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * Drag-friendly horizontal reel of featured storefronts.
+ *
+ * Vertical wheel scrolling is deliberately *not* hijacked (it used to convert
+ * the page's downward scroll into sideways reel movement and block the page
+ * until the reel hit its end — the home page felt stuck). Trackpads scroll it
+ * natively, touch drags it, and the arrows below make the axis discoverable.
+ */
 export function BusinessReel({ businesses }: { businesses: BusinessOut[] }) {
   const ref = useRef<HTMLDivElement>(null);
+  const [atStart, setAtStart] = useState(true);
+  const [atEnd, setAtEnd] = useState(false);
+  const [scrollable, setScrollable] = useState(false);
+
+  const sync = useCallback(() => {
+    const el = ref.current;
+    if (!el) return;
+    const max = el.scrollWidth - el.clientWidth;
+    setScrollable(max > 8);
+    setAtStart(el.scrollLeft <= 4);
+    setAtEnd(el.scrollLeft >= max - 4);
+  }, []);
 
   useEffect(() => {
     const el = ref.current;
@@ -17,6 +39,8 @@ export function BusinessReel({ businesses }: { businesses: BusinessOut[] }) {
     let moved = false;
 
     const onDown = (e: PointerEvent) => {
+      // only the primary button / a single finger, and never on a control
+      if (e.button !== 0) return;
       down = true;
       moved = false;
       startX = e.clientX;
@@ -31,8 +55,10 @@ export function BusinessReel({ businesses }: { businesses: BusinessOut[] }) {
       el.scrollLeft = startScroll - dx;
     };
     const onUp = () => {
+      if (!down) return;
       down = false;
       el.classList.remove('is-drag');
+      sync();
     };
     const onClick = (e: MouseEvent) => {
       if (moved) {
@@ -41,37 +67,67 @@ export function BusinessReel({ businesses }: { businesses: BusinessOut[] }) {
         moved = false;
       }
     };
-    const onWheel = (e: WheelEvent) => {
-      if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && el.scrollWidth > el.clientWidth) {
-        el.scrollLeft += e.deltaY;
-        if (el.scrollLeft > 0 && el.scrollLeft < el.scrollWidth - el.clientWidth) e.preventDefault();
-      }
-    };
 
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointermove', onMove);
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onUp);
     el.addEventListener('click', onClick, true);
-    el.addEventListener('wheel', onWheel, { passive: false });
+    el.addEventListener('scroll', sync, { passive: true });
+    window.addEventListener('resize', sync);
+    sync();
     return () => {
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('click', onClick, true);
-      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('scroll', sync);
+      window.removeEventListener('resize', sync);
     };
-  }, []);
+  }, [sync]);
+
+  const step = (dir: 1 | -1) => {
+    const el = ref.current;
+    if (!el) return;
+    const card = el.querySelector('.cine-reel-item');
+    const amount = (card?.getBoundingClientRect().width ?? el.clientWidth * 0.8) + 18;
+    el.scrollBy({ left: dir * amount, behavior: prefersReduced() ? 'auto' : 'smooth' });
+  };
 
   return (
-    <div className="cine-reel" ref={ref} data-elastic="">
-      {businesses.map((b) => (
-        <div className="cine-reel-item" key={b.id}>
-          <BusinessCard b={b} featured />
+    <>
+      <div className="cine-reel" ref={ref} data-elastic="">
+        {businesses.map((b) => (
+          <div className="cine-reel-item" key={b.id}>
+            <BusinessCard b={b} featured />
+          </div>
+        ))}
+      </div>
+      {scrollable && (
+        <div className="cine-reel-bar">
+          <span className="cine-reel-hint">Drag or scroll sideways</span>
+          <button
+            type="button"
+            className="cine-reel-btn"
+            aria-label="Previous businesses"
+            onClick={() => step(-1)}
+            disabled={atStart}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            className="cine-reel-btn"
+            aria-label="More businesses"
+            onClick={() => step(1)}
+            disabled={atEnd}
+          >
+            →
+          </button>
         </div>
-      ))}
-    </div>
+      )}
+    </>
   );
 }
 

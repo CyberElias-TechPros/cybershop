@@ -49,16 +49,35 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
+/**
+ * Runs before first paint: flags JS support (the reveal states are gated on
+ * it) and decides whether the intro curtain should play. The curtain has to be
+ * in the server HTML — mounted from an effect it lands on top of content that
+ * is already readable and blanks the screen. It is skipped for repeat views in
+ * the same session and for the dashboard/admin workbenches.
+ */
+const BOOT_JS = `document.documentElement.classList.add("js");
+try{var p=location.pathname;
+if(sessionStorage.getItem("cs-intro")==="1"||p.indexOf("/dashboard")===0||p.indexOf("/admin")===0){
+document.documentElement.classList.add("no-intro");}else{sessionStorage.setItem("cs-intro","1");}
+}catch(e){document.documentElement.classList.add("no-intro");}`;
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={fraunces.variable}>
       <head>
-        <script
-          // Progressive-enhancement gate: hidden reveal states apply only when JS runs.
-          dangerouslySetInnerHTML={{ __html: 'document.documentElement.classList.add("js")' }}
-        />
+        <script dangerouslySetInnerHTML={{ __html: BOOT_JS }} />
       </head>
       <body>
+        {/* Brand curtain — server-rendered so it covers the very first paint
+            (see BOOT_JS above; Atmosphere retires it on first interaction). */}
+        <div className="cine-intro" aria-hidden="true">
+          <div className="cine-intro-line" />
+          <p className="cine-intro-mark">
+            Cyber<span>Shop</span>
+          </p>
+          <p className="cine-intro-sub">The night market, always open</p>
+        </div>
         <Atmosphere />
         <HeaderFx />
         <TransitionFx />
@@ -68,7 +87,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           Skip to content
         </a>
         <Header />
-        <main id="main">{children}</main>
+        <main id="main" tabIndex={-1}>
+          {children}
+        </main>
         <Footer />
       </body>
     </html>

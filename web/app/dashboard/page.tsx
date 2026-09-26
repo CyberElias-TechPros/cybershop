@@ -7,7 +7,7 @@ import { requireVendor, sessionCookieHeader } from '@/lib/session';
 export const dynamic = 'force-dynamic';
 
 interface Overview {
-  business: { id: number; name: string; slug: string; status: string };
+  business: { id: number; name: string; slug: string; status: string; paused?: boolean };
   stats: Record<string, number>;
   counts: { items: number; published: number; inquiries: number; new_leads: number; unread_notifications: number };
   subscription: { status: string; expires_at: string | null; plan_name: string | null } | null;
@@ -62,6 +62,16 @@ export default async function DashboardOverviewPage() {
           </div>
           <Link className="btn btn-ghost" href="/dashboard/billing">
             View payment
+          </Link>
+        </div>
+      )}
+      {business.paused && status === 'active' && (
+        <div className="banner warn">
+          <div>
+            <strong>Your store is paused.</strong> Buyers cannot see the catalogue or the WhatsApp button until you resume.
+          </div>
+          <Link className="btn btn-primary" href="/dashboard/settings">
+            Resume in settings
           </Link>
         </div>
       )}

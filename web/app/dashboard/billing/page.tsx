@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { capi, extractError, fmtNaira } from '@/lib/client-api';
 import { haptic } from '@/lib/haptics';
+import ReferralCard from '@/components/ReferralCard';
 
 interface Plan {
   id: number;
@@ -187,6 +188,7 @@ export default function BillingPage() {
       </div>
       {error && <div className="form-msg error">{error}</div>}
       {notice && <div className="form-msg success">{notice}</div>}
+      <ReferralCard />
 
       {pending && (
         <div className="banner warn">

@@ -8,6 +8,7 @@ import type { ItemPageOut } from '@/lib/types';
 import Gallery from '@/components/Gallery';
 import EnquiryBox from '@/components/EnquiryBox';
 import ReviewBox from '@/components/ReviewBox';
+import ShareBar from '@/components/ShareBar';
 import StickyWa from '@/components/StickyWa';
 import WaveAudio from '@/components/WaveAudio';
 import ItemCard from '@/components/ItemCard';
@@ -275,6 +276,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
             </Reveal>
             <Reveal i={6}>
               <ReviewBox businessId={business.id} listingId={item.id} reviews={item.reviews} />
+              <ShareBar url={itemPath(business.slug, sp.segment, item.slug)} title={item.name} />
             </Reveal>
           </div>
         </div>

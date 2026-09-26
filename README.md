@@ -109,7 +109,7 @@ npm run dev
 ## Tests
 
 ```bash
-cd worker && npm test        # 46 tests: password-hashing + wa.me prefill units + full
+cd worker && npm test        # 56 tests: password-hashing + wa.me prefill units + full
                              # integration suite (onboarding, both payment paths, media
                              # upload + gateway-token finalize/single-use,
                              # IDOR isolation, public pages, rate limits,
@@ -146,9 +146,13 @@ checklist. Free-tier headroom and the scaling path are in
   canonical + og:url metadata on every public page; cinematic split-screen
   auth + art-directed onboarding plan ceremony; seed script fixes
   (#HttpOnly cookie parsing, resumable re-runs).
-- **Phase 2:** leads CRM polish, CSV import/export, QR codes, smart number
-  routing UI, better search/filters.
-- **Phase 3:** staff accounts, custom domains/subdomains, reviews (once
-  legitimate), referrals, PWA polish.
-- **Phase 4 (only if justified):** WhatsApp Business Cloud API for automated
-  confirmations (deep links remain the default).
+- **Phase 2–3 (this branch):** leads CRM with buyer status updates, CSV import,
+  staff seats, storefront sections, saved stores, share + QR, search filters
+  (including category field filters) and suggestions, enquiry-backed reviews,
+  blocks, custom-domain DNS verify, vendor pause (catalogue stays, market
+  hides), admin extend/revoke/feature/refund, and a vendor referral credit
+  (10% of the referred store’s first paid plan, capped, applied to the next
+  plan — not cash; refunds take it back).
+- **Not in this product:** checkout, orders, WhatsApp Business Cloud API,
+  extra payment providers, a native app, or AI copy. Those would change what
+  the market is. Deep links remain how a sale starts.

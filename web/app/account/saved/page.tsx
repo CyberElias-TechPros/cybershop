@@ -37,6 +37,7 @@ function Grid({ ads, onRemove }: { ads: Card[]; onRemove?: (id: number) => void 
 export default function SavedAccount() {
   const [saved, setSaved] = useState<Card[]>([]);
   const [recent, setRecent] = useState<Card[]>([]);
+  const [stores, setStores] = useState<{ id: number; name: string; slug: string; city: string | null }[]>([]);
   const [error, setError] = useState('');
 
   async function load() {
@@ -44,12 +45,14 @@ export default function SavedAccount() {
     if (localIds.length) {
       await capi('/account/favorites/sync', { method: 'POST', body: JSON.stringify({ listing_ids: localIds }) }).catch(() => undefined);
     }
-    const [f, r] = await Promise.all([
+    const [f, r, b] = await Promise.all([
       capi<{ favorites: Card[] }>('/account/favorites'),
       capi<{ recent: Card[] }>('/account/recent'),
+      capi<{ businesses: { id: number; name: string; slug: string; city: string | null }[] }>('/account/businesses'),
     ]);
     setSaved(f.favorites);
     setRecent(r.recent);
+    setStores(b.businesses);
   }
 
   useEffect(() => {
@@ -61,6 +64,17 @@ export default function SavedAccount() {
       <div className="dash-head"><h1>Saved & recently viewed</h1></div>
       {error && <div className="form-msg error">{error}</div>}
       <p style={{ color: 'var(--muted)' }}>Saved on this device is copied into your account so it follows you.</p>
+      <h2>Saved stores</h2>
+      {stores.length === 0 ? <p style={{ color: 'var(--muted)' }}>No stores saved yet.</p> : (
+        <ul>
+          {stores.map((s) => (
+            <li key={s.id}>
+              <a href={`/business/${s.slug}`}>{s.name}</a>{s.city ? ` · ${s.city}` : ''}{' '}
+              <button type="button" className="mini-btn" onClick={async () => { await capi(`/account/businesses/${s.id}`, { method: 'DELETE' }); setStores((xs) => xs.filter((x) => x.id !== s.id)); }}>Remove</button>
+            </li>
+          ))}
+        </ul>
+      )}
       <h2>Saved</h2>
       <Grid ads={saved} onRemove={async (id) => { await capi(`/account/favorites/${id}`, { method: 'DELETE' }); setSaved((s) => s.filter((x) => x.listing_id !== id)); }} />
       <h2 style={{ marginTop: 28 }}>Recently viewed</h2>

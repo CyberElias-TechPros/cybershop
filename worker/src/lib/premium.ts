@@ -195,7 +195,7 @@ export async function notifySavedSearches(env: Env): Promise<number> {
   }[];
   let n = 0;
   for (const s of searches) {
-    let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND l.id > ?`;
+    let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.paused_at IS NULL AND l.id > ?`;
     const params: (string | number)[] = [s.last_seen_listing_id];
     if (s.q) { where += ` AND (l.name LIKE ? OR l.description LIKE ?)`; params.push(`%${s.q}%`, `%${s.q}%`); }
     if (s.city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(s.city); }

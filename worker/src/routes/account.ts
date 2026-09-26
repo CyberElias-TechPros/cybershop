@@ -11,6 +11,7 @@ import { notify } from '../lib/notify';
 import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
 import { rateLimit } from '../lib/ratelimit';
 import { clientIp } from '../lib/ip';
+import { ensureReferralCode, referralLink, referralCredit } from '../lib/referral';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -50,10 +51,13 @@ app.get('/home', async (c) => {
   const threads = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM threads WHERE buyer_user_id = ? AND status = \'open\'').bind(user.id).first()) as { n: number };
   const searches = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM saved_searches WHERE buyer_user_id = ?').bind(user.id).first()) as { n: number };
   const row = (await c.env.DB.prepare('SELECT phone, email_verified_at FROM users WHERE id = ?').bind(user.id).first()) as { phone: string | null; email_verified_at: string | null } | null;
+  const code = await ensureReferralCode(c.env, user.id);
+  const savedBiz = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM saved_businesses WHERE buyer_user_id = ?').bind(user.id).first()) as { n: number };
   return c.json({
     ok: true,
     user: { id: user.id, role: user.role, name: user.name, email: user.email, phone: row?.phone ?? null, email_verified: !!row?.email_verified_at, member_role: user.member_role ?? null },
-    counts: { favorites: fav.n, inquiries: inq.n, threads: threads.n, saved_searches: searches.n, unread: (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL').bind(user.id).first() as { n: number }).n },
+    counts: { favorites: fav.n, inquiries: inq.n, threads: threads.n, saved_searches: searches.n, saved_businesses: savedBiz.n, unread: (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL').bind(user.id).first() as { n: number }).n },
+    referral: { code, link: referralLink(c.env, code), credit_kobo: await referralCredit(c.env, user.id) },
   });
 });
 
@@ -171,6 +175,39 @@ app.post('/favorites', async (c) => {
   }
   await c.env.DB.prepare('INSERT INTO favorites (buyer_user_id, listing_id, created_at) VALUES (?, ?, ?)').bind(user.id, listingId, nowIso()).run();
   return c.json({ ok: true, saved: true });
+});
+
+app.get('/businesses', async (c) => {
+  const user = await requireUser(c.env, c);
+  const rows = (await c.env.DB.prepare(
+    `SELECT b.id, b.name, b.slug, b.city, b.status, s.created_at
+     FROM saved_businesses s JOIN businesses b ON b.id = s.business_id
+     WHERE s.buyer_user_id = ? AND b.deleted_at IS NULL ORDER BY s.created_at DESC LIMIT 80`
+  ).bind(user.id).all()).results;
+  return c.json({ ok: true, businesses: rows });
+});
+
+app.post('/businesses', async (c) => {
+  const user = await requireUser(c.env, c);
+  const body = await c.req.json().catch(() => null);
+  const businessId = reqInt(body?.business_id, { min: 1 });
+  const biz = await c.env.DB.prepare('SELECT id, owner_user_id FROM businesses WHERE id = ? AND deleted_at IS NULL').bind(businessId).first() as { id: number; owner_user_id: number } | null;
+  if (!biz) throw notFound('Business not found.');
+  if (biz.owner_user_id === user.id) throw badRequest('You already own this store.');
+  const already = await c.env.DB.prepare('SELECT 1 FROM saved_businesses WHERE buyer_user_id = ? AND business_id = ?').bind(user.id, businessId).first();
+  if (already) {
+    await c.env.DB.prepare('DELETE FROM saved_businesses WHERE buyer_user_id = ? AND business_id = ?').bind(user.id, businessId).run();
+    return c.json({ ok: true, saved: false });
+  }
+  await c.env.DB.prepare('INSERT INTO saved_businesses (buyer_user_id, business_id, created_at) VALUES (?, ?, ?)').bind(user.id, businessId, nowIso()).run();
+  return c.json({ ok: true, saved: true });
+});
+
+app.delete('/businesses/:id', async (c) => {
+  const user = await requireUser(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  await c.env.DB.prepare('DELETE FROM saved_businesses WHERE buyer_user_id = ? AND business_id = ?').bind(user.id, id).run();
+  return c.json({ ok: true });
 });
 
 app.post('/favorites/sync', async (c) => {

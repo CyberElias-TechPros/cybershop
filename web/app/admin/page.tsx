@@ -41,6 +41,11 @@ export default async function AdminOverviewPage() {
         <h1>Overview</h1>
       </div>
 
+      <p style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <a href="/api/admin/export?kind=businesses">Export stores</a>
+        <a href="/api/admin/export?kind=listings">Export listings</a>
+        <a href="/api/admin/export?kind=payments">Export payments</a>
+      </p>
       <div className="stat-grid">
         <div className="card stat">
           <div className="num">{stats.active}</div>

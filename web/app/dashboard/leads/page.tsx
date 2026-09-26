@@ -38,16 +38,18 @@ export default function LeadsPage() {
   const [total, setTotal] = useState(0);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [error, setError] = useState('');
+  const [counts, setCounts] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     try {
-      const d = await capi<{ inquiries: Inquiry[]; total: number; page: number; pages: number }>(
+      const d = await capi<{ inquiries: Inquiry[]; total: number; page: number; pages: number; counts?: Record<string, number> }>(
         `/vendor/inquiries?status=${filter}&page=${page}`
       );
       setItems(d.inquiries);
       setTotal(d.total);
       setPage(d.page);
       setPages(d.pages);
+      setCounts(d.counts || {});
     } catch (e) {
       setError(extractError(e));
     }
@@ -100,7 +102,7 @@ export default function LeadsPage() {
               }}
               style={{ color: filter === s ? '#fff' : undefined, background: filter === s ? 'var(--green)' : undefined, display: 'inline-block', borderRadius: 999 }}
             >
-              {s === 'all' ? 'All' : LABELS[s]}
+              {s === 'all' ? 'All' : LABELS[s]}{s !== 'all' && counts[s] ? ` ${counts[s]}` : ''}
             </a>
           </span>
         ))}

@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 const EMPTY: HomeOut = {
-  platform: { name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng' },
+  platform: { name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng', announcement: '' },
   categories: [],
   businesses: [],
   business_count: 0,
@@ -36,8 +36,15 @@ export default async function HomePage() {
   const tagline = platform?.tagline ?? 'Find a business. Talk to it on WhatsApp.';
   const cats = data.categories;
 
+  const announcement = (platform?.announcement || '').trim();
+
   return (
     <>
+      {announcement && (
+        <div className="container" style={{ paddingTop: 16 }}>
+          <div className="banner info" role="status">{announcement}</div>
+        </div>
+      )}
       <section className="cine-hero">
         <div className="cine-hero-copy">
           <p className="cine-kicker">

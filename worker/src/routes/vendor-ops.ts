@@ -260,6 +260,18 @@ app.post('/staff/invite', async (c) => {
   return c.json({ ok: true, invite_url: url, emailed: mailConfigured(c.env) });
 });
 
+app.put('/staff/:userId', async (c) => {
+  const { business, memberRole } = await requireVendor(c.env, c);
+  if (memberRole !== 'owner' && memberRole !== 'manager') throw forbidden('Only the owner or a manager can change a role.');
+  const userId = reqInt(c.req.param('userId'), { min: 1 });
+  if (userId === business.owner_user_id) throw badRequest('The owner role stays with the owner.');
+  const body = await c.req.json().catch(() => null);
+  const role: StaffRole = (STAFF_ROLES as readonly string[]).includes(String(body?.role)) ? (body.role as StaffRole) : 'catalogue';
+  const res = await c.env.DB.prepare(`UPDATE business_members SET role = ? WHERE business_id = ? AND user_id = ? AND status = 'active'`).bind(role, business.id, userId).run();
+  if (res.meta.changes === 0) throw notFound('That person is not on your team.');
+  return c.json({ ok: true, role });
+});
+
 app.delete('/staff/:userId', async (c) => {
   const { business, memberRole } = await requireVendor(c.env, c);
   if (memberRole !== 'owner' && memberRole !== 'manager') throw forbidden('Only the owner or a manager can remove staff.');

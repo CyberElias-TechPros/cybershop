@@ -71,6 +71,9 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
             </span>
             <h2>Nothing found for “{q}”</h2>
             <p>Try a different word, or <a href="/businesses">browse all businesses</a>.</p>
+            {data.suggestions && data.suggestions.length > 0 && (
+              <p>Did you mean {data.suggestions.map((s) => <a key={s.href} href={s.href} style={{ marginRight: 10 }}>{s.label}</a>)}</p>
+            )}
           </div>
         )}
         {data && data.total > 0 && (

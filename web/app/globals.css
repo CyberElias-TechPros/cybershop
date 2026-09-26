@@ -1223,12 +1223,17 @@ a.card {
   color: inherit;
   display: block;
 }
-a.card:hover {
+a.card:hover,
+.card:has(.card-stretch):hover {
   text-decoration: none;
   transform: translateY(-4px);
   border-color: rgba(44, 229, 142, 0.4);
   box-shadow: var(--glow-em);
 }
+.card { position: relative; }
+.card-stretch { color: inherit; display: block; text-decoration: none; }
+.card-stretch::after { content: ""; position: absolute; inset: 0; }
+.card .btn-cart { position: absolute; z-index: 2; top: 12px; right: 12px; }
 
 /* category cards */
 .cat-card {
@@ -3739,6 +3744,15 @@ html.no-scroll {
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.suggest-pop button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  color: inherit;
+  padding: 8px 10px;
+  cursor: pointer;
 }
 .suggest-pop a {
   display: flex;

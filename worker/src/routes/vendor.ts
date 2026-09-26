@@ -15,6 +15,9 @@ import { initiatePaystack } from '../lib/paystack';
 import { normalizeWaNumber } from '../lib/wa';
 import { formatNaira } from '../lib/money';
 import { recordView } from '../lib/analytics';
+import { notify } from '../lib/notify';
+import { parseStorefront } from '../lib/storefront';
+import { ensureReferralCode, referralLink, referralCredit } from '../lib/referral';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,7 +30,15 @@ app.get('/business', async (c) => {
   const cats = (await c.env.DB.prepare('SELECT c.name, c.slug, c.icon FROM business_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.business_id = ?').bind(business.id).all()).results as Record<string, unknown>[];
   const quotas = await effectiveQuotas(c.env, business.id);
   const storage = await storageUsedBytes(c.env, business.id);
-  return c.json({ ok: true, business: { ...row, categories: cats }, quotas, storage_used_bytes: storage });
+  const code = await ensureReferralCode(c.env, user.id);
+  const credit = await referralCredit(c.env, user.id);
+  return c.json({
+    ok: true,
+    business: { ...row, categories: cats, storefront: parseStorefront(row.settings as string | null) },
+    quotas,
+    storage_used_bytes: storage,
+    referral: { code, link: referralLink(c.env, code), credit_kobo: credit },
+  });
 });
 
 app.put('/business', async (c) => {
@@ -77,8 +88,22 @@ app.put('/business', async (c) => {
     }
     sets.push('social = ?'); params.push(JSON.stringify(social));
   }
+  if (body.storefront !== undefined) {
+    sets.push('settings = ?');
+    params.push(JSON.stringify(parseStorefront(JSON.stringify(body.storefront))));
+  }
   await c.env.DB.prepare(`UPDATE businesses SET ${sets.join(', ')} WHERE id = ?`).bind(...params, business.id).run();
   return c.json({ ok: true });
+});
+
+/** Hide the store from the market without deleting it. Owner and manager only. */
+app.post('/business/pause', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body.paused !== 'boolean') throw badRequest('Say whether the store should be paused.');
+  await c.env.DB.prepare('UPDATE businesses SET paused_at = ?, updated_at = ? WHERE id = ?')
+    .bind(body.paused ? nowIso() : null, nowIso(), business.id).run();
+  return c.json({ ok: true, paused: body.paused });
 });
 
 // ---------------------------------------------------------------- media
@@ -723,6 +748,9 @@ app.post('/payment-intent', async (c) => {
     }
     const kind = business.status === 'pending_payment' ? 'activation' : 'subscription_renewal';
     payment = await createPaymentIntent(c.env, { businessId: business.id, kind, plan, addon: null, method });
+    if (payment.status === 'approved') {
+      return c.json({ ok: true, payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method: payment.method, status: payment.status }, settled_with_credit: true });
+    }
   } else if (body?.addon_slug) {
     const addon = (await c.env.DB.prepare('SELECT * FROM addons WHERE slug = ? AND is_active = 1').bind(String(body.addon_slug).slice(0, 130)).first()) as AddonRow | null;
     if (!addon) throw notFound('Add-on not found.');
@@ -795,7 +823,10 @@ app.get('/inquiries', async (c) => {
     }
     return { ...r, items };
   });
-  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+  const countRows = (await c.env.DB.prepare('SELECT status, COUNT(*) AS n FROM inquiries WHERE business_id = ? GROUP BY status').bind(business.id).all()).results as { status: string; n: number }[];
+  const counts: Record<string, number> = {};
+  for (const row of countRows) counts[row.status] = row.n;
+  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)), counts });
 });
 
 app.put('/inquiries/:id', async (c) => {
@@ -805,12 +836,14 @@ app.put('/inquiries/:id', async (c) => {
   if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
   const sets: string[] = [];
   const params: (string | null)[] = [];
+  let nextStatus: string | null = null;
   if (body.status !== undefined) {
     if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(body.status))) {
       throw badRequest('Invalid status.');
     }
+    nextStatus = String(body.status);
     sets.push('status = ?');
-    params.push(String(body.status));
+    params.push(nextStatus);
     if (String(body.status) !== 'new') {
       sets.push('first_response_at = COALESCE(first_response_at, ?)');
       params.push(nowIso());
@@ -835,6 +868,19 @@ app.put('/inquiries/:id', async (c) => {
   if (sets.length === 0) throw badRequest('Nothing to update.');
   const res = await c.env.DB.prepare(`UPDATE inquiries SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).bind(...params, id, business.id).run();
   if (res.meta.changes === 0) throw notFound('Inquiry not found.');
+  if (nextStatus) {
+    const lead = (await c.env.DB.prepare(
+      `SELECT i.buyer_user_id, l.name AS item_name FROM inquiries i LEFT JOIN listings l ON l.id = i.listing_id WHERE i.id = ?`
+    ).bind(id).first()) as { buyer_user_id: number | null; item_name: string | null } | null;
+    if (lead?.buyer_user_id) {
+      await notify(c.env, {
+        userId: lead.buyer_user_id,
+        type: 'inquiry.status',
+        title: `Your enquiry is ${nextStatus}`,
+        body: lead.item_name ? `${business.name} marked “${lead.item_name}” as ${nextStatus}.` : `${business.name} updated your enquiry to ${nextStatus}.`,
+      });
+    }
+  }
   return c.json({ ok: true });
 });
 
@@ -872,7 +918,7 @@ app.get('/overview', async (c) => {
   ).bind(business.id, business.id, day(30)).all()).results as Record<string, unknown>[];
   return c.json({
     ok: true,
-    business: { id: business.id, name: (biz as { name: string }).name, slug: (biz as { slug: string }).slug, status: (biz as { status: string }).status },
+    business: { id: business.id, name: (biz as { name: string }).name, slug: (biz as { slug: string }).slug, status: (biz as { status: string }).status, paused: !!(biz as { paused_at?: string | null }).paused_at },
     stats: views,
     counts,
     subscription: sub,

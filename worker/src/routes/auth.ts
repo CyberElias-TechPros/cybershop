@@ -10,6 +10,7 @@ import { activateFreePlan } from '../lib/payments';
 import { normalizeWaNumber } from '../lib/wa';
 import { clientIp } from '../lib/ip';
 import { resolveVendorBinding } from '../lib/access';
+import { ensureReferralCode, referrerIdForCode } from '../lib/referral';
 import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -36,6 +37,7 @@ app.post('/register', async (c) => {
   const res = await c.env.DB.prepare('INSERT INTO users (role, name, email, phone, password_hash, status) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(role, name, email, phone, hash, 'active').run();
   const userId = Number(res.meta.last_row_id);
+  await ensureReferralCode(c.env, userId);
 
   let businessId: number | null = null;
   if (role === 'vendor') {
@@ -57,6 +59,10 @@ app.post('/register', async (c) => {
     if (whatsapp) {
       await c.env.DB.prepare(`INSERT INTO whatsapp_numbers (business_id, number, label, is_default) VALUES (?, ?, 'General', 1)`).bind(businessId, whatsapp).run();
     }
+    const referrer = typeof body.referral_code === 'string' ? await referrerIdForCode(c.env, body.referral_code, userId) : null;
+    if (referrer) {
+      await c.env.DB.prepare('UPDATE businesses SET referred_by_user_id = ? WHERE id = ?').bind(referrer, businessId).run();
+    }
     // default free subscription (trial) so the store can be activated via the free plan or upgraded later
     const freePlan = (await c.env.DB.prepare(`SELECT id FROM plans WHERE slug = 'free' AND is_active = 1 LIMIT 1`).first()) as { id: number } | null;
     if (freePlan) {
@@ -70,7 +76,7 @@ app.post('/register', async (c) => {
     const token = randomToken(24);
     const expires = String(Math.floor(Date.now() / 1000) + 86400);
     await c.env.DB.prepare('UPDATE users SET email_verify_token = ?, email_verify_expires = ? WHERE id = ?').bind(token, expires, userId).run();
-    const url = `${c.env.APP_URL}/account/verify?token=${token}`;
+    const url = `${c.env.APP_URL}/verify-email?token=${token}`;
     await sendEmail(c.env, {
       to: email,
       subject: 'Confirm your CyberShop email',

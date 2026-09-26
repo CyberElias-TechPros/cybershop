@@ -59,7 +59,10 @@ export default function TeamPage() {
         <ul>
           {members.map((m) => (
             <li key={m.user_id}>
-              {m.name} · {m.email} · {m.role}{' '}
+              {m.name} · {m.email} ·{' '}
+              <select className="select" style={{ width: 'auto' }} defaultValue={m.role} aria-label={`Role for ${m.name}`} onChange={async (e) => { await capi(`/vendor/staff/${m.user_id}`, { method: 'PUT', body: JSON.stringify({ role: e.target.value }) }); }}>
+                {['manager', 'catalogue', 'sales', 'support', 'accountant'].map((r) => <option key={r} value={r}>{r}</option>)}
+              </select>{' '}
               <button className="mini-btn danger" type="button" onClick={async () => { await capi(`/vendor/staff/${m.user_id}`, { method: 'DELETE' }); await load(); }}>Remove</button>
             </li>
           ))}

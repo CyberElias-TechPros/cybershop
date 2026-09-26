@@ -7,7 +7,7 @@ import { capi, extractError } from '@/lib/client-api';
 export default function AccountHome() {
   const [data, setData] = useState<{
     user: { name: string; email: string; role: string; email_verified: boolean };
-    counts: { favorites: number; inquiries: number; threads: number; saved_searches: number; unread: number };
+    counts: { favorites: number; inquiries: number; threads: number; saved_searches: number; saved_businesses: number; unread: number };
   } | null>(null);
   const [error, setError] = useState('');
 
@@ -22,6 +22,7 @@ export default function AccountHome() {
 
   const cards = [
     ['Saved ads', data.counts.favorites, '/account/saved'],
+    ['Saved stores', data.counts.saved_businesses, '/account/saved'],
     ['Enquiries', data.counts.inquiries, '/account/enquiries'],
     ['Messages', data.counts.threads, '/account/messages'],
     ['Saved searches', data.counts.saved_searches, '/account/alerts'],

@@ -54,8 +54,9 @@ the ID is public, not a secret.
 npx wrangler d1 migrations apply cybershop --remote
 ```
 
-Expected: `0001_init` (32 tables), `0002_seed` (categories, item types, plans,
-add-ons, default settings), `0003_audit_nullable_actor`.
+Expected: every file in `worker/migrations/` applies, from `0001_init` through
+`0008_ops` (pause column) and anything added after. `wrangler d1 migrations list --remote`
+should show them all applied. Do not skip a file — later routes read those columns.
 
 ---
 

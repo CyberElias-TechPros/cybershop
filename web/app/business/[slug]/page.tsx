@@ -9,6 +9,8 @@ import BusinessCard from '@/components/BusinessCard';
 import ItemCard from '@/components/ItemCard';
 import WaCta from '@/components/WaCta';
 import BlockSeller from '@/components/BlockSeller';
+import SaveBusiness from '@/components/SaveBusiness';
+import ShareBar from '@/components/ShareBar';
 import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
@@ -24,11 +26,14 @@ interface SP {
 export async function generateMetadata({ params }: { params: Promise<SP> }): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const { business } = await api<BusinessPageOut>(`/public/business/${slug}`, { cookie: await sessionCookieHeader() });
+    const data = await api<BusinessPageOut>(`/public/business/${slug}`, { cookie: await sessionCookieHeader() });
+    const { business } = data;
     const img = business.cover?.url || business.logo?.url || null;
+    const closed = Boolean(data.unavailable) && !data.preview;
     return {
       title: business.name,
       description: business.about?.slice(0, 200) || `${business.name} on CyberShop`,
+      robots: closed ? { index: false, follow: false } : undefined,
       alternates: { canonical: `/business/${business.slug}` },
       openGraph: {
         title: business.name,
@@ -71,8 +76,9 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
   const { slug } = await params;
   const data = await api<BusinessPageOut>(`/public/business/${slug}`, { ip: await clientIp(), cookie: await sessionCookieHeader() });
   const { business, items, offers } = data;
+  const closed = Boolean(data.unavailable) && !data.preview;
   const groups = groupItems(items);
-  const stickyWa = waLink(business.whatsapp_number ?? business.phone, business.name);
+  const stickyWa = closed ? null : waLink(business.whatsapp_number ?? business.phone, business.name);
 
   const jsonLd = {
     '@context': 'https://schema.org',
@@ -92,17 +98,19 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
       : {}),
   };
 
+  const sf = business.storefront;
+  const show = (key: string) => sf?.sections?.[key] !== false;
   const th = categoryTheme(business.categories);
   const flipId = `biz:${business.slug}`;
 
   return (
-    <div style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
+    <div data-store={sf?.style || 'classic'} style={{ ['--acc' as string]: sf?.accent || th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <StickyWa name={business.name} waUrl={stickyWa} ctaLabel="Chat now" />
       <FlipBack id={flipId} />
 
       <div className="store-hero">
-        {business.cover && (
+        {show('hero') && business.cover && (
           <div className="cover-wrap kb" aria-hidden="true" data-flip-target={flipId} data-flip-close={flipId}>
             <span className="skel" aria-hidden="true" />
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -128,7 +136,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
           <div className="store-title">
             <span className="store-live">
               <span className="pulse-dot" aria-hidden="true" />
-              Open for chat
+              {closed ? 'Taking a break' : data.preview ? 'Hidden from buyers' : 'Open for chat'}
             </span>
             <h1>{business.name}</h1>
             <p className="store-meta">
@@ -153,13 +161,24 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
               )}
             </div>
             <BlockSeller businessId={business.id} />
+            <SaveBusiness businessId={business.id} />
+            <ShareBar url={`/business/${business.slug}`} title={business.name} />
           </div>
         </div>
       </div>
 
       <div className="container item-layout" style={{ padding: '28px 16px' }}>
         <div>
-          {business.about && (
+          {data.unavailable && (
+            <div className="banner warn" style={{ marginBottom: 18 }}>
+              {data.preview
+                ? 'Buyers cannot see this catalogue or your WhatsApp button right now. You can, because you manage the store.'
+                : data.unavailable_reason === 'paused'
+                  ? 'This store is taking a break. The catalogue and WhatsApp button are hidden until the seller resumes.'
+                  : 'This store is temporarily unavailable. Nothing here is for sale until it is live again.'}
+            </div>
+          )}
+          {show('about') && business.about && (
             <Reveal className="cascade">
               <div className="card about-box" style={{ marginBottom: 24 }}>
                 <p>{business.about}</p>
@@ -167,7 +186,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
             </Reveal>
           )}
 
-          {offers.length > 0 && (
+          {show('offers') && offers.length > 0 && (
             <Reveal>
               <div className="section-head" style={{ marginBottom: 12 }}>
                 <div>
@@ -177,7 +196,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
               </div>
             </Reveal>
           )}
-          {offers.length > 0 && (
+          {show('offers') && offers.length > 0 && (
             <div className="offers" style={{ marginBottom: 8 }}>
               {offers.map((o, i) => (
                 <Reveal key={o.id} i={i % 4}>
@@ -187,6 +206,39 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
                   </div>
                 </Reveal>
               ))}
+            </div>
+          )}
+
+          {show('featured') && items.some((it) => it.featured) && (
+            <div className="type-group">
+              <h2>Featured</h2>
+              <div className="grid grid-items">
+                {items.filter((it) => it.featured).map((it) => (
+                  <ItemCard key={it.id} item={it} biz={business} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {show('faq') && sf?.faq?.length ? (
+            <div className="card panel" style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: '1.05rem' }}>Questions</h2>
+              {sf.faq.map((f) => (
+                <details key={f.q}>
+                  <summary>{f.q}</summary>
+                  <p>{f.a}</p>
+                </details>
+              ))}
+            </div>
+          ) : null}
+
+          {show('location') && (business.address || business.city || sf?.hours) && (
+            <div className="card panel" style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: '1.05rem' }}>Find us</h2>
+              <p style={{ marginBottom: 0 }}>
+                {[business.address, business.city, business.state_region].filter(Boolean).join(', ')}
+                {sf?.hours ? ` · ${sf.hours}` : ''}
+              </p>
             </div>
           )}
 
@@ -205,7 +257,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
             </div>
           ))}
 
-          {items.length === 0 && (
+          {items.length === 0 && !closed && (
             <div className="empty">
               <span className="empty-icon floaty" aria-hidden>
                 🏷️
@@ -221,7 +273,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
 
         <aside>
           <Reveal className="cascade">
-            <WaCta businessId={business.id} ctaLabel={`Chat with ${business.name}`} />
+            {!closed && <WaCta businessId={business.id} ctaLabel={`Chat with ${business.name}`} />}
           </Reveal>
         </aside>
       </div>

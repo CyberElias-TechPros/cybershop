@@ -13,7 +13,15 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
   const [q, setQ] = useState(initial);
   const [open, setOpen] = useState(false);
   const [hits, setHits] = useState<Suggest>({ businesses: [], items: [] });
+  const [recent, setRecent] = useState<string[]>([]);
   const box = useRef<HTMLFormElement>(null);
+
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('cs-recent-search') || '[]');
+      if (Array.isArray(saved)) setRecent(saved.filter((s) => typeof s === 'string').slice(0, 5));
+    } catch { /* private mode */ }
+  }, []);
 
   useEffect(() => {
     const query = q.trim();
@@ -51,6 +59,11 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
         e.preventDefault();
         const query = q.trim();
         setOpen(false);
+        if (query.length >= 2) {
+          const next = [query, ...recent.filter((s) => s !== query)].slice(0, 5);
+          setRecent(next);
+          try { localStorage.setItem('cs-recent-search', JSON.stringify(next)); } catch { /* private mode */ }
+        }
         router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/search');
       }}
     >
@@ -72,6 +85,13 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
       <button type="submit" className={big ? 'btn btn-wa' : 'btn btn-primary'}>
         Search
       </button>
+      {open && !hasHits && q.trim().length < 2 && recent.length > 0 && (
+        <ul className="suggest-pop" role="listbox">
+          {recent.map((r) => (
+            <li key={r}><button type="button" onClick={() => { setQ(r); setOpen(false); router.push(`/search?q=${encodeURIComponent(r)}`); }}>{r}</button></li>
+          ))}
+        </ul>
+      )}
       {open && hasHits && (
         <ul className="suggest-pop" role="listbox">
           {hits.businesses.map((b) => (

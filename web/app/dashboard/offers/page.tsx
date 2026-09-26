@@ -68,6 +68,7 @@ export default function OffersPage() {
               <strong>{o.title}</strong>
               <div style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{o.kind}{o.item_name ? ` · ${o.item_name}` : ''} · {o.is_active ? 'live' : 'paused'}</div>
             </div>
+            <button className="mini-btn" type="button" onClick={async () => { await capi(`/vendor/offers/${o.id}`, { method: 'PUT', body: JSON.stringify({ is_active: !o.is_active }) }); setOffers((xs) => xs.map((x) => x.id === o.id ? { ...x, is_active: x.is_active ? 0 : 1 } : x)); }}>{o.is_active ? 'Pause' : 'Resume'}</button>
             <button className="mini-btn danger" type="button" onClick={async () => { await capi(`/vendor/offers/${o.id}`, { method: 'DELETE' }); setOffers((xs) => xs.filter((x) => x.id !== o.id)); }}>Remove</button>
           </article>
         ))}

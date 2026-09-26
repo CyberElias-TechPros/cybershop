@@ -10,6 +10,9 @@ import { sendEmail, mailHtml, mailConfigured } from './mail';
 const EMAIL_TYPES = new Set([
   'payment.approved',
   'payment.rejected',
+  'payment.refunded',
+  'subscription.extended',
+  'business.featured',
   'subscription.expiring',
   'subscription.expired',
   'business.active',

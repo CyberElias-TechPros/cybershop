@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { capi, extractError } from '@/lib/client-api';
+import ReferralCard from '@/components/ReferralCard';
 
 export default function AccountSettings() {
   const [name, setName] = useState('');
@@ -31,6 +32,7 @@ export default function AccountSettings() {
       <div className="dash-head"><h1>Account settings</h1></div>
       {error && <div className="form-msg error">{error}</div>}
       {msg && <div className="form-msg success" role="status">{msg}</div>}
+      <ReferralCard />
 
       <form
         className="card panel"

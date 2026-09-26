@@ -2,11 +2,13 @@ import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { absUrl } from '@/lib/config';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import { initials, location, tenureLabel } from '@/lib/ui';
 import type { BusinessPageOut, ItemOut } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import ItemCard from '@/components/ItemCard';
 import WaCta from '@/components/WaCta';
+import BlockSeller from '@/components/BlockSeller';
 import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
@@ -22,7 +24,7 @@ interface SP {
 export async function generateMetadata({ params }: { params: Promise<SP> }): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const { business } = await api<BusinessPageOut>(`/public/business/${slug}`);
+    const { business } = await api<BusinessPageOut>(`/public/business/${slug}`, { cookie: await sessionCookieHeader() });
     const img = business.cover?.url || business.logo?.url || null;
     return {
       title: business.name,
@@ -67,7 +69,7 @@ function waLink(raw: string | null | undefined, name: string): string | null {
 
 export default async function BusinessPage({ params }: { params: Promise<SP> }) {
   const { slug } = await params;
-  const data = await api<BusinessPageOut>(`/public/business/${slug}`, { ip: await clientIp() });
+  const data = await api<BusinessPageOut>(`/public/business/${slug}`, { ip: await clientIp(), cookie: await sessionCookieHeader() });
   const { business, items, offers } = data;
   const groups = groupItems(items);
   const stickyWa = waLink(business.whatsapp_number ?? business.phone, business.name);
@@ -146,7 +148,11 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
               {typeof business.listing_count === 'number' && (
                 <span className="trust-chip faint">{business.listing_count} ads</span>
               )}
+              {business.reviews && business.reviews.count > 0 && (
+                <span className="trust-chip faint">{business.reviews.average}★ from {business.reviews.count} review{business.reviews.count === 1 ? '' : 's'}</span>
+              )}
             </div>
+            <BlockSeller businessId={business.id} />
           </div>
         </div>
       </div>

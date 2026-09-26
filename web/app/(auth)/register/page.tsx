@@ -144,6 +144,8 @@ export default function RegisterPage() {
       </form>
       <p className="auth-alt" style={{ ['--i' as string]: 7 }}>
         Already have an account? <Link href="/login">Sign in</Link>
+        <br />
+        Just browsing? <Link href="/register/buyer">Create a free buyer account</Link>
       </p>
     </AuthShell>
   );

@@ -17,6 +17,8 @@ interface Props {
   /** Show the quantity + name inputs (item pages). */
   withDetails?: boolean;
   messagePreview?: string;
+  /** Selected listing variant, re-validated by the Worker. */
+  variantId?: number | null;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -35,7 +37,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * vendors' low-tech-confidence audience).
  */
 export default function WaCta(props: Props) {
-  const { businessId, listingId, waUrl, ctaLabel = 'Enquire on WhatsApp', priceDisplay, withDetails = false, messagePreview } = props;
+  const { businessId, listingId, waUrl, ctaLabel = 'Enquire on WhatsApp', priceDisplay, withDetails = false, messagePreview, variantId } = props;
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ export default function WaCta(props: Props) {
       const res = await fetch('/api/public/inquiries', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ business_id: businessId, listing_id: listingId ?? null, quantity, name: name.trim() || null }),
+        body: JSON.stringify({ business_id: businessId, listing_id: listingId ?? null, quantity, name: name.trim() || null, variant_id: variantId ?? null }),
       });
       const j = await res.json();
       if (res.ok && j?.wa_url) open(j.wa_url);

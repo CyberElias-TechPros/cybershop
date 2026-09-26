@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import { requireVendor, sessionCookieHeader } from '@/lib/session';
 import Pager from '@/components/Pager';
+import CatalogImport from './CatalogImport';
 
 export const dynamic = 'force-dynamic';
 
@@ -68,6 +69,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
         </Link>
       </div>
 
+      <CatalogImport />
       <form className="toolbar" method="GET" action="/dashboard/catalog">
         {status !== 'all' && <input type="hidden" name="status" value={status} />}
         <input className="input" style={{ maxWidth: 260 }} type="search" name="q" placeholder="Search listings…" defaultValue={q} />

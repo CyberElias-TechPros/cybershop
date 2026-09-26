@@ -21,6 +21,10 @@ export interface Env {
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
   MAIL_ENDPOINT?: string;
+  /** Optional. When set, a verified custom domain is attached to the Vercel project for TLS. */
+  VERCEL_TOKEN?: string;
+  VERCEL_PROJECT_ID?: string;
+  VERCEL_TEAM_ID?: string;
 }
 
 export const SESSION_COOKIE = 'cs_session';

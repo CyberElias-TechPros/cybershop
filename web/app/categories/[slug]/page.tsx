@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import type { CategoryPageOut } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import { Reveal } from '@/components/Motion';
@@ -14,7 +15,7 @@ interface SP {
 export async function generateMetadata({ params }: { params: Promise<SP> }): Promise<Metadata> {
   const { slug } = await params;
   try {
-    const data = await api<CategoryPageOut>(`/public/categories/${slug}`);
+    const data = await api<CategoryPageOut>(`/public/categories/${slug}`, { cookie: await sessionCookieHeader() });
     return {
       title: data.category.name,
       description: data.category.description || `Browse ${data.category.name} businesses on CyberShop.`,
@@ -28,7 +29,7 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
 
 export default async function CategoryPage({ params }: { params: Promise<SP> }) {
   const { slug } = await params;
-  const data = await api<CategoryPageOut>(`/public/categories/${slug}`, { ip: await clientIp() });
+  const data = await api<CategoryPageOut>(`/public/categories/${slug}`, { ip: await clientIp(), cookie: await sessionCookieHeader() });
 
   return (
     <section className="section" style={{ paddingTop: 'clamp(36px, 6vw, 64px)' }}>

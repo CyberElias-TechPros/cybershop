@@ -9,6 +9,9 @@ import vendorRoutes from './routes/vendor';
 import vendorPremiumRoutes from './routes/vendor-premium';
 import adminRoutes from './routes/admin';
 import adminPremiumRoutes from './routes/admin-premium';
+import adminOpsRoutes from './routes/admin-ops';
+import accountRoutes from './routes/account';
+import vendorOpsRoutes from './routes/vendor-ops';
 import webhookRoutes from './routes/webhook';
 import mediaFileRoutes from './routes/mediafile';
 import sitemapRoutes from './routes/sitemap';
@@ -48,12 +51,15 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.get('/healthz', (c) => c.json({ ok: true, service: 'cybershop-api', time: new Date().toISOString() }));
 
   app.route('/api/auth', authRoutes);
+  app.route('/api/account', accountRoutes);
   app.route('/api/public', publicRoutes);
   app.route('/api/public', publicPremiumRoutes);
   app.route('/api/vendor', vendorRoutes);
   app.route('/api/vendor', vendorPremiumRoutes);
+  app.route('/api/vendor', vendorOpsRoutes);
   app.route('/api/admin', adminRoutes);
   app.route('/api/admin', adminPremiumRoutes);
+  app.route('/api/admin', adminOpsRoutes);
   app.route('/api/webhooks', webhookRoutes);
   app.route('/api/media', mediaFileRoutes);
   app.route('/api', qrRoutes);

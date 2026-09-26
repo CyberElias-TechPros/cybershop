@@ -17,6 +17,16 @@ const EMAIL_TYPES = new Set([
   'verification.approved',
   'verification.rejected',
   'inquiry.new',
+  'saved_search.match',
+  'deposit.paid',
+  'deposit.released',
+  'deposit.refunded',
+  'deposit.refund_requested',
+  'thread.message',
+  'thread.new',
+  'review.new',
+  'follow_up.due',
+  'staff.joined',
 ]);
 
 function emailBodyFor(type: string, title: string, body: string, env: Env, data?: Record<string, unknown>): { html: string; cta?: { label: string; url: string } } {
@@ -26,10 +36,18 @@ function emailBodyFor(type: string, title: string, body: string, env: Env, data?
     cta = { label: 'View receipt', url: `${env.APP_URL}/dashboard/billing/receipt/${data.payment_id}` };
   } else if (type.startsWith('subscription.')) {
     cta = { label: 'Renew in billing', url: `${env.APP_URL}/dashboard/billing` };
-  } else if (type === 'inquiry.new') {
+  } else if (type === 'inquiry.new' || type === 'follow_up.due') {
     cta = { label: 'Open your leads', url: `${env.APP_URL}/dashboard/leads` };
   } else if (type === 'business.active') {
     cta = { label: 'Open your dashboard', url: `${env.APP_URL}/dashboard` };
+  } else if (type === 'saved_search.match') {
+    cta = { label: 'See new ads', url: `${env.APP_URL}/account` };
+  } else if (type.startsWith('deposit.')) {
+    cta = { label: 'Open deposits', url: `${env.APP_URL}/dashboard/deposits` };
+  } else if (type.startsWith('thread.')) {
+    cta = { label: 'Open inbox', url: `${env.APP_URL}/dashboard/inbox` };
+  } else if (type === 'review.new') {
+    cta = { label: 'See the review', url: `${env.APP_URL}/dashboard` };
   }
   return { html: mailHtml(esc(title), esc(body), cta), cta };
 }

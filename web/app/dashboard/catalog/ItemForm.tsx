@@ -61,6 +61,7 @@ interface ExistingItem {
   audio: { id: number; url: string } | null;
   stats: { views: number; inquiries: number };
   inspection_json?: string | null;
+  scheduled_publish_at?: string | null;
 }
 
 const TEXT_TYPES = new Set(['text', 'url', 'email', 'phone', 'location']);
@@ -96,6 +97,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
   const [selectedMedia, setSelectedMedia] = useState<number[]>([]);
   const [audio, setAudio] = useState<{ id: number; url: string } | null>(null);
   const [inspectionNotes, setInspectionNotes] = useState('');
+  const [schedule, setSchedule] = useState('');
   const [featuredSlots, setFeaturedSlots] = useState<{ used: number; limit: number } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -140,6 +142,10 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
           setInspectionNotes(insp?.notes ?? '');
         } catch {
           setInspectionNotes('');
+        }
+        if (x.scheduled_publish_at) {
+          const d = new Date(x.scheduled_publish_at);
+          if (!Number.isNaN(d.getTime())) setSchedule(d.toISOString().slice(0, 16));
         }
       } else {
         setPublish(true);
@@ -233,6 +239,7 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
         stock_status: stockStatus,
         featured,
         inspection_notes: inspectionNotes || null,
+        scheduled_publish_at: schedule ? new Date(schedule).toISOString() : null,
         whatsapp_number_id: waNumberId === '' ? null : waNumberId,
         seo_title: seoTitle || null,
         seo_description: seoDescription || null,
@@ -559,6 +566,27 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
       </div>
 
       <div className="card panel">
+        <h2 style={{ fontSize: '1.05rem' }}>Visibility</h2>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer' }}>
+          <input type="checkbox" checked={featured} onChange={(e) => setFeatured(e.target.checked)} />
+          Feature this listing
+          {featuredSlots ? <span style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>({featuredSlots.used}/{featuredSlots.limit < 0 ? '∞' : featuredSlots.limit} slots used)</span> : null}
+        </label>
+        <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>Featured listings sort first. Free plans have no featured slots — buy the add-on if this save is refused.</p>
+        <label className="field">
+          Publish later (optional)
+          <input className="input" type="datetime-local" value={schedule} onChange={(e) => setSchedule(e.target.value)} />
+        </label>
+        <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>A future time keeps the listing as a draft until that moment. Leave blank to publish yourself.</p>
+        <label className="field">
+          Inspection notes (add-on)
+          <textarea className="textarea" value={inspectionNotes} onChange={(e) => setInspectionNotes(e.target.value)} placeholder="What you checked, and what the buyer should know." />
+        </label>
+      </div>
+
+      {itemId ? <VariantsPanel itemId={itemId} /> : <p style={{ color: 'var(--muted)' }}>Save the listing once, then you can add size or colour options.</p>}
+
+      <div className="card panel">
         <div className="dash-head" style={{ marginBottom: 12 }}>
           <h2 style={{ margin: 0, fontSize: '1.05rem' }}>Photos ({selectedMedia.length})</h2>
         </div>
@@ -634,6 +662,56 @@ export default function ItemForm({ itemId }: { itemId?: number }) {
           {busy ? 'Publishing…' : 'Publish'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function VariantsPanel({ itemId }: { itemId: number }) {
+  const [rows, setRows] = useState<{ id: number; name: string; options: string | string[] }[]>([]);
+  const [name, setName] = useState('Size');
+  const [options, setOptions] = useState('S, M, L');
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    const d = await capi<{ variants: { id: number; name: string; options: string | string[] }[] }>(`/vendor/items/${itemId}/variants`);
+    setRows(d.variants);
+  }, [itemId]);
+  useEffect(() => { load().catch((e) => setError(extractError(e))); }, [load]);
+
+  return (
+    <div className="card panel">
+      <h2 style={{ fontSize: '1.05rem' }}>Options</h2>
+      <p style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>Size, colour, or plan. The buyer picks one before WhatsApp opens. The server checks the choice again.</p>
+      {error && <div className="form-msg error">{error}</div>}
+      <ul>
+        {rows.map((v) => {
+          const opts = Array.isArray(v.options) ? v.options.join(', ') : v.options;
+          return (
+            <li key={v.id}>
+              <strong>{v.name}</strong>: {opts}{' '}
+              <button type="button" className="mini-btn danger" onClick={async () => { await capi(`/vendor/items/${itemId}/variants/${v.id}`, { method: 'DELETE' }); setRows((xs) => xs.filter((x) => x.id !== v.id)); }}>Remove</button>
+            </li>
+          );
+        })}
+      </ul>
+      <form
+        className="form-row"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          setError('');
+          try {
+            await capi(`/vendor/items/${itemId}/variants`, {
+              method: 'POST',
+              body: JSON.stringify({ name, options: options.split(',').map((s) => s.trim()).filter(Boolean) }),
+            });
+            await load();
+          } catch (err) { setError(extractError(err)); }
+        }}
+      >
+        <label className="field">Name<input className="input" value={name} onChange={(e) => setName(e.target.value)} required /></label>
+        <label className="field">Options, comma separated<input className="input" value={options} onChange={(e) => setOptions(e.target.value)} required /></label>
+        <button className="btn btn-ghost" type="submit">Add option group</button>
+      </form>
     </div>
   );
 }

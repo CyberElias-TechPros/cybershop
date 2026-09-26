@@ -1,8 +1,8 @@
 import { Hono } from 'hono';
 import type { Env } from '../config';
 import { rateLimit } from '../lib/ratelimit';
-import { badRequest, notFound, validationError } from '../lib/errors';
-import { trackEvent } from '../lib/analytics';
+import { badRequest, forbidden, notFound, validationError } from '../lib/errors';
+import { recordView, trackEvent } from '../lib/analytics';
 import { getSession } from '../lib/auth';
 import { mediaUrl, getMedia, storeD1Media, magicMime } from '../lib/media';
 import { renderTemplate } from '../lib/wa';
@@ -10,11 +10,20 @@ import { formatNaira } from '../lib/money';
 import { clampInt } from '../lib/util';
 import { notify } from '../lib/notify';
 import { publicPremium } from '../lib/premium';
+import { resolveWhatsappNumber } from '../lib/routing';
+import { blockedBusinessIds, isBlocked, notInClause } from '../lib/blocks';
+import { reviewList, reviewSummary } from '../lib/reviews';
 
 const app = new Hono<{ Bindings: Env }>();
 
 const IP = (c: { req: { header(n: string): string | undefined | null } }) =>
-  c.req.header("cf-connecting-ip") || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+  c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
+
+async function blockFilter(c: Parameters<typeof getSession>[1], column = 'b.id') {
+  const user = await getSession(c.env, c);
+  const ids = await blockedBusinessIds(c.env, user?.id);
+  return notInClause(ids, column);
+}
 
 async function platformSettings(env: Env): Promise<Record<string, unknown>> {
   const rows = (await env.DB.prepare('SELECT skey, svalue FROM platform_settings').all()).results as { skey: string; svalue: string }[];
@@ -85,6 +94,7 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     `SELECT COUNT(*) AS n FROM listings WHERE business_id = ? AND status = 'published' AND deleted_at IS NULL`
   ).bind(b.id).first()) as { n: number }).n;
   const premium = await publicPremium(env, b.id, (b.verification_status as string | undefined) ?? 'unverified');
+  const reviews = await reviewSummary(env, b.id);
   return {
     id: b.id,
     name: b.name,
@@ -104,6 +114,7 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     logo: logo ? { url: mediaUrl(env, logo), alt: b.name } : null,
     cover: cover ? { url: mediaUrl(env, cover) } : null,
     premium,
+    reviews,
   };
 }
 
@@ -130,11 +141,12 @@ app.get('/home', async (c) => {
   const env = c.env;
   const settings = await platformSettings(env);
   const categories = (await env.DB.prepare('SELECT name, slug, description, icon FROM categories WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order').all()).results as Record<string, unknown>[];
+  const blocked = await blockFilter(c);
   const featured = (await env.DB.prepare(
     `SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.logo_media_id, b.cover_media_id, b.status, b.verification_status, b.created_at
-     FROM businesses b WHERE b.status = 'active' AND b.deleted_at IS NULL
+     FROM businesses b WHERE b.status = 'active' AND b.deleted_at IS NULL${blocked.sql}
      ORDER BY b.is_featured DESC, b.created_at DESC LIMIT 12`
-  ).all()).results as Record<string, unknown>[];
+  ).bind(...blocked.params).all()).results as Record<string, unknown>[];
   const bizRows = featured.length
     ? (await Promise.all(featured.map((b) => publicBusiness(env, b))))
     : [];
@@ -149,8 +161,9 @@ app.get('/businesses', async (c) => {
   const city = c.req.query('city')?.trim().slice(0, 80) || '';
   const page = clampInt(c.req.query('page'), 1, 1000, 1);
   const perPage = 24;
-  let where = `WHERE b.status = 'active' AND b.deleted_at IS NULL`;
-  const params: (string | number)[] = [];
+  const blockedBiz = await blockFilter(c);
+  let where = `WHERE b.status = 'active' AND b.deleted_at IS NULL${blockedBiz.sql}`;
+  const params: (string | number)[] = [...blockedBiz.params];
   if (q) { where += ` AND (b.name LIKE ? OR b.about LIKE ? OR b.city LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM business_categories bc WHERE bc.business_id = b.id AND bc.category_id = (SELECT id FROM categories WHERE slug = ?))`; params.push(cat); }
   if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
@@ -166,11 +179,12 @@ app.get('/categories/:slug', async (c) => {
   if (!cat) throw notFound('Category not found.');
   const page = clampInt(c.req.query('page'), 1, 1000, 1);
   const perPage = 24;
+  const blockedCat = await blockFilter(c);
   const rows = (await env.DB.prepare(
     `SELECT b.* FROM businesses b JOIN business_categories bc ON bc.business_id = b.id
-     WHERE bc.category_id = ? AND b.status = 'active' AND b.deleted_at IS NULL
+     WHERE bc.category_id = ? AND b.status = 'active' AND b.deleted_at IS NULL${blockedCat.sql}
      ORDER BY b.is_featured DESC, b.created_at DESC LIMIT ? OFFSET ?`
-  ).bind((cat as { id: number }).id, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+  ).bind((cat as { id: number }).id, ...blockedCat.params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const businesses = await Promise.all(rows.map((b) => publicBusiness(env, b)));
   return c.json({ ok: true, category: { name: cat.name, slug: cat.slug, description: cat.description, icon: cat.icon }, businesses, page, pages: 1 });
 });
@@ -180,6 +194,8 @@ app.get('/business/:slug', async (c) => {
   const env = c.env;
   const biz = (await env.DB.prepare('SELECT * FROM businesses WHERE slug = ? AND deleted_at IS NULL').bind(c.req.param('slug')).first()) as Record<string, unknown> | null;
   if (!biz) throw notFound('Business not found.');
+  const viewer = await getSession(env, c);
+  if (await isBlocked(env, viewer?.id, (biz as { id: number }).id)) throw notFound('Business not found.');
   await trackEvent(env, c, { businessId: (biz as { id: number }).id, eventType: 'storefront_view' });
   const section = c.req.query('section') || 'items';
   const business = await publicBusiness(env, biz);
@@ -216,15 +232,18 @@ app.get('/item', async (c) => {
   if (!item) throw notFound('Item not found.');
   if ((item as { status: string }).status !== 'published') throw notFound('Item not available.');
   const user = await getSession(env, c);
+  if (await isBlocked(env, user?.id, (biz as { id: number }).id)) throw notFound('Item not found.');
   await trackEvent(env, c, { businessId: (biz as { id: number }).id, eventType: 'item_view', listingId: (item as { id: number }).id, userId: user?.id ?? null });
+  await recordView(env, user?.id ?? null, (item as { id: number }).id);
   const data = await publicItem(env, item);
 
-  // resolve routing: item's number → business default → owner phone
-  const number = ((await env.DB.prepare(
-    `SELECT n.number FROM whatsapp_numbers n WHERE n.id = ? AND n.business_id = ? AND n.status = 'active' AND n.deleted_at IS NULL`
-  ).bind((item as { whatsapp_number_id: number | null }).whatsapp_number_id ?? 0, (biz as { id: number }).id).first()) as { number: string } | null)?.number
-    || ((await env.DB.prepare(`SELECT number FROM whatsapp_numbers WHERE business_id = ? AND is_default = 1 AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1`).bind((biz as { id: number }).id).first()) as { number: string } | null)?.number
-    || null;
+  // item pin → type route → category route → store default
+  const routed = await resolveWhatsappNumber(env, (biz as { id: number }).id, {
+    whatsapp_number_id: (item as { whatsapp_number_id: number | null }).whatsapp_number_id,
+    item_type_id: (item as { item_type_id: number }).item_type_id,
+    category_id: (item as { category_id: number | null }).category_id,
+  });
+  const number = routed?.number ?? null;
 
   const business = await publicBusiness(env, biz);
   const dataUrl = `${env.APP_URL}/business/${(biz as { slug: string }).slug}/${segment}/${itemSlug}`;
@@ -287,9 +306,20 @@ app.get('/item', async (c) => {
     similar.push({ ...it, biz_slug: r.biz_slug, biz_name: r.biz_name, city: r.city });
   }
 
+  const variantRows = (await env.DB.prepare(
+    `SELECT id, name, options, price_override, stock_qty FROM listing_variants WHERE listing_id = ? AND is_active = 1 ORDER BY id`
+  ).bind((item as { id: number }).id).all()).results as { id: number; name: string; options: string; price_override: number | null; stock_qty: number | null }[];
+  const variants = variantRows.map((v) => {
+    let options: string[] = [];
+    try { options = JSON.parse(v.options) as string[]; } catch { options = []; }
+    return { id: v.id, name: v.name, options, price_kobo: v.price_override, price_display: v.price_override != null ? formatNaira(v.price_override) : null, stock_qty: v.stock_qty };
+  });
+  const listingReviews = await reviewSummary(env, (biz as { id: number }).id, (item as { id: number }).id);
+  const reviewItems = await reviewList(env, (item as { id: number }).id);
+
   return c.json({
     ok: true,
-    item: { ...data, audio, views },
+    item: { ...data, audio, views, variants, reviews: { ...listingReviews, items: reviewItems } },
     business,
     wa,
     related,
@@ -322,8 +352,9 @@ app.get('/listings', async (c) => {
   const maxPrice = c.req.query('max_price') ? Number(c.req.query('max_price')) : null;
   const page = clampInt(c.req.query('page'), 1, 500, 1);
   const perPage = 24;
-  let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.deleted_at IS NULL`;
-  const params: (string | number)[] = [];
+  const blockedList = await blockFilter(c);
+  let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.deleted_at IS NULL${blockedList.sql}`;
+  const params: (string | number)[] = [...blockedList.params];
   if (q) { where += ` AND (l.name LIKE ? OR l.description LIKE ? OR b.name LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM categories c WHERE c.id = l.category_id AND c.slug = ?)`; params.push(cat); }
@@ -396,14 +427,15 @@ app.get('/search', async (c) => {
   const page = clampInt(c.req.query('page'), 1, 100, 1);
   if (q.length < 2) return c.json({ ok: true, businesses: [], items: [], total: 0, page });
   const like = `%${q.slice(0, 60)}%`;
-  let bizWhere = `WHERE b.status = 'active' AND b.deleted_at IS NULL AND b.name LIKE ?`;
-  const bizParams: (string | number)[] = [like];
+  const blockedSearch = await blockFilter(c);
+  let bizWhere = `WHERE b.status = 'active' AND b.deleted_at IS NULL AND b.name LIKE ?${blockedSearch.sql}`;
+  const bizParams: (string | number)[] = [like, ...blockedSearch.params];
   if (city) { bizWhere += ` AND LOWER(b.city) = LOWER(?)`; bizParams.push(city); }
   const businesses = (await env.DB.prepare(
     `SELECT b.id, b.name, b.slug, b.city FROM businesses b ${bizWhere} LIMIT 8`
   ).bind(...bizParams).all()).results as Record<string, unknown>[];
-  let itemWhere = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND (l.name LIKE ? OR l.description LIKE ?)`;
-  const itemParams: (string | number)[] = [like, like];
+  let itemWhere = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND (l.name LIKE ? OR l.description LIKE ?)${blockedSearch.sql}`;
+  const itemParams: (string | number)[] = [like, like, ...blockedSearch.params];
   if (city) { itemWhere += ` AND LOWER(b.city) = LOWER(?)`; itemParams.push(city); }
   const items = (await env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.price, l.price_type, t.url_segment, b.slug AS biz_slug, b.name AS biz_name, b.city,
@@ -443,7 +475,9 @@ app.post('/inquiries', async (c) => {
   const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) : null;
   const biz = (await env.DB.prepare('SELECT * FROM businesses WHERE id = ? AND status = "active" AND deleted_at IS NULL').bind(bizId).first()) as Record<string, unknown> | null;
   if (!biz) throw notFound('Business not found.');
-  interface InquiryItem { id: number; name: string; item_type_id: number; item_type_slug: string; url_segment: string; slug: string; price: number | null; whatsapp_number_id: number | null }
+  const asker = await getSession(env, c);
+  if (await isBlocked(env, asker?.id, bizId)) throw forbidden('You blocked this business. Unblock it from your account to enquire.');
+  interface InquiryItem { id: number; name: string; item_type_id: number; item_type_slug: string; url_segment: string; slug: string; price: number | null; whatsapp_number_id: number | null; category_id?: number | null }
   interface CartItem extends InquiryItem { qty: number }
   let item: InquiryItem | null = null;
   let cartItems: CartItem[] | null = null;
@@ -478,17 +512,31 @@ app.post('/inquiries', async (c) => {
     item = { ...cartItems[0]! };
   } else if (listingId) {
     const l = (await env.DB.prepare(
-      `SELECT l.id, l.name, l.slug, l.price, l.item_type_id, l.whatsapp_number_id, t.slug AS item_type_slug, t.url_segment, t.whatsapp_template_key
+      `SELECT l.id, l.name, l.slug, l.price, l.item_type_id, l.category_id, l.whatsapp_number_id, t.slug AS item_type_slug, t.url_segment, t.whatsapp_template_key
        FROM listings l JOIN item_types t ON t.id = l.item_type_id
        WHERE l.id = ? AND l.business_id = ? AND l.status = 'published' AND l.deleted_at IS NULL`
     ).bind(listingId, bizId).first()) as InquiryItem | null;
     if (!l) throw notFound('Item not found.');
     item = l;
   }
-  const number = ((await env.DB.prepare(
-    `SELECT n.number FROM whatsapp_numbers n WHERE n.id = ? AND n.business_id = ? AND n.status = 'active' AND n.deleted_at IS NULL`
-  ).bind(item?.whatsapp_number_id ?? 0, bizId).first()) as { number: string } | null)?.number
-    || ((await env.DB.prepare(`SELECT number FROM whatsapp_numbers WHERE business_id = ? AND is_default = 1 AND status = 'active' AND deleted_at IS NULL ORDER BY id LIMIT 1`).bind(bizId).first()) as { number: string } | null)?.number;
+  let variantLabel: string | null = null;
+  if (!cartItems && item && body.variant_id) {
+    const variant = (await env.DB.prepare(
+      `SELECT name, options, price_override FROM listing_variants WHERE id = ? AND listing_id = ? AND is_active = 1`
+    ).bind(Number(body.variant_id), item.id).first()) as { name: string; options: string; price_override: number | null } | null;
+    if (variant) {
+      let opts: string[] = [];
+      try { opts = JSON.parse(variant.options) as string[]; } catch { opts = []; }
+      variantLabel = opts.length ? `${variant.name}: ${opts.join(', ')}` : variant.name;
+      if (variant.price_override != null) item.price = variant.price_override;
+    }
+  }
+  const routed = await resolveWhatsappNumber(env, bizId, {
+    whatsapp_number_id: item?.whatsapp_number_id ?? null,
+    item_type_id: item?.item_type_id || null,
+    category_id: item?.category_id ?? null,
+  });
+  const number = routed?.number;
   if (!number) throw badRequest('This business has not configured a WhatsApp number yet.');
 
   const itemTypeRow = item && !cartItems
@@ -542,6 +590,7 @@ app.post('/inquiries', async (c) => {
       quantity: String(quantity),
       customer_name: name || '',
     });
+    if (variantLabel) message = `${message}\n\nOption: ${variantLabel}`;
     if (note) message = `${message}\n\nNote: ${note}`;
   }
   const waUrl = `https://wa.me/${number}?text=${encodeURIComponent(message)}`;
@@ -560,9 +609,9 @@ app.post('/inquiries', async (c) => {
       })))
     : null;
   const inserted = await env.DB.prepare(
-    `INSERT INTO inquiries (business_id, listing_id, whatsapp_number_id, buyer_user_id, buyer_name, buyer_phone, message, wa_url, source, items_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 4000), waUrl.slice(0, 2000), cartItems ? 'cart' : item ? 'item_page' : 'storefront', itemsJson).run();
+    `INSERT INTO inquiries (business_id, listing_id, whatsapp_number_id, buyer_user_id, buyer_name, buyer_phone, message, wa_url, source, items_json, variant_label)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(bizId, item?.id ?? null, waNumberRow?.id ?? null, user?.id ?? null, name, phone, message.slice(0, 4000), waUrl.slice(0, 2000), cartItems ? 'cart' : item ? 'item_page' : 'storefront', itemsJson, variantLabel).run();
   await trackEvent(env, c, {
     businessId: bizId,
     eventType: 'wa_click',
@@ -584,6 +633,35 @@ app.post('/inquiries', async (c) => {
     });
   }
   return c.json({ ok: true, wa_url: waUrl, message, inquiry_id: Number(inserted.meta.last_row_id) });
+});
+
+/** Typeahead. Two characters minimum, short list, no account required. */
+app.get('/suggest', async (c) => {
+  const q = (c.req.query('q') || '').trim().slice(0, 60);
+  if (q.length < 2) return c.json({ ok: true, businesses: [], items: [] });
+  await rateLimit(c.env, 'suggest', IP(c), 40, 60);
+  const like = `%${q}%`;
+  const blocked = await blockFilter(c);
+  const businesses = (await c.env.DB.prepare(
+    `SELECT name, slug FROM businesses b WHERE status = 'active' AND deleted_at IS NULL AND name LIKE ?${blocked.sql} ORDER BY is_featured DESC, name LIMIT 5`
+  ).bind(like, ...blocked.params).all()).results;
+  const items = (await c.env.DB.prepare(
+    `SELECT l.name, l.slug, t.url_segment, b.slug AS biz_slug, b.name AS biz_name
+     FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
+     WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND l.name LIKE ?${blocked.sql}
+     ORDER BY l.featured DESC, l.name LIMIT 6`
+  ).bind(like, ...blocked.params).all()).results;
+  return c.json({ ok: true, businesses, items });
+});
+
+/** Custom-domain lookup for the web middleware. Gated by the internal secret like the rest of /api. */
+app.get('/domain', async (c) => {
+  const host = (c.req.query('host') || '').trim().toLowerCase().replace(/\.$/, '');
+  if (!host || host.length > 180) return c.json({ ok: true, slug: null });
+  const row = (await c.env.DB.prepare(
+    `SELECT slug FROM businesses WHERE custom_domain = ? AND custom_domain_status = 'verified' AND status = 'active' AND deleted_at IS NULL`
+  ).bind(host).first()) as { slug: string } | null;
+  return c.json({ ok: true, slug: row?.slug ?? null });
 });
 
 export default app;

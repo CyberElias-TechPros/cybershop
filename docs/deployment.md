@@ -187,6 +187,16 @@ the preview card must show the cover image.
    | `WORKER_INTERNAL_SECRET` | == Worker `INTERNAL_SECRET` |
    | `SITE_URL` | `https://yourshop.ng` |
 
+Custom domains (optional, after a vendor verifies DNS):
+
+   | Var | Where | Purpose |
+   |---|---|---|
+   | `VERCEL_TOKEN` | Worker secret | Attach the host to the Vercel project |
+   | `VERCEL_PROJECT_ID` | Worker secret | Target project |
+   | `VERCEL_TEAM_ID` | Worker secret, if the project is under a team | Team scope |
+
+Without those three, domain ownership still verifies (TXT `_cybershop.<domain>` or `/.well-known/cybershop-domain.txt`). Add the host in the Vercel project by hand, then the web middleware rewrites that host to the storefront. `SITE_URL` must be the platform host so the middleware does not rewrite it.
+
    The web app itself never sends email — transactional mail lives on the
    Worker. Configure it there (step 3 of the Worker section):
 

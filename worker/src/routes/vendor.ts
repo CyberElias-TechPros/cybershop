@@ -285,6 +285,7 @@ interface ItemInput {
   seo_title: string | null;
   seo_description: string | null;
   publish: boolean;
+  scheduled_publish_at: string | null;
 }
 
 async function parseItemBody(c: { env: Env }, businessId: number, body: unknown): Promise<ItemInput> {
@@ -335,13 +336,21 @@ async function parseItemBody(c: { env: Env }, businessId: number, body: unknown)
   assertSlugAvailable(slug);
 
   const inspectionJson = parseInspection(b.inspection_notes ?? b.inspection_json);
+  let scheduled: string | null = null;
+  if (b.scheduled_publish_at) {
+    const t = Date.parse(String(b.scheduled_publish_at));
+    if (!Number.isFinite(t)) throw validationError('Pick a valid publish time.');
+    if (t > Date.now() + 60_000) scheduled = new Date(t).toISOString();
+  }
 
   return {
     name, slug, item_type_id: (type as { id: number }).id, item_type_slug: typeSlug, category_id: categoryId,
     description: optStr(b.description, 20000), price, price_type: priceType,
     custom_fields: JSON.stringify(custom), stock_status: stockStatus,
     featured: b.featured === true, inspection_json: inspectionJson, whatsapp_number_id: waNumberId,
-    seo_title: optStr(b.seo_title, 200), seo_description: optStr(b.seo_description, 300), publish,
+    seo_title: optStr(b.seo_title, 200), seo_description: optStr(b.seo_description, 300),
+    publish: scheduled ? false : publish,
+    scheduled_publish_at: scheduled,
   };
 }
 
@@ -408,9 +417,9 @@ app.post('/items', async (c) => {
   if (taken) slug = `${input.slug}-${Math.floor(Math.random() * 9000 + 1000)}`;
   const status = input.publish ? 'published' : 'draft';
   const res = await c.env.DB.prepare(
-    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at, inspection_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json).run();
+    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at, inspection_json, scheduled_publish_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json, input.scheduled_publish_at).run();
   const id = Number(res.meta.last_row_id);
   await attachMedia(c.env, id, (body as Record<string, unknown> | null)?.media_ids, business.id);
   await attachAudio(c.env, id, (body as Record<string, unknown> | null)?.audio_media_id, business.id);
@@ -492,12 +501,12 @@ app.put('/items/:id', async (c) => {
   await assertPremiumItemGates(c.env, business.id, input, id);
   const res = await c.env.DB.prepare(
     `UPDATE listings SET name = ?, slug = ?, category_id = ?, item_type_id = ?, description = ?, price = ?, price_type = ?, custom_fields = ?,
-     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?, inspection_json = ?,
+     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?, inspection_json = ?, scheduled_publish_at = ?,
      status = CASE WHEN ? THEN 'published' WHEN status = 'published' AND ? = 0 THEN 'draft' ELSE status END,
      published_at = COALESCE(published_at, CASE WHEN ? THEN ? ELSE NULL END)
      WHERE id = ?`
   ).bind(input.name, input.slug, input.category_id, input.item_type_id, input.description, input.price, input.price_type, input.custom_fields,
-    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description, input.inspection_json,
+    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description, input.inspection_json, input.scheduled_publish_at,
     input.publish ? 1 : 0, input.publish ? 1 : 0, input.publish ? 1 : 0, nowIso(), id).run();
   if (res.meta.changes === 0) throw notFound('Item not found.');
   // replace media set when provided
@@ -600,6 +609,28 @@ app.put('/whatsapp/:id', async (c) => {
   if (body?.is_default === true) {
     await c.env.DB.prepare('UPDATE whatsapp_numbers SET is_default = 0 WHERE business_id = ?').bind(business.id).run();
     sets.push('is_default = 1');
+  }
+  if (body?.route_category_id !== undefined) {
+    if (body.route_category_id === null || body.route_category_id === '') {
+      sets.push('route_category_id = NULL');
+    } else {
+      const catId = reqInt(body.route_category_id, { min: 1 });
+      const linked = await c.env.DB.prepare('SELECT 1 FROM business_categories WHERE business_id = ? AND category_id = ?').bind(business.id, catId).first();
+      if (!linked) throw validationError('Route only to a category your store is in.');
+      sets.push('route_category_id = ?');
+      params.push(catId);
+    }
+  }
+  if (body?.route_item_type_id !== undefined) {
+    if (body.route_item_type_id === null || body.route_item_type_id === '') {
+      sets.push('route_item_type_id = NULL');
+    } else {
+      const typeId = reqInt(body.route_item_type_id, { min: 1 });
+      const type = await c.env.DB.prepare('SELECT id FROM item_types WHERE id = ? AND is_active = 1').bind(typeId).first();
+      if (!type) throw validationError('Unknown item type.');
+      sets.push('route_item_type_id = ?');
+      params.push(typeId);
+    }
   }
   if (sets.length) await c.env.DB.prepare(`UPDATE whatsapp_numbers SET ${sets.join(', ')} WHERE id = ?`).bind(...params, id).run();
   return c.json({ ok: true });
@@ -788,6 +819,18 @@ app.put('/inquiries/:id', async (c) => {
   if (body.note !== undefined) {
     sets.push('note = ?');
     params.push(optStr(body.note, 2000));
+  }
+  if (body.follow_up_at !== undefined) {
+    if (body.follow_up_at === null || body.follow_up_at === '') {
+      sets.push('follow_up_at = NULL');
+      sets.push('follow_up_notified_at = NULL');
+    } else {
+      const t = Date.parse(String(body.follow_up_at));
+      if (!Number.isFinite(t)) throw badRequest('Follow-up time is not valid.');
+      sets.push('follow_up_at = ?');
+      params.push(new Date(t).toISOString());
+      sets.push('follow_up_notified_at = NULL');
+    }
   }
   if (sets.length === 0) throw badRequest('Nothing to update.');
   const res = await c.env.DB.prepare(`UPDATE inquiries SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).bind(...params, id, business.id).run();

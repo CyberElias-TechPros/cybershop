@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import type { CategoryOut, ListingsOut } from '@/lib/types';
 import ListingCard from '@/components/ListingCard';
 import Pager from '@/components/Pager';
@@ -61,7 +62,8 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   query.set('page', String(page));
 
   const ip = await clientIp();
-  const data = await api<ListingsOut>(`/public/listings?${query}`, { ip });
+  const cookie = await sessionCookieHeader();
+  const data = await api<ListingsOut>(`/public/listings?${query}`, { ip, cookie });
   let cats: CategoryOut[] = [];
   let cities: { city: string; n: number }[] = [];
   try {

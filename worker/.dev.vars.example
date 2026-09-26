@@ -34,3 +34,8 @@ MAIL_FROM=CyberShop <noreply@cybershop.ng>
 MAIL_FROM_NAME=CyberShop
 # alternative: any POST-JSON {from,to,subject,text,html} HTTP endpoint
 MAIL_ENDPOINT=
+
+# --- custom domains (optional; DNS verify works without these) ---
+# VERCEL_TOKEN=
+# VERCEL_PROJECT_ID=
+# VERCEL_TEAM_ID=

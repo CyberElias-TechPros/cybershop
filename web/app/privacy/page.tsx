@@ -81,10 +81,11 @@ export default function PrivacyPage() {
 
         <h2>Your rights (NDPR-aligned)</h2>
         <p>
-          You can request a copy of your data, ask us to correct it, or ask us to delete your
-          account and personal data. Vendors: note that deleting your account also unpublishes
-          your storefront and catalogue. Requests:{' '}
-          <Link href="/contact">contact us</Link> — we respond within 30 days.
+          Signed-in people can download a copy of their data and close their account from{' '}
+          <Link href="/account/settings">account settings</Link>. Closing a vendor account
+          unpublishes the storefront. Payment records stay for the period Nigerian bookkeeping
+          requires. For anything the form cannot do, <Link href="/contact">contact us</Link> — we
+          respond within 30 days.
         </p>
 
         <h2>Cookies</h2>

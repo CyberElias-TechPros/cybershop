@@ -4,7 +4,7 @@ import { requireVendor } from '../lib/auth';
 import { badRequest, notFound, forbidden } from '../lib/errors';
 import { nowIso } from '../lib/util';
 import { optStr, reqStr, reqInt } from '../lib/validate';
-import { assertAddon, featuredRemaining, hasAddon, publicPremium, releaseDeposit } from '../lib/premium';
+import { assertAddon, featuredRemaining, hasAddon, publicPremium, refundDeposit, releaseDeposit } from '../lib/premium';
 import { formatNaira } from '../lib/money';
 import { assertMediaOwnership } from '../lib/media';
 
@@ -84,6 +84,14 @@ app.post('/deposits/:id/release', async (c) => {
   const id = reqInt(c.req.param('id'), { min: 1 });
   await releaseDeposit(c.env, business.id, id);
   return c.json({ ok: true });
+});
+
+app.post('/deposits/:id/refund', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  await assertAddon(c.env, business.id, 'buyer_escrow', 'Buy the deposits add-on first.');
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  await refundDeposit(c.env, business.id, id);
+  return c.json({ ok: true, message: 'Marked refunded. Confirm the money actually went back — CyberShop does not move funds.' });
 });
 
 app.get('/verification', async (c) => {

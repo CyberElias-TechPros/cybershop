@@ -13,6 +13,8 @@ interface Inquiry {
   source: string;
   status: string;
   note: string | null;
+  follow_up_at: string | null;
+  variant_label: string | null;
   item_name: string | null;
   created_at: string;
   items?: { listing_id: number; quantity: number; name: string; price?: number | null; url?: string | null }[] | null;
@@ -124,6 +126,7 @@ export default function LeadsPage() {
                   <div style={{ fontSize: '0.82rem', color: 'var(--muted)' }}>
                     {new Date(q.created_at).toLocaleString('en-NG')} · {q.source.replace('_', ' ')}
                     {q.item_name && q.source !== 'cart' ? ` · ${q.item_name}` : ''}
+                    {q.variant_label ? ` · ${q.variant_label}` : ''}
                   </div>
                 </div>
                 <span className={`status-pill ${q.status}`}>{LABELS[q.status] ?? q.status}</span>
@@ -172,6 +175,22 @@ export default function LeadsPage() {
                     if (e.target.value !== (q.note ?? '')) saveNote(q.id, e.target.value);
                   }}
                 />
+                <label className="field" style={{ margin: 0, minWidth: 200 }}>
+                  Follow up
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    defaultValue={q.follow_up_at ? q.follow_up_at.slice(0, 16) : ''}
+                    onBlur={async (e) => {
+                      const value = e.target.value;
+                      try {
+                        await capi(`/vendor/inquiries/${q.id}`, { method: 'PUT', body: JSON.stringify({ follow_up_at: value ? new Date(value).toISOString() : null }) });
+                      } catch (err) {
+                        setError(extractError(err));
+                      }
+                    }}
+                  />
+                </label>
               </div>
             </div>
           ))}

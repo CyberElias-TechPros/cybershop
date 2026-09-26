@@ -10,7 +10,10 @@ interface WaNumber {
   is_default: number;
   status: string;
   created_at: string;
+  route_category_id: number | null;
+  route_item_type_id: number | null;
 }
+interface RouteOpt { id: number; name: string }
 
 export default function WhatsAppPage() {
   const [numbers, setNumbers] = useState<WaNumber[]>([]);
@@ -20,12 +23,17 @@ export default function WhatsAppPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [cats, setCats] = useState<RouteOpt[]>([]);
+  const [types, setTypes] = useState<RouteOpt[]>([]);
 
   const load = useCallback(async () => {
     try {
       const d = await capi<{ numbers: WaNumber[]; limit: number }>('/vendor/whatsapp');
       setNumbers(d.numbers);
       setLimit(d.limit);
+      const meta = await capi<{ categories: RouteOpt[]; types: RouteOpt[] }>('/vendor/item-types');
+      setCats(meta.categories);
+      setTypes(meta.types);
     } catch (e) {
       setError(extractError(e));
     }
@@ -94,7 +102,7 @@ export default function WhatsAppPage() {
           Add a number <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: '0.85rem' }}>({numbers.length}/{limit === null ? '?' : limit} on your plan)</span>
         </h2>
         <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: -6 }}>
-          Use different numbers for different departments (sales, support, delivery) — buyers are routed to the right one. Extra numbers are an add-on on paid plans.
+          Buyers reach the number pinned on the item, then a number routed to that item type, then a number routed to that category, then your store default. Extra numbers are an add-on on paid plans.
         </p>
         <form onSubmit={add} className="form-row" style={{ alignItems: 'end' }}>
           <div className="field" style={{ marginBottom: 0 }}>
@@ -124,6 +132,7 @@ export default function WhatsAppPage() {
                 <th>Number</th>
                 <th>Label</th>
                 <th>Status</th>
+                <th>Routes to</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -137,6 +146,38 @@ export default function WhatsAppPage() {
                   <td>{n.label || '—'}</td>
                   <td>
                     <span className={`status-pill ${n.status === 'active' ? 'active' : 'suspended'}`}>{n.status}</span>
+                  </td>
+                  <td>
+                    <select
+                      className="select"
+                      aria-label={`Category route for ${n.number}`}
+                      defaultValue={n.route_category_id ?? ''}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        try {
+                          await capi(`/vendor/whatsapp/${n.id}`, { method: 'PUT', body: JSON.stringify({ route_category_id: value ? Number(value) : null }) });
+                          setNotice('Routing updated.');
+                        } catch (err) { setError(extractError(err)); }
+                      }}
+                    >
+                      <option value="">Any category</option>
+                      {cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                    <select
+                      className="select"
+                      aria-label={`Item type route for ${n.number}`}
+                      defaultValue={n.route_item_type_id ?? ''}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        try {
+                          await capi(`/vendor/whatsapp/${n.id}`, { method: 'PUT', body: JSON.stringify({ route_item_type_id: value ? Number(value) : null }) });
+                          setNotice('Routing updated.');
+                        } catch (err) { setError(extractError(err)); }
+                      }}
+                    >
+                      <option value="">Any type</option>
+                      {types.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+                    </select>
                   </td>
                   <td>
                     <div className="row-actions">

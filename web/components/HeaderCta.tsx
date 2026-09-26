@@ -8,8 +8,10 @@ const MENU_ID = 'cine-menu';
 
 export default function HeaderCta({
   extra,
+  me,
 }: {
   extra: { href: string; label: string }[];
+  me: { role: string; name: string; unread: number } | null;
 }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -54,8 +56,19 @@ export default function HeaderCta({
     { href: '/search', label: 'Search' },
     { href: '/saved', label: 'Saved' },
     { href: '/cart', label: 'WhatsApp cart' },
-    { href: '/register', label: 'Sell on CyberShop' },
-    { href: '/login', label: 'Sign in' },
+    ...(me
+      ? [
+          me.role === 'admin'
+            ? { href: '/admin', label: 'Admin' }
+            : me.role === 'vendor'
+              ? { href: '/dashboard', label: 'Dashboard' }
+              : { href: '/account', label: 'Account' },
+        ]
+      : [
+          { href: '/register', label: 'Sell on CyberShop' },
+          { href: '/register/buyer', label: 'Create a buyer account' },
+          { href: '/login', label: 'Sign in' },
+        ]),
   ];
 
   return (
@@ -64,12 +77,21 @@ export default function HeaderCta({
         <a className="hdr-link" href="/saved">
           Saved
         </a>
-        <a className="hdr-link" href="/login">
-          Sign in
-        </a>
-        <a className="btn btn-gold sheen hdr-sell" href="/register">
-          Sell on CyberShop
-        </a>
+        {me ? (
+          <a className="btn btn-gold sheen hdr-sell" href={me.role === 'admin' ? '/admin' : me.role === 'vendor' ? '/dashboard' : '/account'}>
+            {me.role === 'buyer' ? 'Account' : me.role === 'admin' ? 'Admin' : 'Dashboard'}
+            {me.unread > 0 ? ` (${me.unread})` : ''}
+          </a>
+        ) : (
+          <>
+            <a className="hdr-link" href="/login">
+              Sign in
+            </a>
+            <a className="btn btn-gold sheen hdr-sell" href="/register">
+              Sell on CyberShop
+            </a>
+          </>
+        )}
         <a className="hdr-search-btn" href="/search" aria-label="Search CyberShop">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
             <circle cx="11" cy="11" r="7" />

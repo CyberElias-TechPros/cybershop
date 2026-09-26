@@ -3,12 +3,14 @@ import type { Env } from '../config';
 import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/crypto';
 import { createSession, requireUser, destroySession, getSession } from '../lib/auth';
 import { rateLimit } from '../lib/ratelimit';
-import { AppError, badRequest, validationError, conflict, forbidden } from '../lib/errors';
+import { AppError, badRequest, validationError, conflict, forbidden, notFound } from '../lib/errors';
 import { slugify, assertSlugAvailable, nowIso, randomToken } from '../lib/util';
 import { reqStr, reqEmail, reqPassword, optStr, isEmail, reqPhone } from '../lib/validate';
 import { activateFreePlan } from '../lib/payments';
 import { normalizeWaNumber } from '../lib/wa';
 import { clientIp } from '../lib/ip';
+import { resolveVendorBinding } from '../lib/access';
+import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -62,8 +64,20 @@ app.post('/register', async (c) => {
     }
   }
 
-  const user = { id: userId, role, name, email, business_id: businessId } as const;
+  const user = { id: userId, role, name, email, business_id: businessId, member_role: role === 'vendor' ? 'owner' : null } as const;
   await createSession(c.env, c, user as never);
+  if (mailConfigured(c.env)) {
+    const token = randomToken(24);
+    const expires = String(Math.floor(Date.now() / 1000) + 86400);
+    await c.env.DB.prepare('UPDATE users SET email_verify_token = ?, email_verify_expires = ? WHERE id = ?').bind(token, expires, userId).run();
+    const url = `${c.env.APP_URL}/account/verify?token=${token}`;
+    await sendEmail(c.env, {
+      to: email,
+      subject: 'Confirm your CyberShop email',
+      text: `Welcome to CyberShop.\n\nConfirm your email (24 hours):\n${url}`,
+      html: mailHtml('Welcome to CyberShop', 'Confirm this address so we can reach you about your account. The link works for 24 hours.', { label: 'Confirm email', url }),
+    });
+  }
   return c.json({ ok: true, user: { id: userId, role, name, email, business_id: businessId } });
 });
 
@@ -82,11 +96,9 @@ app.post('/login', async (c) => {
   }
   if (user.status !== 'active') throw new AppError(403, 'account_suspended', 'This account is suspended. Contact support.');
   await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(nowIso(), user.id).run();
-  const biz = user.role === 'vendor'
-    ? ((await c.env.DB.prepare('SELECT id FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL').bind(user.id).first()) as { id: number } | null)?.id ?? null
-    : null;
-  await createSession(c.env, c, { id: user.id, role: user.role as never, name: user.name, email: user.email, business_id: biz } as never);
-  return c.json({ ok: true, user: { id: user.id, role: user.role, name: user.name, email: user.email, business_id: biz } });
+  const binding = user.role === 'vendor' ? await resolveVendorBinding(c.env, user.id) : { business_id: null, member_role: null };
+  await createSession(c.env, c, { id: user.id, role: user.role as never, name: user.name, email: user.email, business_id: binding.business_id, member_role: binding.member_role } as never);
+  return c.json({ ok: true, user: { id: user.id, role: user.role, name: user.name, email: user.email, business_id: binding.business_id } });
 });
 
 app.post('/logout', async (c) => {
@@ -125,7 +137,84 @@ app.get('/me', async (c) => {
     ).bind(user.business_id).first();
   }
   const unread = (await c.env.DB.prepare('SELECT COUNT(*) AS n FROM notifications WHERE user_id = ? AND read_at IS NULL').bind(user.id).first()) as { n: number };
-  return c.json({ ok: true, user: { id: user.id, role: user.role, name: user.name, email: user.email }, business, unread_notifications: unread.n });
+  const profile = (await c.env.DB.prepare('SELECT phone, email_verified_at FROM users WHERE id = ?').bind(user.id).first()) as { phone: string | null; email_verified_at: string | null } | null;
+  return c.json({
+    ok: true,
+    user: {
+      id: user.id, role: user.role, name: user.name, email: user.email,
+      phone: profile?.phone ?? null,
+      email_verified: !!profile?.email_verified_at,
+      member_role: user.member_role ?? null,
+    },
+    business,
+    unread_notifications: unread.n,
+  });
+});
+
+/** Preview a staff invite without consuming it. */
+app.get('/invites/:token', async (c) => {
+  const token = c.req.param('token');
+  if (!/^[a-f0-9]{48}$/.test(token)) throw badRequest('This invite link is not valid.');
+  const row = (await c.env.DB.prepare(
+    `SELECT i.email, i.role, i.expires_at, i.accepted_at, b.name AS business_name
+     FROM staff_invites i JOIN businesses b ON b.id = i.business_id
+     WHERE i.token = ?`
+  ).bind(token).first()) as { email: string; role: string; expires_at: string; accepted_at: string | null; business_name: string } | null;
+  if (!row) throw notFound('Invite not found.');
+  const masked = row.email.replace(/^(.).+(@.*)$/, '$1***$2');
+  return c.json({
+    ok: true,
+    business_name: row.business_name,
+    role: row.role,
+    email_masked: masked,
+    expired: !!row.accepted_at || row.expires_at <= new Date().toISOString(),
+  });
+});
+
+/** Accept a staff invite. Creates an account when the email is new. */
+app.post('/invites/accept', async (c) => {
+  const ip = clientIp(c);
+  await rateLimit(c.env, 'invite-accept', ip, 8, 3600);
+  const body = await c.req.json().catch(() => null);
+  const token = typeof body?.token === 'string' ? body.token : '';
+  if (!/^[a-f0-9]{48}$/.test(token)) throw badRequest('This invite link is not valid.');
+  const invite = (await c.env.DB.prepare(
+    `SELECT * FROM staff_invites WHERE token = ?`
+  ).bind(token).first()) as { id: number; business_id: number; email: string; role: string; expires_at: string; accepted_at: string | null } | null;
+  if (!invite || invite.accepted_at || invite.expires_at <= new Date().toISOString()) throw badRequest('This invite has expired. Ask the owner to send a new one.');
+  const session = await getSession(c.env, c);
+  let userId: number;
+  let name: string;
+  let email = invite.email;
+  if (session) {
+    if (session.email.toLowerCase() !== invite.email) throw forbidden('Sign in with the invited email, or open the link in a private window.');
+    if (session.role === 'admin') throw forbidden('Admin accounts cannot join a store as staff.');
+    const owns = await c.env.DB.prepare('SELECT id FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL').bind(session.id).first();
+    if (owns) throw conflict('This account already owns a store. Accept the invite with a different email.');
+    if (session.role === 'buyer') {
+      await c.env.DB.prepare(`UPDATE users SET role = 'vendor' WHERE id = ?`).bind(session.id).run();
+    }
+    userId = session.id;
+    name = session.name;
+  } else {
+    const existing = (await c.env.DB.prepare('SELECT id, role FROM users WHERE email = ? AND deleted_at IS NULL').bind(invite.email).first()) as { id: number; role: string } | null;
+    if (existing) throw conflict('An account with that email already exists. Sign in, then open the invite again.');
+    name = reqStr(body?.name, { min: 2, max: 120 });
+    const password = reqPassword(body?.password);
+    const hash = await hashPassword(password);
+    const res = await c.env.DB.prepare(`INSERT INTO users (role, name, email, password_hash, status) VALUES ('vendor', ?, ?, ?, 'active')`).bind(name, invite.email, hash).run();
+    userId = Number(res.meta.last_row_id);
+  }
+  await c.env.DB.prepare(
+    `INSERT INTO business_members (business_id, user_id, role, status) VALUES (?, ?, ?, 'active')
+     ON CONFLICT(business_id, user_id) DO UPDATE SET role = excluded.role, status = 'active'`
+  ).bind(invite.business_id, userId, invite.role).run();
+  await c.env.DB.prepare('UPDATE staff_invites SET accepted_at = ? WHERE id = ?').bind(nowIso(), invite.id).run();
+  const owner = (await c.env.DB.prepare('SELECT owner_user_id, name FROM businesses WHERE id = ?').bind(invite.business_id).first()) as { owner_user_id: number; name: string };
+  const { notify } = await import('../lib/notify');
+  await notify(c.env, { userId: owner.owner_user_id, type: 'staff.joined', title: `${name} joined your team`, body: `${email} accepted the ${invite.role} invite for ${owner.name}.` });
+  await createSession(c.env, c, { id: userId, role: 'vendor', name, email, business_id: invite.business_id, member_role: invite.role });
+  return c.json({ ok: true, user: { id: userId, role: 'vendor', name, email, business_id: invite.business_id } });
 });
 
 app.post('/forgot', async (c) => {

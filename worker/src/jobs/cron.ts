@@ -98,7 +98,27 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   summary.verified_expired = await expireVerifiedBadges(env);
   summary.saved_search_alerts = await notifySavedSearches(env);
 
-  // 9. Housekeeping
+  // 9. Lead follow-ups the vendor scheduled
+  const due = (await env.DB.prepare(
+    `SELECT i.id, i.buyer_name, i.business_id, b.owner_user_id
+     FROM inquiries i JOIN businesses b ON b.id = i.business_id
+     WHERE i.follow_up_at IS NOT NULL AND i.follow_up_at <= ?
+       AND i.follow_up_notified_at IS NULL
+       AND i.status NOT IN ('converted','lost')`
+  ).bind(now).all()).results as { id: number; buyer_name: string | null; owner_user_id: number }[];
+  for (const row of due) {
+    await notify(env, {
+      userId: row.owner_user_id,
+      type: 'follow_up.due',
+      title: 'Follow-up is due',
+      body: row.buyer_name ? `Time to get back to ${row.buyer_name}.` : 'A lead you marked for follow-up is due.',
+      data: { inquiry_id: row.id },
+    });
+    await env.DB.prepare(`UPDATE inquiries SET follow_up_notified_at = ? WHERE id = ?`).bind(now, row.id).run();
+    summary.follow_ups = (summary.follow_ups || 0) + 1;
+  }
+
+  // 10. Housekeeping
   await pruneRateLimits(env);
   await env.DB.prepare(`DELETE FROM upload_tokens WHERE expires_at < ? AND used_at IS NOT NULL`).bind(Math.floor(Date.now() / 1000) - 86400).run();
   await env.DB.prepare(`DELETE FROM sessions WHERE last_activity < ?`).bind(Math.floor(Date.now() / 1000) - 30 * 86400).run();

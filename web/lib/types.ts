@@ -35,6 +35,7 @@ export interface BusinessOut {
     verified_id: boolean;
     reply: string | null;
   };
+  reviews?: { count: number; average: number | null };
 }
 
 export interface ItemImageOut {
@@ -69,6 +70,12 @@ export interface ItemOut {
   featured?: boolean;
   type_slug?: string;
   inspection?: { notes: string } | null;
+  variants?: { id: number; name: string; options: string[]; price_kobo: number | null; price_display: string | null; stock_qty: number | null }[];
+  reviews?: {
+    count: number;
+    average: number | null;
+    items?: { id: number; rating: number; title: string | null; body: string | null; vendor_reply: string | null; created_at: string; buyer_name: string }[];
+  };
 }
 
 export interface OfferOut {

@@ -1,5 +1,6 @@
 import { api } from '@/lib/api';
 import type { HomeOut } from '@/lib/types';
+import { sessionCookieHeader, type Me } from '@/lib/session';
 import SearchForm from './SearchForm';
 import NavLinks from './NavLinks';
 import HeaderCta from './HeaderCta';
@@ -16,6 +17,12 @@ export default async function Header() {
     /* Worker unreachable — render header without category links */
   }
   const extra = categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name }));
+  let me: Me | null = null;
+  try {
+    me = await api<Me>('/auth/me', { cookie: await sessionCookieHeader() });
+  } catch {
+    me = null;
+  }
   return (
     <header className="site-header">
       <div className="inner">
@@ -37,7 +44,7 @@ export default async function Header() {
         <div className="header-search">
           <SearchForm />
         </div>
-        <HeaderCta extra={extra} />
+        <HeaderCta extra={extra} me={me ? { role: me.user.role, name: me.user.name, unread: me.unread_notifications } : null} />
       </div>
     </header>
   );

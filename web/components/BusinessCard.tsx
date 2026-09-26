@@ -26,7 +26,7 @@ export default function BusinessCard({ b, featured = false }: { b: BusinessOut; 
         )}
       </div>
       <div className="biz-body">
-        <p className="biz-name">{b.name}</p>
+        <p className="biz-name">{b.name}{b.featured ? <span className="trust-chip" style={{ marginLeft: 8 }}>Featured</span> : null}</p>
         {location(b) && <p className="biz-loc">{location(b)}</p>}
         <div className="biz-cats" aria-hidden="true">
           {b.categories.slice(0, 3).map((c) => (

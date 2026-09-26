@@ -23,7 +23,7 @@ interface Payment {
   created_at: string;
 }
 
-const FILTERS = ['all', 'submitted', 'reviewing', 'pending', 'approved', 'rejected', 'failed'];
+const FILTERS = ['all', 'submitted', 'reviewing', 'pending', 'approved', 'rejected', 'refunded', 'failed'];
 
 export default function AdminPaymentsPage() {
   const [status, setStatus] = useState('submitted');
@@ -54,6 +54,28 @@ export default function AdminPaymentsPage() {
     try {
       await capi(`/admin/payments/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
       setNotice('Payment approved — vendor activated.');
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function refund(id: number) {
+    const reason = prompt('Refund note (min 5 chars). CyberShop does not move the money — confirm you already returned it.', 'Returned to the vendor.');
+    if (reason === null) return;
+    if (reason.trim().length < 5) {
+      setError('Refund note must be at least 5 characters.');
+      return;
+    }
+    if (!confirm('Mark this payment refunded? The store stays live unless you also revoke the subscription.')) return;
+    setBusyId(id);
+    setError('');
+    setNotice('');
+    try {
+      const d = await capi<{ message: string }>(`/admin/payments/${id}/refund`, { method: 'POST', body: JSON.stringify({ reason }) });
+      setNotice(d.message);
       await load();
     } catch (e) {
       setError(extractError(e));
@@ -140,6 +162,13 @@ export default function AdminPaymentsPage() {
                   <a className="mini-btn" href={`/api/admin/payments/${p.id}/proof`} target="_blank" rel="noopener">
                     📄 View transfer proof
                   </a>
+                </div>
+              )}
+              {p.status === 'approved' && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                  <button className="btn btn-ghost" style={{ padding: '9px 18px' }} disabled={busyId === p.id} onClick={() => refund(p.id)}>
+                    Mark refunded
+                  </button>
                 </div>
               )}
               {['submitted', 'reviewing', 'pending'].includes(p.status) && (

@@ -1,11 +1,14 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
+import { sessionCookieHeader } from '@/lib/session';
 import { absUrl } from '@/lib/config';
 import { clientIp } from '@/lib/ip';
 import { formatField, humanize, location } from '@/lib/ui';
 import type { ItemPageOut } from '@/lib/types';
 import Gallery from '@/components/Gallery';
-import WaCta from '@/components/WaCta';
+import EnquiryBox from '@/components/EnquiryBox';
+import ReviewBox from '@/components/ReviewBox';
+import ShareBar from '@/components/ShareBar';
 import StickyWa from '@/components/StickyWa';
 import WaveAudio from '@/components/WaveAudio';
 import ItemCard from '@/components/ItemCard';
@@ -35,7 +38,7 @@ function itemPath(biz: string, segment: string, slug: string) {
 async function fetchItem(sp: SP, ip?: string) {
   return api<ItemPageOut>(
     `/public/item?biz=${encodeURIComponent(sp.slug)}&segment=${encodeURIComponent(sp.segment)}&slug=${encodeURIComponent(sp.itemSlug)}`,
-    { ip }
+    { ip, cookie: await sessionCookieHeader() }
   );
 }
 
@@ -101,6 +104,13 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
       price: '0.00',
       priceCurrency: item.currency || 'NGN',
       url: offerUrl,
+    };
+  }
+  if (item.reviews && item.reviews.count > 0 && item.reviews.average != null) {
+    jsonLd.aggregateRating = {
+      '@type': 'AggregateRating',
+      ratingValue: item.reviews.average,
+      reviewCount: item.reviews.count,
     };
   }
 
@@ -207,14 +217,13 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
               </Reveal>
             )}
             <Reveal i={2} className="cascade">
-              <WaCta
+              <EnquiryBox
                 businessId={business.id}
                 listingId={item.id}
                 waUrl={wa.url}
                 ctaLabel={item.cta_label || `Enquire about ${item.name}`}
-                priceDisplay={undefined}
-                withDetails
                 messagePreview={wa.message ? `\n${wa.message}` : undefined}
+                variants={item.variants}
               />
             </Reveal>
             {(business.premium?.chat || business.premium?.escrow) && (
@@ -248,6 +257,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
               <MarketActions
                 entityType="listing"
                 entityId={item.id}
+                businessId={business.id}
                 ad={{
                   listing_id: item.id,
                   name: item.name,
@@ -263,6 +273,10 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
             </Reveal>
             <Reveal i={5} className="cascade">
               <SafetyTips compact />
+            </Reveal>
+            <Reveal i={6}>
+              <ReviewBox businessId={business.id} listingId={item.id} reviews={item.reviews} />
+              <ShareBar url={itemPath(business.slug, sp.segment, item.slug)} title={item.name} />
             </Reveal>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import type { BusinessesOut, CategoryOut } from '@/lib/types';
 import BusinessCard from '@/components/BusinessCard';
 import Pager from '@/components/Pager';
@@ -47,7 +48,8 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   query.set('page', String(page));
 
   const ip = await clientIp();
-  const data = await api<BusinessesOut>(`/public/businesses?${query}`, { ip });
+  const cookie = await sessionCookieHeader();
+  const data = await api<BusinessesOut>(`/public/businesses?${query}`, { ip, cookie });
   let cats: { name: string; slug: string }[] = [];
   let cities: { city: string }[] = [];
   try {

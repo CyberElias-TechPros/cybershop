@@ -32,7 +32,7 @@ export async function hasAddon(env: Env, businessId: number, type: string): Prom
   return types.has(type);
 }
 
-export async function assertAddon(env: Env, businessId: number, type: PremiumType, message: string): Promise<void> {
+export async function assertAddon(env: Env, businessId: number, type: string, message: string): Promise<void> {
   if (!(await hasAddon(env, businessId, type))) throw forbidden(message);
 }
 
@@ -154,10 +154,36 @@ export async function markDepositPaid(env: Env, reference: string, ip: string | 
 }
 
 export async function releaseDeposit(env: Env, businessId: number, depositId: number): Promise<void> {
-  const dep = (await env.DB.prepare('SELECT * FROM deposits WHERE id = ? AND business_id = ?').bind(depositId, businessId).first()) as { id: number; status: string } | null;
+  const dep = (await env.DB.prepare('SELECT * FROM deposits WHERE id = ? AND business_id = ?').bind(depositId, businessId).first()) as { id: number; status: string; buyer_user_id: number | null; reference: string } | null;
   if (!dep) throw notFound('Deposit not found.');
   if (dep.status !== 'paid') throw conflict(`Deposit is ${dep.status}, not waiting for release.`);
   await env.DB.prepare(`UPDATE deposits SET status = 'released', released_at = ? WHERE id = ?`).bind(nowIso(), dep.id).run();
+  if (dep.buyer_user_id) {
+    await notify(env, {
+      userId: dep.buyer_user_id,
+      type: 'deposit.released',
+      title: 'The seller confirmed handover',
+      body: `${dep.reference} is marked released. CyberShop does not move the money — this is the seller’s record.`,
+      data: { deposit_id: dep.id },
+    });
+  }
+}
+
+/** Record-only. CyberShop never moves bank funds. */
+export async function refundDeposit(env: Env, businessId: number, depositId: number): Promise<void> {
+  const dep = (await env.DB.prepare('SELECT * FROM deposits WHERE id = ? AND business_id = ?').bind(depositId, businessId).first()) as { id: number; status: string; buyer_user_id: number | null; reference: string } | null;
+  if (!dep) throw notFound('Deposit not found.');
+  if (dep.status !== 'paid') throw conflict(`Deposit is ${dep.status}. Only a recorded payment can be marked refunded.`);
+  await env.DB.prepare(`UPDATE deposits SET status = 'refunded', released_at = ? WHERE id = ?`).bind(nowIso(), dep.id).run();
+  if (dep.buyer_user_id) {
+    await notify(env, {
+      userId: dep.buyer_user_id,
+      type: 'deposit.refunded',
+      title: 'The seller marked your deposit refunded',
+      body: `${dep.reference} — confirm the money is back in your account. CyberShop does not hold or return funds.`,
+      data: { deposit_id: dep.id },
+    });
+  }
 }
 
 export async function notifySavedSearches(env: Env): Promise<number> {
@@ -169,7 +195,7 @@ export async function notifySavedSearches(env: Env): Promise<number> {
   }[];
   let n = 0;
   for (const s of searches) {
-    let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND l.id > ?`;
+    let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND b.status = 'active' AND b.paused_at IS NULL AND l.id > ?`;
     const params: (string | number)[] = [s.last_seen_listing_id];
     if (s.q) { where += ` AND (l.name LIKE ? OR l.description LIKE ?)`; params.push(`%${s.q}%`, `%${s.q}%`); }
     if (s.city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(s.city); }

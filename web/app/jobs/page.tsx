@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import type { ListingsOut } from '@/lib/types';
 import ListingCard from '@/components/ListingCard';
 import { Reveal } from '@/components/Motion';
@@ -17,7 +18,7 @@ export default async function JobsPage() {
   const ip = await clientIp();
   let data: ListingsOut = { items: [], total: 0, page: 1, pages: 1 };
   try {
-    data = await api<ListingsOut>('/public/listings?category=jobs', { ip });
+    data = await api<ListingsOut>('/public/listings?category=jobs', { ip, cookie: await sessionCookieHeader() });
   } catch {
     /* empty */
   }

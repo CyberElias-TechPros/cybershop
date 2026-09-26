@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
 import type { HomeOut } from '@/lib/types';
 import SearchForm from '@/components/SearchForm';
 import { CountUp, HeroWords, Reveal } from '@/components/Motion';
@@ -14,7 +15,7 @@ export const metadata: Metadata = {
 };
 
 const EMPTY: HomeOut = {
-  platform: { name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng' },
+  platform: { name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng', announcement: '' },
   categories: [],
   businesses: [],
   business_count: 0,
@@ -24,7 +25,7 @@ export default async function HomePage() {
   let data: HomeOut = EMPTY;
   let live = true;
   try {
-    data = await api<HomeOut>('/public/home', { ip: await clientIp() });
+    data = await api<HomeOut>('/public/home', { ip: await clientIp(), cookie: await sessionCookieHeader() });
   } catch {
     /* The front door must never crash — but an outage must not be dressed up
        as an empty market ("0 businesses", "categories arrive with the first
@@ -35,8 +36,15 @@ export default async function HomePage() {
   const tagline = platform?.tagline ?? 'Find a business. Talk to it on WhatsApp.';
   const cats = data.categories;
 
+  const announcement = (platform?.announcement || '').trim();
+
   return (
     <>
+      {announcement && (
+        <div className="container" style={{ paddingTop: 16 }}>
+          <div className="banner info" role="status">{announcement}</div>
+        </div>
+      )}
       <section className="cine-hero">
         <div className="cine-hero-copy">
           <p className="cine-kicker">

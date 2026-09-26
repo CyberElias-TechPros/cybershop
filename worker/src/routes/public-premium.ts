@@ -3,6 +3,7 @@ import type { Env } from '../config';
 import { rateLimit } from '../lib/ratelimit';
 import { badRequest, notFound, validationError, forbidden } from '../lib/errors';
 import { getSession, requireUser } from '../lib/auth';
+import { isBlocked } from '../lib/blocks';
 import { clampInt, randomToken, nowIso, parseMoneyKobo } from '../lib/util';
 import { optStr, reqStr } from '../lib/validate';
 import { notify } from '../lib/notify';
@@ -38,6 +39,7 @@ app.post('/threads', async (c) => {
     if (!l) throw notFound('Listing not found.');
   }
   const user = await getSession(env, c);
+  if (await isBlocked(env, user?.id, bizId)) throw forbidden('You blocked this business.');
   const token = randomToken(16);
   const res = await env.DB.prepare(
     `INSERT INTO threads (business_id, listing_id, buyer_user_id, buyer_name, buyer_phone, token)

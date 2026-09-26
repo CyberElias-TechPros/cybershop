@@ -58,6 +58,23 @@ export default function AdminUsersPage() {
     }
   }
 
+  async function setStatus(u: User, next: 'suspend' | 'activate') {
+    const verb = next === 'suspend' ? 'Suspend' : 'Activate';
+    if (!confirm(`${verb} ${u.name}? ${next === 'suspend' ? 'They will be signed out.' : ''}`)) return;
+    setBusyId(u.id);
+    setError('');
+    setNotice('');
+    try {
+      await capi(`/admin/users/${u.id}/${next}`, { method: 'POST', body: '{}' });
+      setNotice(`${u.name} is ${next === 'suspend' ? 'suspended' : 'active'}.`);
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function resetLink(u: User) {
     setBusyId(u.id);
     setError('');
@@ -145,6 +162,16 @@ export default function AdminUsersPage() {
                     <button type="button" className="mini-btn" disabled={busyId === u.id} onClick={() => resetLink(u)}>
                       Reset link
                     </button>
+                    {u.role !== 'admin' && u.status === 'active' && (
+                      <button type="button" className="mini-btn danger" disabled={busyId === u.id} onClick={() => setStatus(u, 'suspend')}>
+                        Suspend
+                      </button>
+                    )}
+                    {u.role !== 'admin' && u.status !== 'active' && (
+                      <button type="button" className="mini-btn" disabled={busyId === u.id} onClick={() => setStatus(u, 'activate')}>
+                        Activate
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>

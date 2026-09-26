@@ -10,7 +10,7 @@ export async function sessionCookieHeader(): Promise<string | null> {
 }
 
 export interface Me {
-  user: { id: number; role: 'vendor' | 'admin' | 'buyer'; name: string; email: string };
+  user: { id: number; role: 'vendor' | 'admin' | 'buyer'; name: string; email: string; member_role?: string | null; email_verified?: boolean };
   business: {
     id: number;
     name: string;
@@ -32,7 +32,15 @@ export async function requireVendor(): Promise<Me> {
   const me = await fetchMe(cookieStore.get('cs_session')?.value ?? null);
   if (!me) redirect('/login');
   if (me.user.role === 'admin') redirect('/admin');
-  if (me.user.role !== 'vendor') redirect('/login');
+  if (me.user.role !== 'vendor') redirect('/account');
+  return me;
+}
+
+/** Any signed-in person — buyers, vendors, and admins. */
+export async function requireUser(): Promise<Me> {
+  const cookieStore = await cookies();
+  const me = await fetchMe(cookieStore.get('cs_session')?.value ?? null);
+  if (!me) redirect('/login');
   return me;
 }
 
@@ -41,7 +49,7 @@ export async function requireAdmin(): Promise<Me> {
   const cookieStore = await cookies();
   const me = await fetchMe(cookieStore.get('cs_session')?.value ?? null);
   if (!me) redirect('/login');
-  if (me.user.role !== 'admin') redirect(me.user.role === 'vendor' ? '/dashboard' : '/login');
+  if (me.user.role !== 'admin') redirect(me.user.role === 'vendor' ? '/dashboard' : '/account');
   return me;
 }
 

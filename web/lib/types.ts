@@ -22,6 +22,8 @@ export interface BusinessOut {
   social: Record<string, string>;
   status: string;
   verification_status?: string;
+  paused?: boolean;
+  featured?: boolean;
   created_at?: string | null;
   listing_count?: number;
   whatsapp_number?: string | null;
@@ -34,6 +36,15 @@ export interface BusinessOut {
     jobs: boolean;
     verified_id: boolean;
     reply: string | null;
+  };
+  reviews?: { count: number; average: number | null };
+  address?: string | null;
+  storefront?: {
+    style: string;
+    accent: string;
+    sections: Record<string, boolean>;
+    faq: { q: string; a: string }[];
+    hours: string | null;
   };
 }
 
@@ -69,6 +80,12 @@ export interface ItemOut {
   featured?: boolean;
   type_slug?: string;
   inspection?: { notes: string } | null;
+  variants?: { id: number; name: string; options: string[]; price_kobo: number | null; price_display: string | null; stock_qty: number | null }[];
+  reviews?: {
+    count: number;
+    average: number | null;
+    items?: { id: number; rating: number; title: string | null; body: string | null; vendor_reply: string | null; created_at: string; buyer_name: string }[];
+  };
 }
 
 export interface OfferOut {
@@ -82,7 +99,7 @@ export interface OfferOut {
 }
 
 export interface HomeOut {
-  platform: { name: string; tagline: string; currency: string; support_email: string } | null;
+  platform: { name: string; tagline: string; currency: string; support_email: string; announcement?: string } | null;
   categories: CategoryOut[];
   businesses: BusinessOut[];
   business_count: number;
@@ -106,6 +123,9 @@ export interface BusinessPageOut {
   business: BusinessOut;
   items: ItemOut[];
   offers: OfferOut[];
+  unavailable?: boolean;
+  preview?: boolean;
+  unavailable_reason?: string | null;
 }
 
 export interface WaOut {
@@ -144,6 +164,7 @@ export interface ListingsOut {
   total: number;
   page: number;
   pages: number;
+  field_filters?: { key: string; label: string; options: string[] }[];
 }
 
 export interface SearchOut {
@@ -161,4 +182,5 @@ export interface SearchOut {
   }[];
   total: number;
   page: number;
+  suggestions?: { label: string; href: string }[];
 }

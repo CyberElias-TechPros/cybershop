@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { capi, extractError } from '@/lib/client-api';
+import ReferralCard from '@/components/ReferralCard';
 
 interface Business {
   name: string;
@@ -16,7 +17,9 @@ interface Business {
   website: string | null;
   social: string | null;
   status: string;
+  paused_at?: string | null;
   categories: { name: string; slug: string }[];
+  storefront?: { style: string; accent: string; hours: string | null; sections: Record<string, boolean>; faq: { q: string; a: string }[] };
 }
 
 const SOCIAL_KEYS = [
@@ -45,6 +48,12 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [style, setStyle] = useState('classic');
+  const [accent, setAccent] = useState('');
+  const [hours, setHours] = useState('');
+  const [faq, setFaq] = useState('');
+  const [sections, setSections] = useState<Record<string, boolean>>({ hero: true, featured: true, offers: true, about: true, faq: false, location: true });
+  const [paused, setPaused] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -68,6 +77,15 @@ export default function SettingsPage() {
         website: d.business.website ?? '',
         social,
       });
+      setPaused(!!d.business.paused_at);
+      const sf = d.business.storefront;
+      if (sf) {
+        setStyle(sf.style || 'classic');
+        setAccent(sf.accent || '');
+        setHours(sf.hours || '');
+        setSections({ ...sections, ...sf.sections });
+        setFaq((sf.faq || []).map((row) => `${row.q} | ${row.a}`).join('\n'));
+      }
     } catch (e) {
       setError(extractError(e));
     }
@@ -85,7 +103,16 @@ export default function SettingsPage() {
     setError('');
     setNotice('');
     try {
-      await capi('/vendor/business', { method: 'PUT', body: JSON.stringify(form) });
+      await capi('/vendor/business', { method: 'PUT', body: JSON.stringify({
+        ...form,
+        storefront: {
+          style, accent, hours, sections,
+          faq: faq.split('\n').map((line) => {
+            const [q, ...rest] = line.split('|');
+            return { q: (q || '').trim(), a: rest.join('|').trim() };
+          }).filter((row) => row.q && row.a),
+        },
+      }) });
       setNotice('Saved.');
       await load();
     } catch (err) {
@@ -114,8 +141,37 @@ export default function SettingsPage() {
           View store ↗
         </Link>
       </div>
+      <ReferralCard />
       {error && <div className="form-msg error">{error}</div>}
       {notice && <div className="form-msg success">{notice}</div>}
+
+      <div className="card panel">
+        <h2 style={{ fontSize: '1.05rem' }}>{paused ? 'Store is paused' : 'Store is visible'}</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+          Pausing hides the catalogue and WhatsApp button. Nothing is deleted. You can still edit listings.
+        </p>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setError('');
+            setNotice('');
+            try {
+              await capi('/vendor/business/pause', { method: 'POST', body: JSON.stringify({ paused: !paused }) });
+              setPaused(!paused);
+              setNotice(paused ? 'Store is visible again.' : 'Store paused. Buyers will see a taking-a-break page.');
+            } catch (err) {
+              setError(extractError(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {paused ? 'Resume store' : 'Pause store'}
+        </button>
+      </div>
 
       <form onSubmit={save}>
         <div className="card panel">
@@ -197,6 +253,35 @@ export default function SettingsPage() {
             Categories are managed by the platform team. Need a new one for your business?{' '}
             <Link href="mailto:support@cybershop.ng">Let us know</Link>.
           </p>
+        </div>
+
+        <div className="card panel">
+          <h2 style={{ fontSize: '1.05rem' }}>Storefront</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>Choose what buyers see. WhatsApp stays on — that is how they reach you.</p>
+          <div className="form-row">
+            <label className="field">Style
+              <select className="select" value={style} onChange={(e) => setStyle(e.target.value)}>
+                {['classic', 'editorial', 'minimal', 'bold'].map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="field">Accent
+              <input className="input" value={accent} onChange={(e) => setAccent(e.target.value)} placeholder="#1f8a5b" />
+            </label>
+            <label className="field">Hours
+              <input className="input" value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Mon–Sat, 9am–6pm" />
+            </label>
+          </div>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 12 }}>
+            {Object.keys(sections).map((key) => (
+              <label key={key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input type="checkbox" checked={sections[key] !== false} onChange={(e) => setSections((s) => ({ ...s, [key]: e.target.checked }))} />
+                {key}
+              </label>
+            ))}
+          </div>
+          <label className="field">Questions, one per line as Question | Answer
+            <textarea className="textarea" value={faq} onChange={(e) => setFaq(e.target.value)} placeholder="Do you deliver in Lagos? | Yes, we agree the fee on WhatsApp." />
+          </label>
         </div>
 
         <div className="form-actions">

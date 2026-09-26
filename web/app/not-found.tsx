@@ -1,4 +1,5 @@
 import { AuroraParallax } from '@/components/Motion';
+import SearchForm from '@/components/SearchForm';
 
 export default function NotFound() {
   return (
@@ -17,6 +18,9 @@ export default function NotFound() {
         <p style={{ color: 'var(--ink-faint)', maxWidth: '44ch', margin: '0 auto 26px' }}>
           The page you’re looking for doesn’t exist — or the business is no longer listed.
         </p>
+        <div style={{ maxWidth: 480, margin: '0 auto 22px' }}>
+          <SearchForm big initial="" />
+        </div>
         <div className="cta-actions">
           <a className="btn btn-primary sheen" href="/">
             Back home

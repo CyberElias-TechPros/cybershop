@@ -19,7 +19,11 @@ export default function LoginPage() {
     setError('');
     try {
       await capi('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
-      router.push('/dashboard');
+      const me = await capi<{ user: { role: string } }>('/auth/me');
+      const next = new URLSearchParams(window.location.search).get('next');
+      const fallback = me.user.role === 'admin' ? '/admin' : me.user.role === 'vendor' ? '/dashboard' : '/account';
+      const dest = next && next.startsWith('/') && !next.startsWith('//') ? next : fallback;
+      router.push(dest);
       router.refresh();
     } catch (err) {
       setError(extractError(err));
@@ -36,7 +40,7 @@ export default function LoginPage() {
         </>
       }
       lede="The market never closed. Your catalogue kept its lights on, your leads kept their questions — pick up the thread."
-      head={{ kicker: 'Vendors & house', title: 'Sign in', sub: 'Tend your stall — or the market itself.' }}
+      head={{ kicker: 'Buyers, vendors & house', title: 'Sign in', sub: 'Your account, your stall, or the market itself.' }}
     >
       {error && (
         <div className="form-msg error" style={{ ['--i' as string]: 0.5 }} role="alert">

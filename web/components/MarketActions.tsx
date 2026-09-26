@@ -16,10 +16,12 @@ export default function MarketActions({
   ad,
   entityType,
   entityId,
+  businessId,
 }: {
   ad: Omit<SavedAd, 'saved_at'>;
   entityType: 'listing' | 'business';
   entityId: number;
+  businessId?: number;
 }) {
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -28,6 +30,7 @@ export default function MarketActions({
   const [details, setDetails] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState('');
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     setSaved(isSaved(ad.listing_id));
@@ -92,6 +95,13 @@ export default function MarketActions({
           const now = toggleSaved(ad);
           setSaved(now);
           haptic('pop');
+          if (ad.listing_id) {
+            fetch('/api/account/favorites', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ listing_id: ad.listing_id }),
+            }).catch(() => undefined);
+          }
         }}
         aria-pressed={saved}
       >
@@ -103,6 +113,29 @@ export default function MarketActions({
       <button type="button" className="mact" onClick={() => setReportOpen(true)}>
         ⚑ Report
       </button>
+      {businessId ? (
+        <button
+          type="button"
+          className="mact"
+          onClick={async () => {
+            const res = await fetch('/api/account/blocks', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ business_id: businessId }),
+            });
+            if (res.status === 401) {
+              window.location.href = '/login';
+              return;
+            }
+            if (res.ok) {
+              setBlocked(true);
+              haptic('long');
+            }
+          }}
+        >
+          {blocked ? 'Blocked' : 'Block seller'}
+        </button>
+      ) : null}
 
       {reportOpen && (
         <div className="cart-drawer-backdrop" onClick={() => setReportOpen(false)}>

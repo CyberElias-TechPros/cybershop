@@ -54,8 +54,9 @@ the ID is public, not a secret.
 npx wrangler d1 migrations apply cybershop --remote
 ```
 
-Expected: `0001_init` (32 tables), `0002_seed` (categories, item types, plans,
-add-ons, default settings), `0003_audit_nullable_actor`.
+Expected: every file in `worker/migrations/` applies, from `0001_init` through
+`0008_ops` (pause column) and anything added after. `wrangler d1 migrations list --remote`
+should show them all applied. Do not skip a file — later routes read those columns.
 
 ---
 
@@ -186,6 +187,16 @@ the preview card must show the cover image.
    | `WORKER_URL` | `https://<worker>.<account>.workers.dev` |
    | `WORKER_INTERNAL_SECRET` | == Worker `INTERNAL_SECRET` |
    | `SITE_URL` | `https://yourshop.ng` |
+
+Custom domains (optional, after a vendor verifies DNS):
+
+   | Var | Where | Purpose |
+   |---|---|---|
+   | `VERCEL_TOKEN` | Worker secret | Attach the host to the Vercel project |
+   | `VERCEL_PROJECT_ID` | Worker secret | Target project |
+   | `VERCEL_TEAM_ID` | Worker secret, if the project is under a team | Team scope |
+
+Without those three, domain ownership still verifies (TXT `_cybershop.<domain>` or `/.well-known/cybershop-domain.txt`). Add the host in the Vercel project by hand, then the web middleware rewrites that host to the storefront. `SITE_URL` must be the platform host so the middleware does not rewrite it.
 
    The web app itself never sends email — transactional mail lives on the
    Worker. Configure it there (step 3 of the Worker section):

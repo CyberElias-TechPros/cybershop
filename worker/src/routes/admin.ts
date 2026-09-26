@@ -7,7 +7,7 @@ import { reqStr, optStr, reqInt, isHttpUrl } from '../lib/validate';
 import { audit } from '../lib/audit';
 import { notify } from '../lib/notify';
 import { clientIp } from '../lib/ip';
-import { approvePayment, rejectPayment } from '../lib/payments';
+import { approvePayment, rejectPayment, refundPayment } from '../lib/payments';
 import { formatNaira } from '../lib/money';
 import { getMedia, mediaUrl, softDeleteMedia, storageUsedBytes, blobToBuffer } from '../lib/media';
 import { randomToken } from '../lib/util';
@@ -69,7 +69,7 @@ app.get('/vendors', async (c) => {
   if (q) { where += ' AND (b.name LIKE ? OR b.slug LIKE ? OR u.email LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.status, b.created_at, u.email, u.phone,
+    `SELECT b.id, b.name, b.slug, b.status, b.is_featured, b.featured_until, b.created_at, u.email, u.phone,
             (SELECT p.name FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.business_id = b.id ORDER BY s.id DESC LIMIT 1) AS plan_name,
             (SELECT COUNT(*) FROM listings l WHERE l.business_id = b.id AND l.status = 'published' AND l.deleted_at IS NULL) AS items
      FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}
@@ -123,6 +123,28 @@ app.post('/vendors/:id/reactivate', async (c) => {
   const id = reqInt(c.req.param('id'), { min: 1 });
   await setBusinessStatus(c.env, admin, id, 'active', 'vendor.reactivate', ip(c));
   return c.json({ ok: true });
+});
+
+app.post('/vendors/:id/feature', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const featured = body?.featured !== false;
+  const days = featured ? (body?.days === undefined ? 14 : reqInt(body.days, { min: 1, max: 90 })) : 0;
+  const until = featured ? new Date(Date.now() + days * 86400_000).toISOString() : null;
+  const res = await c.env.DB.prepare('UPDATE businesses SET is_featured = ?, featured_until = ? WHERE id = ? AND deleted_at IS NULL').bind(featured ? 1 : 0, until, id).run();
+  if (res.meta.changes === 0) throw notFound('Business not found.');
+  const owner = (await c.env.DB.prepare('SELECT owner_user_id, name FROM businesses WHERE id = ?').bind(id).first()) as { owner_user_id: number; name: string } | null;
+  if (owner) {
+    await notify(c.env, {
+      userId: owner.owner_user_id,
+      type: 'business.featured',
+      title: featured ? 'Your store is featured' : 'Your store is no longer featured',
+      body: featured ? `${owner.name} will sort first in the market for ${days} days.` : `${owner.name} is back in the regular market order.`,
+    });
+  }
+  await audit(c.env, { actor: admin, action: featured ? 'vendor.feature' : 'vendor.unfeature', entityType: 'business', entityId: id, ip: ip(c), meta: { days, until } });
+  return c.json({ ok: true, featured, featured_until: until });
 });
 
 app.post('/vendors/:id/reject', async (c) => {
@@ -311,6 +333,15 @@ app.post('/payments/:id/reject', async (c) => {
   const reason = reqStr(body?.reason, { min: 5, max: 500 });
   await rejectPayment(c.env, { paymentId: id, admin, reason, ip: ip(c) });
   return c.json({ ok: true });
+});
+
+app.post('/payments/:id/refund', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const reason = reqStr(body?.reason, { min: 5, max: 500 });
+  await refundPayment(c.env, { paymentId: id, admin, reason, ip: ip(c) });
+  return c.json({ ok: true, message: 'Marked refunded. CyberShop does not move the money. Revoke the subscription if the plan should stop.' });
 });
 
 // ---------------------------------------------------------------- categories

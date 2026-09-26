@@ -10,6 +10,7 @@ import { HeaderFx, TransitionFx } from '@/components/Motion';
 import { FlipBridge } from '@/components/Fx';
 import CartChip from '@/components/CartFx';
 import Atmosphere from '@/components/Atmosphere';
+import OfflineSW from '@/components/OfflineSW';
 
 const fraunces = Fraunces({
   src: [{ path: './fonts/Fraunces.ttf', weight: '300 700', style: 'normal' }],
@@ -58,7 +59,7 @@ export const viewport: Viewport = {
  */
 const BOOT_JS = `document.documentElement.classList.add("js");
 try{var p=location.pathname;
-if(sessionStorage.getItem("cs-intro")==="1"||p.indexOf("/dashboard")===0||p.indexOf("/admin")===0){
+if(sessionStorage.getItem("cs-intro")==="1"||p.indexOf("/dashboard")===0||p.indexOf("/admin")===0||p.indexOf("/account")===0){
 document.documentElement.classList.add("no-intro");}else{sessionStorage.setItem("cs-intro","1");}
 }catch(e){document.documentElement.classList.add("no-intro");}`;
 
@@ -79,6 +80,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <p className="cine-intro-sub">The night market, always open</p>
         </div>
         <Atmosphere />
+        <OfflineSW />
         <HeaderFx />
         <TransitionFx />
         <FlipBridge />

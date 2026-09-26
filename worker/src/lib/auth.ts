@@ -4,6 +4,7 @@ import { SESSION_COOKIE, SESSION_DAYS } from '../config';
 import { randomToken, nowUnix } from './util';
 import { AppError, unauthorized, forbidden } from './errors';
 import { getCookie } from './cookies';
+import { assertStaffPermission, resolveVendorBinding } from './access';
 
 export interface SessionUser {
   id: number;
@@ -11,6 +12,8 @@ export interface SessionUser {
   name: string;
   email: string;
   business_id: number | null;
+  /** owner | staff role. Refreshed from the database on every request. */
+  member_role?: string | null;
   /** Set when an admin is impersonating this session (support tool). */
   imp?: number;
 }
@@ -70,10 +73,12 @@ export async function getSession(env: Env, c: Context): Promise<SessionUser | nu
     const payload = JSON.parse(row.payload) as SessionUser;
     // refresh business_id from DB (business may have been recreated / deleted)
     if (payload.role === 'vendor') {
-      const biz = (await env.DB.prepare('SELECT id FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL').bind(payload.id).first()) as { id: number } | null;
-      payload.business_id = biz ? biz.id : null;
+      const binding = await resolveVendorBinding(env, payload.id);
+      payload.business_id = binding.business_id;
+      payload.member_role = binding.member_role;
     } else {
       payload.business_id = null;
+      payload.member_role = null;
     }
     return payload;
   } catch {
@@ -105,20 +110,29 @@ export interface VendorCtx {
     status: string;
     owner_user_id: number;
   };
+  /** owner, or a staff role (manager, sales, catalogue, support, accountant). */
+  memberRole: string;
 }
 
-/** Vendor owner of an existing business, or 403 with a machine-readable code. */
+/** Vendor owner or active staff member. Staff roles are path-limited. */
 export async function requireVendor(env: Env, c: Context): Promise<VendorCtx> {
   const user = await requireUser(env, c);
   if (user.role !== 'vendor') throw forbidden('Vendor account required.');
+  const binding = await resolveVendorBinding(env, user.id);
+  if (!binding.business_id || !binding.member_role) {
+    throw new AppError(403, 'no_business', 'No business found for this account.');
+  }
   const biz = (await env.DB.prepare(
     `SELECT id, name, slug, status, owner_user_id FROM businesses
-     WHERE owner_user_id = ? AND deleted_at IS NULL`
-  ).bind(user.id).first()) as VendorCtx['business'] | null;
+     WHERE id = ? AND deleted_at IS NULL`
+  ).bind(binding.business_id).first()) as VendorCtx['business'] | null;
   if (!biz) throw new AppError(403, 'no_business', 'No business found for this account.');
+  assertStaffPermission(c.req.method, c.req.path, binding.member_role);
+  user.business_id = biz.id;
+  user.member_role = binding.member_role;
   c.set('user', user);
   c.set('business', biz);
-  return { user, business: biz };
+  return { user, business: biz, memberRole: binding.member_role };
 }
 
 /** Fetch a business ensuring the caller owns it (IDOR guard). */

@@ -7,6 +7,7 @@ import { verifyPaystackReference } from './paystack';
 import { paystackMock } from '../config';
 import type { SessionUser } from './auth';
 import { markDepositPaid } from './premium';
+import { spendCredit, restoreCredit, rewardReferrer, reverseReferralReward } from './referral';
 
 export interface PaymentRow {
   id: number;
@@ -62,13 +63,36 @@ export async function createPaymentIntent(
 ): Promise<PaymentRow> {
   const planId = args.plan?.id ?? null;
   const addonId = args.addon?.id ?? null;
-  const amount = args.plan ? args.plan.price : args.addon ? args.addon.price : 0;
-  if (amount <= 0) throw badRequest('Nothing to pay for this selection (free plan needs no payment).');
+  const gross = args.plan ? args.plan.price : args.addon ? args.addon.price : 0;
+  if (gross <= 0) throw badRequest('Nothing to pay for this selection (free plan needs no payment).');
+  const owner = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(args.businessId).first()) as { owner_user_id: number } | null;
+  if (args.plan && owner) {
+    const stale = (await env.DB.prepare(`SELECT id, metadata FROM payments WHERE business_id = ? AND status = 'pending' AND plan_id IS NOT NULL`).bind(args.businessId).all()).results as { id: number; metadata: string | null }[];
+    for (const row of stale) {
+      let held = 0;
+      try { held = Number((JSON.parse(row.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { held = 0; }
+      if (held > 0) await restoreCredit(env, owner.owner_user_id, held);
+      await env.DB.prepare(`UPDATE payments SET status = 'failed', rejection_reason = 'Replaced by a newer payment.' WHERE id = ? AND status = 'pending'`).bind(row.id).run();
+    }
+  }
+  let credit = 0;
+  if (args.plan && owner) credit = await spendCredit(env, owner.owner_user_id, gross);
+  const amount = gross - credit;
   const reference = paymentReference();
+  const meta = JSON.stringify({ created: nowIso(), gross, credit_kobo: credit });
+  if (amount <= 0) {
+    const res = await env.DB.prepare(
+      `INSERT INTO payments (business_id, kind, reference, plan_id, addon_id, amount, currency, method, status, metadata, verified_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'NGN', 'manual', 'approved', ?, ?)`
+    ).bind(args.businessId, args.kind, reference, planId, addonId, gross, meta, nowIso()).run();
+    const paid = (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(Number(res.meta.last_row_id)).first()) as PaymentRow;
+    await applyApproved(env, paid, null, true);
+    return paid;
+  }
   const res = await env.DB.prepare(
     `INSERT INTO payments (business_id, kind, reference, plan_id, addon_id, amount, currency, method, status, metadata)
      VALUES (?, ?, ?, ?, ?, ?, 'NGN', ?, 'pending', ?)`
-  ).bind(args.businessId, args.kind, reference, planId, addonId, amount, args.method, JSON.stringify({ created: nowIso() })).run();
+  ).bind(args.businessId, args.kind, reference, planId, addonId, amount, args.method, meta).run();
   const id = Number(res.meta.last_row_id);
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(id).first()) as PaymentRow;
 }
@@ -155,6 +179,10 @@ async function applyApproved(env: Env, p: PaymentRow, verifiedBy: number | null,
       data: { payment_id: p.id },
     });
   }
+  if (p.plan_id && (p.kind === 'activation' || p.kind === 'subscription_renewal')) {
+    const plan = (await env.DB.prepare('SELECT price FROM plans WHERE id = ?').bind(p.plan_id).first()) as { price: number } | null;
+    await rewardReferrer(env, p.business_id, plan?.price ?? p.amount);
+  }
 }
 
 /** Admin approves a payment (bank proof path). */
@@ -188,9 +216,52 @@ export async function rejectPayment(
     .bind(p.business_id).run();
   const biz = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(p.business_id).first()) as { owner_user_id: number } | null;
   if (biz) {
+    let credit = 0;
+    try { credit = Number((JSON.parse(p.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { credit = 0; }
+    if (credit > 0) await restoreCredit(env, biz.owner_user_id, credit);
     await notify(env, { userId: biz.owner_user_id, type: 'payment.rejected', title: 'Your payment was not approved', body: args.reason, data: { payment_id: p.id } });
   }
   await audit(env, { actor: args.admin, action: 'payment.reject', entityType: 'payment', entityId: p.id, ip: args.ip, meta: { reference: p.reference, reason: args.reason } });
+  return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
+}
+
+/**
+ * Mark an approved platform payment refunded. CyberShop does not move money —
+ * the operator confirms they already returned it. Credit spent on the payment
+ * comes back. A referral reward is reversed only if no other paid plan remains.
+ * The store stays as it is; revoke the subscription separately if the plan should stop.
+ */
+export async function refundPayment(
+  env: Env,
+  args: { paymentId: number; admin: SessionUser; reason: string; ip?: string | null }
+): Promise<PaymentRow> {
+  const p = (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(args.paymentId).first()) as PaymentRow | null;
+  if (!p) throw notFound('Payment not found.');
+  if (p.status !== 'approved') throw conflict('Only an approved payment can be marked refunded.');
+  const marked = await env.DB.prepare(`UPDATE payments SET status = 'refunded', rejection_reason = ?, verified_at = ?, verified_by = ? WHERE id = ? AND status = 'approved'`)
+    .bind(args.reason, nowIso(), args.admin.id, p.id).run();
+  if (marked.meta.changes === 0) throw conflict('Only an approved payment can be marked refunded.');
+  const biz = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(p.business_id).first()) as { owner_user_id: number } | null;
+  if (biz) {
+    let credit = 0;
+    try { credit = Number((JSON.parse(p.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { credit = 0; }
+    if (credit > 0) await restoreCredit(env, biz.owner_user_id, credit);
+    await notify(env, {
+      userId: biz.owner_user_id,
+      type: 'payment.refunded',
+      title: 'A plan payment was marked refunded',
+      body: `${p.reference} — ${args.reason}. CyberShop does not move the money; the operator returns it. Your store stays as it is unless they also revoke the plan.`,
+      data: { payment_id: p.id },
+    });
+  }
+  if (p.kind === 'addon') {
+    await env.DB.prepare(`UPDATE vendor_addons SET status = 'expired' WHERE payment_id = ? AND status = 'active'`).bind(p.id).run();
+  }
+  if (p.plan_id && (p.kind === 'activation' || p.kind === 'subscription_renewal')) {
+    const plan = (await env.DB.prepare('SELECT price FROM plans WHERE id = ?').bind(p.plan_id).first()) as { price: number } | null;
+    await reverseReferralReward(env, p.business_id, plan?.price ?? p.amount);
+  }
+  await audit(env, { actor: args.admin, action: 'payment.refund', entityType: 'payment', entityId: p.id, ip: args.ip, meta: { reference: p.reference, reason: args.reason } });
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
 }
 

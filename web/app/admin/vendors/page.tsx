@@ -15,6 +15,7 @@ interface Vendor {
   phone: string | null;
   plan_name: string | null;
   items: number;
+  is_featured?: number;
 }
 
 const FILTERS = ['all', 'pending_payment', 'pending_approval', 'active', 'suspended', 'rejected'];
@@ -48,6 +49,23 @@ function VendorsInner() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function feature(v: Vendor) {
+    const on = !v.is_featured;
+    const days = on ? prompt('Feature for how many days? (1–90)', '14') : null;
+    if (on && (days === null || !/^\d+$/.test(days))) return;
+    setBusyId(v.id);
+    setError('');
+    try {
+      await capi(`/admin/vendors/${v.id}/feature`, { method: 'POST', body: JSON.stringify(on ? { featured: true, days: Number(days) } : { featured: false }) });
+      setNotice(on ? `${v.name} is featured.` : `${v.name} is no longer featured.`);
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   async function act(id: number, action: 'approve' | 'suspend' | 'reactivate' | 'reject') {
     let body = '{}';
@@ -128,6 +146,7 @@ function VendorsInner() {
                   <td>{v.items}</td>
                   <td>
                     <span className={`status-pill ${v.status}`}>{v.status.replace('_', ' ')}</span>
+                    {v.is_featured ? <span className="status-pill featured">featured</span> : null}
                   </td>
                   <td>{new Date(v.created_at).toLocaleDateString('en-NG')}</td>
                   <td>
@@ -145,6 +164,11 @@ function VendorsInner() {
                       {v.status === 'suspended' && (
                         <button className="mini-btn" disabled={busyId === v.id} onClick={() => act(v.id, 'reactivate')}>
                           Reactivate
+                        </button>
+                      )}
+                      {v.status === 'active' && (
+                        <button className="mini-btn" disabled={busyId === v.id} onClick={() => feature(v)}>
+                          {v.is_featured ? 'Unfeature' : 'Feature'}
                         </button>
                       )}
                       {(v.status === 'pending_payment' || v.status === 'pending_approval') && (

@@ -11,7 +11,7 @@ interface BankAccount {
 }
 
 export default function AdminSettingsPage() {
-  const [platform, setPlatform] = useState({ name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng' });
+  const [platform, setPlatform] = useState({ name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng', announcement: '' });
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -75,6 +75,10 @@ export default function AdminSettingsPage() {
         <div className="field">
           <label>Support email</label>
           <input className="input" type="email" value={platform.support_email} onChange={(e) => setPlatform({ ...platform, support_email: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>Homepage notice (optional)</label>
+          <input className="input" maxLength={180} value={platform.announcement || ''} onChange={(e) => setPlatform({ ...platform, announcement: e.target.value })} placeholder="Shown above the market. Leave blank to hide." />
         </div>
       </div>
 

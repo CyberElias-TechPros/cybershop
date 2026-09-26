@@ -28,11 +28,14 @@ export default function RegisterPage() {
     whatsapp_number: '',
     city: '',
     state_region: '',
+    referral_code: '',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const ref = new URLSearchParams(window.location.search).get('ref');
+    if (ref) setForm((f) => ({ ...f, referral_code: ref }));
     let alive = true;
     (async () => {
       try {
@@ -136,6 +139,7 @@ export default function RegisterPage() {
             <input id="state" className="input" placeholder="Lagos" value={form.state_region} onChange={set('state_region')} />
           </div>
         </div>
+        {form.referral_code && <p className="hint">Referral code {form.referral_code} will be applied. Credit is not cash.</p>}
         <div className="form-actions" style={{ ['--i' as string]: 6 }}>
           <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: '100%' }}>
             {busy ? 'Creating your account…' : 'Continue — choose a plan'}
@@ -144,6 +148,8 @@ export default function RegisterPage() {
       </form>
       <p className="auth-alt" style={{ ['--i' as string]: 7 }}>
         Already have an account? <Link href="/login">Sign in</Link>
+        <br />
+        Just browsing? <Link href="/register/buyer">Create a free buyer account</Link>
       </p>
     </AuthShell>
   );

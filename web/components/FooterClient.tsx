@@ -38,6 +38,7 @@ export default function FooterClient({ supportEmail }: { supportEmail: string })
           <a href="/businesses">Businesses</a>
           <a href="/search">Search</a>
           <a href="/saved">Saved ads</a>
+          <a href="/account">Your account</a>
           <a href="/cart">WhatsApp cart</a>
           <a href="/safety">Safety</a>
         </nav>
@@ -56,6 +57,7 @@ export default function FooterClient({ supportEmail }: { supportEmail: string })
           <a href="/contact">Support</a>
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>
+          <a href="/content-policy">Content policy</a>
           <span className="footer-hours">Always open · GMT+1</span>
         </nav>
       </div>

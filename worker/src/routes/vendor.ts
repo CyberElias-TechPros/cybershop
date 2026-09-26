@@ -15,6 +15,9 @@ import { initiatePaystack } from '../lib/paystack';
 import { normalizeWaNumber } from '../lib/wa';
 import { formatNaira } from '../lib/money';
 import { recordView } from '../lib/analytics';
+import { notify } from '../lib/notify';
+import { parseStorefront } from '../lib/storefront';
+import { ensureReferralCode, referralLink, referralCredit } from '../lib/referral';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -27,7 +30,15 @@ app.get('/business', async (c) => {
   const cats = (await c.env.DB.prepare('SELECT c.name, c.slug, c.icon FROM business_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.business_id = ?').bind(business.id).all()).results as Record<string, unknown>[];
   const quotas = await effectiveQuotas(c.env, business.id);
   const storage = await storageUsedBytes(c.env, business.id);
-  return c.json({ ok: true, business: { ...row, categories: cats }, quotas, storage_used_bytes: storage });
+  const code = await ensureReferralCode(c.env, user.id);
+  const credit = await referralCredit(c.env, user.id);
+  return c.json({
+    ok: true,
+    business: { ...row, categories: cats, storefront: parseStorefront(row.settings as string | null) },
+    quotas,
+    storage_used_bytes: storage,
+    referral: { code, link: referralLink(c.env, code), credit_kobo: credit },
+  });
 });
 
 app.put('/business', async (c) => {
@@ -77,8 +88,22 @@ app.put('/business', async (c) => {
     }
     sets.push('social = ?'); params.push(JSON.stringify(social));
   }
+  if (body.storefront !== undefined) {
+    sets.push('settings = ?');
+    params.push(JSON.stringify(parseStorefront(JSON.stringify(body.storefront))));
+  }
   await c.env.DB.prepare(`UPDATE businesses SET ${sets.join(', ')} WHERE id = ?`).bind(...params, business.id).run();
   return c.json({ ok: true });
+});
+
+/** Hide the store from the market without deleting it. Owner and manager only. */
+app.post('/business/pause', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const body = await c.req.json().catch(() => null);
+  if (!body || typeof body.paused !== 'boolean') throw badRequest('Say whether the store should be paused.');
+  await c.env.DB.prepare('UPDATE businesses SET paused_at = ?, updated_at = ? WHERE id = ?')
+    .bind(body.paused ? nowIso() : null, nowIso(), business.id).run();
+  return c.json({ ok: true, paused: body.paused });
 });
 
 // ---------------------------------------------------------------- media
@@ -285,6 +310,7 @@ interface ItemInput {
   seo_title: string | null;
   seo_description: string | null;
   publish: boolean;
+  scheduled_publish_at: string | null;
 }
 
 async function parseItemBody(c: { env: Env }, businessId: number, body: unknown): Promise<ItemInput> {
@@ -335,13 +361,21 @@ async function parseItemBody(c: { env: Env }, businessId: number, body: unknown)
   assertSlugAvailable(slug);
 
   const inspectionJson = parseInspection(b.inspection_notes ?? b.inspection_json);
+  let scheduled: string | null = null;
+  if (b.scheduled_publish_at) {
+    const t = Date.parse(String(b.scheduled_publish_at));
+    if (!Number.isFinite(t)) throw validationError('Pick a valid publish time.');
+    if (t > Date.now() + 60_000) scheduled = new Date(t).toISOString();
+  }
 
   return {
     name, slug, item_type_id: (type as { id: number }).id, item_type_slug: typeSlug, category_id: categoryId,
     description: optStr(b.description, 20000), price, price_type: priceType,
     custom_fields: JSON.stringify(custom), stock_status: stockStatus,
     featured: b.featured === true, inspection_json: inspectionJson, whatsapp_number_id: waNumberId,
-    seo_title: optStr(b.seo_title, 200), seo_description: optStr(b.seo_description, 300), publish,
+    seo_title: optStr(b.seo_title, 200), seo_description: optStr(b.seo_description, 300),
+    publish: scheduled ? false : publish,
+    scheduled_publish_at: scheduled,
   };
 }
 
@@ -408,9 +442,9 @@ app.post('/items', async (c) => {
   if (taken) slug = `${input.slug}-${Math.floor(Math.random() * 9000 + 1000)}`;
   const status = input.publish ? 'published' : 'draft';
   const res = await c.env.DB.prepare(
-    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at, inspection_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json).run();
+    `INSERT INTO listings (business_id, category_id, item_type_id, name, slug, description, price, price_type, custom_fields, status, featured, stock_status, whatsapp_number_id, seo_title, seo_description, published_at, inspection_json, scheduled_publish_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json, input.scheduled_publish_at).run();
   const id = Number(res.meta.last_row_id);
   await attachMedia(c.env, id, (body as Record<string, unknown> | null)?.media_ids, business.id);
   await attachAudio(c.env, id, (body as Record<string, unknown> | null)?.audio_media_id, business.id);
@@ -492,12 +526,12 @@ app.put('/items/:id', async (c) => {
   await assertPremiumItemGates(c.env, business.id, input, id);
   const res = await c.env.DB.prepare(
     `UPDATE listings SET name = ?, slug = ?, category_id = ?, item_type_id = ?, description = ?, price = ?, price_type = ?, custom_fields = ?,
-     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?, inspection_json = ?,
+     stock_status = ?, featured = ?, whatsapp_number_id = ?, seo_title = ?, seo_description = ?, inspection_json = ?, scheduled_publish_at = ?,
      status = CASE WHEN ? THEN 'published' WHEN status = 'published' AND ? = 0 THEN 'draft' ELSE status END,
      published_at = COALESCE(published_at, CASE WHEN ? THEN ? ELSE NULL END)
      WHERE id = ?`
   ).bind(input.name, input.slug, input.category_id, input.item_type_id, input.description, input.price, input.price_type, input.custom_fields,
-    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description, input.inspection_json,
+    input.stock_status, input.featured ? 1 : 0, input.whatsapp_number_id, input.seo_title, input.seo_description, input.inspection_json, input.scheduled_publish_at,
     input.publish ? 1 : 0, input.publish ? 1 : 0, input.publish ? 1 : 0, nowIso(), id).run();
   if (res.meta.changes === 0) throw notFound('Item not found.');
   // replace media set when provided
@@ -601,6 +635,28 @@ app.put('/whatsapp/:id', async (c) => {
     await c.env.DB.prepare('UPDATE whatsapp_numbers SET is_default = 0 WHERE business_id = ?').bind(business.id).run();
     sets.push('is_default = 1');
   }
+  if (body?.route_category_id !== undefined) {
+    if (body.route_category_id === null || body.route_category_id === '') {
+      sets.push('route_category_id = NULL');
+    } else {
+      const catId = reqInt(body.route_category_id, { min: 1 });
+      const linked = await c.env.DB.prepare('SELECT 1 FROM business_categories WHERE business_id = ? AND category_id = ?').bind(business.id, catId).first();
+      if (!linked) throw validationError('Route only to a category your store is in.');
+      sets.push('route_category_id = ?');
+      params.push(catId);
+    }
+  }
+  if (body?.route_item_type_id !== undefined) {
+    if (body.route_item_type_id === null || body.route_item_type_id === '') {
+      sets.push('route_item_type_id = NULL');
+    } else {
+      const typeId = reqInt(body.route_item_type_id, { min: 1 });
+      const type = await c.env.DB.prepare('SELECT id FROM item_types WHERE id = ? AND is_active = 1').bind(typeId).first();
+      if (!type) throw validationError('Unknown item type.');
+      sets.push('route_item_type_id = ?');
+      params.push(typeId);
+    }
+  }
   if (sets.length) await c.env.DB.prepare(`UPDATE whatsapp_numbers SET ${sets.join(', ')} WHERE id = ?`).bind(...params, id).run();
   return c.json({ ok: true });
 });
@@ -692,6 +748,9 @@ app.post('/payment-intent', async (c) => {
     }
     const kind = business.status === 'pending_payment' ? 'activation' : 'subscription_renewal';
     payment = await createPaymentIntent(c.env, { businessId: business.id, kind, plan, addon: null, method });
+    if (payment.status === 'approved') {
+      return c.json({ ok: true, payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method: payment.method, status: payment.status }, settled_with_credit: true });
+    }
   } else if (body?.addon_slug) {
     const addon = (await c.env.DB.prepare('SELECT * FROM addons WHERE slug = ? AND is_active = 1').bind(String(body.addon_slug).slice(0, 130)).first()) as AddonRow | null;
     if (!addon) throw notFound('Add-on not found.');
@@ -764,7 +823,10 @@ app.get('/inquiries', async (c) => {
     }
     return { ...r, items };
   });
-  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)) });
+  const countRows = (await c.env.DB.prepare('SELECT status, COUNT(*) AS n FROM inquiries WHERE business_id = ? GROUP BY status').bind(business.id).all()).results as { status: string; n: number }[];
+  const counts: Record<string, number> = {};
+  for (const row of countRows) counts[row.status] = row.n;
+  return c.json({ ok: true, inquiries, total, page, pages: Math.max(1, Math.ceil(total / perPage)), counts });
 });
 
 app.put('/inquiries/:id', async (c) => {
@@ -774,12 +836,14 @@ app.put('/inquiries/:id', async (c) => {
   if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
   const sets: string[] = [];
   const params: (string | null)[] = [];
+  let nextStatus: string | null = null;
   if (body.status !== undefined) {
     if (!['new', 'contacted', 'interested', 'negotiating', 'converted', 'lost'].includes(String(body.status))) {
       throw badRequest('Invalid status.');
     }
+    nextStatus = String(body.status);
     sets.push('status = ?');
-    params.push(String(body.status));
+    params.push(nextStatus);
     if (String(body.status) !== 'new') {
       sets.push('first_response_at = COALESCE(first_response_at, ?)');
       params.push(nowIso());
@@ -789,9 +853,34 @@ app.put('/inquiries/:id', async (c) => {
     sets.push('note = ?');
     params.push(optStr(body.note, 2000));
   }
+  if (body.follow_up_at !== undefined) {
+    if (body.follow_up_at === null || body.follow_up_at === '') {
+      sets.push('follow_up_at = NULL');
+      sets.push('follow_up_notified_at = NULL');
+    } else {
+      const t = Date.parse(String(body.follow_up_at));
+      if (!Number.isFinite(t)) throw badRequest('Follow-up time is not valid.');
+      sets.push('follow_up_at = ?');
+      params.push(new Date(t).toISOString());
+      sets.push('follow_up_notified_at = NULL');
+    }
+  }
   if (sets.length === 0) throw badRequest('Nothing to update.');
   const res = await c.env.DB.prepare(`UPDATE inquiries SET ${sets.join(', ')} WHERE id = ? AND business_id = ?`).bind(...params, id, business.id).run();
   if (res.meta.changes === 0) throw notFound('Inquiry not found.');
+  if (nextStatus) {
+    const lead = (await c.env.DB.prepare(
+      `SELECT i.buyer_user_id, l.name AS item_name FROM inquiries i LEFT JOIN listings l ON l.id = i.listing_id WHERE i.id = ?`
+    ).bind(id).first()) as { buyer_user_id: number | null; item_name: string | null } | null;
+    if (lead?.buyer_user_id) {
+      await notify(c.env, {
+        userId: lead.buyer_user_id,
+        type: 'inquiry.status',
+        title: `Your enquiry is ${nextStatus}`,
+        body: lead.item_name ? `${business.name} marked “${lead.item_name}” as ${nextStatus}.` : `${business.name} updated your enquiry to ${nextStatus}.`,
+      });
+    }
+  }
   return c.json({ ok: true });
 });
 
@@ -829,7 +918,7 @@ app.get('/overview', async (c) => {
   ).bind(business.id, business.id, day(30)).all()).results as Record<string, unknown>[];
   return c.json({
     ok: true,
-    business: { id: business.id, name: (biz as { name: string }).name, slug: (biz as { slug: string }).slug, status: (biz as { status: string }).status },
+    business: { id: business.id, name: (biz as { name: string }).name, slug: (biz as { slug: string }).slug, status: (biz as { status: string }).status, paused: !!(biz as { paused_at?: string | null }).paused_at },
     stats: views,
     counts,
     subscription: sub,

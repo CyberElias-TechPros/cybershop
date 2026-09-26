@@ -3,6 +3,7 @@ import { nowIso, todayStr } from '../lib/util';
 import { notify } from '../lib/notify';
 import { pruneRateLimits } from '../lib/ratelimit';
 import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from '../lib/premium';
+import { restoreCredit } from '../lib/referral';
 
 /** Hourly maintenance job (Cloudflare Cron Trigger). Idempotent. */
 export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string, number> }> {
@@ -98,7 +99,48 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   summary.verified_expired = await expireVerifiedBadges(env);
   summary.saved_search_alerts = await notifySavedSearches(env);
 
-  // 9. Housekeeping
+  // 9. Lead follow-ups the vendor scheduled
+  const due = (await env.DB.prepare(
+    `SELECT i.id, i.buyer_name, i.business_id, b.owner_user_id
+     FROM inquiries i JOIN businesses b ON b.id = i.business_id
+     WHERE i.follow_up_at IS NOT NULL AND i.follow_up_at <= ?
+       AND i.follow_up_notified_at IS NULL
+       AND i.status NOT IN ('converted','lost')`
+  ).bind(now).all()).results as { id: number; buyer_name: string | null; owner_user_id: number }[];
+  for (const row of due) {
+    await notify(env, {
+      userId: row.owner_user_id,
+      type: 'follow_up.due',
+      title: 'Follow-up is due',
+      body: row.buyer_name ? `Time to get back to ${row.buyer_name}.` : 'A lead you marked for follow-up is due.',
+      data: { inquiry_id: row.id },
+    });
+    await env.DB.prepare(`UPDATE inquiries SET follow_up_notified_at = ? WHERE id = ?`).bind(now, row.id).run();
+    summary.follow_ups = (summary.follow_ups || 0) + 1;
+  }
+
+  // 10. Featured placement expires. A null featured_until stays until an admin clears it.
+  const unfeatured = await env.DB.prepare(
+    `UPDATE businesses SET is_featured = 0 WHERE is_featured = 1 AND featured_until IS NOT NULL AND featured_until <= ?`
+  ).bind(now).run();
+  summary.unfeatured = Number(unfeatured.meta?.changes || 0);
+
+  // 11. Pending plan payments that never got a proof release their referral credit.
+  const abandoned = (await env.DB.prepare(
+    `SELECT p.id, p.metadata, b.owner_user_id FROM payments p
+     JOIN businesses b ON b.id = p.business_id
+     WHERE p.status = 'pending' AND p.plan_id IS NOT NULL AND p.created_at <= datetime('now', '-2 days')
+     LIMIT 40`
+  ).all()).results as { id: number; metadata: string | null; owner_user_id: number }[];
+  for (const row of abandoned) {
+    let held = 0;
+    try { held = Number((JSON.parse(row.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { held = 0; }
+    if (held > 0) await restoreCredit(env, row.owner_user_id, held);
+    await env.DB.prepare(`UPDATE payments SET status = 'failed', rejection_reason = 'Abandoned before proof was sent.' WHERE id = ? AND status = 'pending'`).bind(row.id).run();
+    summary.abandoned_payments = (summary.abandoned_payments || 0) + 1;
+  }
+
+  // 12. Housekeeping
   await pruneRateLimits(env);
   await env.DB.prepare(`DELETE FROM upload_tokens WHERE expires_at < ? AND used_at IS NOT NULL`).bind(Math.floor(Date.now() / 1000) - 86400).run();
   await env.DB.prepare(`DELETE FROM sessions WHERE last_activity < ?`).bind(Math.floor(Date.now() / 1000) - 30 * 86400).run();

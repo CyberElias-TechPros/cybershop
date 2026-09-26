@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import { api } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
+import { sessionCookieHeader } from '@/lib/session';
+import SaveSearch from '@/components/SaveSearch';
 import type { SearchOut } from '@/lib/types';
 import SearchForm from '@/components/SearchForm';
 import { Reveal } from '@/components/Motion';
@@ -25,7 +27,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
   const qs = new URLSearchParams();
   if (q) qs.set('q', q);
   if (city) qs.set('city', city);
-  const data = q.length >= 2 ? await api<SearchOut>(`/public/search?${qs}`, { ip: await clientIp() }) : null;
+  const data = q.length >= 2 ? await api<SearchOut>(`/public/search?${qs}`, { ip: await clientIp(), cookie: await sessionCookieHeader() }) : null;
   let cities: { city: string }[] = [];
   try {
     cities = (await api<{ cities: { city: string }[] }>('/public/cities', { ip: await clientIp() })).cities;
@@ -59,6 +61,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
               Search
             </button>
           </form>
+          <SaveSearch search={{ q, city }} />
         </Reveal>
         {!data && <p style={{ color: 'var(--ink-faint)' }}>Type at least 2 characters to search businesses and listings.</p>}
         {data && data.total === 0 && (
@@ -68,6 +71,9 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
             </span>
             <h2>Nothing found for “{q}”</h2>
             <p>Try a different word, or <a href="/businesses">browse all businesses</a>.</p>
+            {data.suggestions && data.suggestions.length > 0 && (
+              <p>Did you mean {data.suggestions.map((s) => <a key={s.href} href={s.href} style={{ marginRight: 10 }}>{s.label}</a>)}</p>
+            )}
           </div>
         )}
         {data && data.total > 0 && (

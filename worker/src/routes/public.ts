@@ -206,8 +206,8 @@ app.get('/home', async (c) => {
   const bizRows = featured.length
     ? (await Promise.all(featured.map((b) => publicBusiness(env, b))))
     : [];
-  const itemCount = (await env.DB.prepare(`SELECT COUNT(DISTINCT business_id) AS n FROM listings WHERE status = 'published' AND deleted_at IS NULL`).first()) as { n: number };
-  return c.json({ ok: true, platform: settings.platform, categories, businesses: bizRows, business_count: itemCount.n });
+  const bizCount = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b WHERE ${LIVE}`).first()) as { n: number };
+  return c.json({ ok: true, platform: settings.platform, categories, businesses: bizRows, business_count: bizCount.n });
 });
 
 app.get('/businesses', async (c) => {

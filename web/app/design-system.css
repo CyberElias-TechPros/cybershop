@@ -445,6 +445,13 @@ table.tbl td {
 .dash-main {
   padding: clamp(var(--s-5), 3vw, var(--s-8)) var(--gutter) var(--s-20);
   max-width: 1100px;
+  /* The table rules below are container queries, not media queries. At a
+     900px viewport the 248px sidebar leaves the content only ~590px wide, so
+     a viewport breakpoint would leave a seven-column table with no treatment
+     at all while it overflowed. This makes the tables respond to the space
+     they actually have, whatever the sidebar is doing. */
+  container-type: inline-size;
+  container-name: dash;
 }
 .dash-head {
   gap: var(--s-3);
@@ -1397,16 +1404,21 @@ ol.safety-list {
 }
 
 /* ---------------------------------------------------------------------------
-   §18 · Admin tables on a phone
+   §18 · Admin tables when the space gets tight
    ---------------------------------------------------------------------------
-   Nine admin screens are tables. On a 360 px screen a seven-column table
-   scrolls sideways — which is fine — but you lose the leftmost column, i.e.
+   Eighteen admin and vendor screens are tables. On a 360 px screen a
+   seven-column table scrolls sideways — which is fine — but you lose the leftmost column, i.e.
    the store, listing or user you are looking at, and every row becomes
    anonymous. Pinning the first column keeps the subject of the row on screen
    while the rest scrolls under it. The container keeps the right-edge fade so
    it stays obvious that there is more table to the side.
+
+   This is a *container* query, keyed to the width .dash-main actually has,
+   not to the viewport. At a 900px viewport the 248px sidebar leaves the
+   content around 590px, so a viewport breakpoint would sit still while the
+   table overflowed.
    --------------------------------------------------------------------------- */
-@media (max-width: 700px) {
+@container dash (max-width: 700px) {
   .table-wrap > .tbl,
   .table-wrap > .data-table,
   .table-scroll > .data-table {
@@ -1571,10 +1583,11 @@ ol.safety-list {
 
 /* §21 · Admin tables on a phone, part two: stacked record cards
    ---------------------------------------------------------------------------
-   §18 pins the first column between 561px and 700px. Below 561px there is no
-   width left to scroll through, so `ResponsiveTables` copies each column
-   heading onto the cells (data-label) and the row becomes a card: heading on
-   the left, value on the right, one field per line.
+   When the content column drops below 700px, §18 pins the first column.
+   Below 560px there is no width left to scroll through, so
+   `ResponsiveTables` copies each column heading onto the cells (data-label)
+   and the row becomes a card: heading on the left, value on the right, one
+   field per line. A container query too — see §18 for why.
 
    Gated on `.is-stacked`, which only lands once the labels have been written.
    Without JavaScript the table keeps §18's sticky first column instead of
@@ -1583,7 +1596,7 @@ ol.safety-list {
    Everything below also has to undo §18 explicitly, since 560px is inside
    that block's 700px range.
    --------------------------------------------------------------------------- */
-@media (max-width: 560px) {
+@container dash (max-width: 560px) {
   table.tbl.is-stacked,
   table.data-table.is-stacked {
     display: block;

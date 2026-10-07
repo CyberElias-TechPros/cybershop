@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import PageNav from '@/components/PageNav';
 
 export const metadata: Metadata = {
   title: 'Privacy Policy',
@@ -14,6 +15,20 @@ export const metadata: Metadata = {
 export default function PrivacyPage() {
   return (
     <section className="section prose-page">
+        <PageNav
+          title="On this page"
+          intro="Plain language, no legalese. Jump to the part you need."
+          sections={[
+        { id: 'the-short-version', label: 'The short version' },
+        { id: 'what-we-collect', label: 'What we collect' },
+        { id: 'what-we-never-do', label: 'What we never do' },
+        { id: 'who-processes-data-with-us', label: 'Who processes data with us' },
+        { id: 'your-rights-ndpr-aligned', label: 'Your rights (NDPR-aligned)' },
+        { id: 'cookies', label: 'Cookies' },
+        { id: 'retention', label: 'Retention' },
+        { id: 'changes', label: 'Changes' }
+          ]}
+        />
       <div className="container prose">
         <nav className="crumb" aria-label="Breadcrumb">
           <Link href="/">Home</Link>
@@ -25,7 +40,7 @@ export default function PrivacyPage() {
         </h1>
         <p className="prose-updated">Last updated: September 2026</p>
 
-        <h2>The short version</h2>
+        <h2 id="the-short-version">The short version</h2>
         <p>
           We collect the minimum needed to run the market: your account details, your catalogue,
           and coarse analytics. <strong>We never sell your data.</strong> We never take or hold
@@ -33,7 +48,7 @@ export default function PrivacyPage() {
           buyer chooses to message that vendor on WhatsApp.
         </p>
 
-        <h2>What we collect</h2>
+        <h2 id="what-we-collect">What we collect</h2>
         <ul>
           <li>
             <strong>Accounts:</strong> name, email, phone (vendors), password (stored only as a
@@ -53,7 +68,7 @@ export default function PrivacyPage() {
           </li>
         </ul>
 
-        <h2>What we never do</h2>
+        <h2 id="what-we-never-do">What we never do</h2>
         <ul>
           <li>We never sell or rent personal data.</li>
           <li>We never charge buyers or touch buyer↔vendor money.</li>
@@ -61,7 +76,7 @@ export default function PrivacyPage() {
             non-public WhatsApp numbers).</li>
         </ul>
 
-        <h2>Who processes data with us</h2>
+        <h2 id="who-processes-data-with-us">Who processes data with us</h2>
         <ul>
           <li>
             <strong>Cloudflare</strong> — application database and edge network.
@@ -79,7 +94,7 @@ export default function PrivacyPage() {
           </li>
         </ul>
 
-        <h2>Your rights (NDPR-aligned)</h2>
+        <h2 id="your-rights-ndpr-aligned">Your rights (NDPR-aligned)</h2>
         <p>
           Signed-in people can download a copy of their data and close their account from{' '}
           <Link href="/account/settings">account settings</Link>. Closing a vendor account
@@ -88,20 +103,20 @@ export default function PrivacyPage() {
           respond within 30 days.
         </p>
 
-        <h2>Cookies</h2>
+        <h2 id="cookies">Cookies</h2>
         <p>
           One session cookie (only when you sign in) and one anonymous visitor cookie used for
           counting views and clicks. No advertising cookies, no third-party trackers.
         </p>
 
-        <h2>Retention</h2>
+        <h2 id="retention">Retention</h2>
         <p>
           Account and payment records are kept as long as your account is active, plus the period
           Nigerian bookkeeping rules require for financial records. Analytics events are kept in
           aggregate form.
         </p>
 
-        <h2>Changes</h2>
+        <h2 id="changes">Changes</h2>
         <p>
           If this policy changes materially, we announce it on the platform and email account
           holders where appropriate.

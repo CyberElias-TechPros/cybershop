@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import SafetyTips from '@/components/SafetyTips';
+import PageNav from '@/components/PageNav';
 import { siteInfo } from '@/lib/site';
 
 export const metadata: Metadata = {
@@ -57,6 +58,18 @@ export default async function SafetyPage() {
 
   return (
     <section className="section" style={{ paddingTop: 'clamp(36px, 6vw, 64px)' }}>
+        <PageNav
+          title="On this page"
+          intro="How to deal safely, and what we do when it goes wrong."
+          sections={[
+        { id: 'the-three-beats-of-a-safe-deal', label: 'The three beats of a safe deal' },
+        { id: 'what-cybershop-never-does', label: 'What CyberShop never does' },
+        { id: 'red-flags-walk-away', label: 'Red flags — walk away' },
+        { id: 'if-something-goes-wrong', label: 'If something goes wrong' },
+        { id: 'for-vendors', label: 'For vendors' },
+        { id: 'our-part', label: 'Our part' }
+          ]}
+        />
       <div className="container" style={{ maxWidth: 780 }}>
         <span className="eyebrow">Trust &amp; safety</span>
         <h1>
@@ -76,7 +89,7 @@ export default async function SafetyPage() {
 
         <SafetyTips />
 
-        <h2 style={{ marginTop: 34 }}>The three beats of a safe deal</h2>
+        <h2 style={{ marginTop: 34 }} id="the-three-beats-of-a-safe-deal">The three beats of a safe deal</h2>
         <div className="safety-rules">
           {RULES.map((r) => (
             <article className="card panel safety-rule" key={r.n}>
@@ -89,7 +102,7 @@ export default async function SafetyPage() {
           ))}
         </div>
 
-        <h2>What CyberShop never does</h2>
+        <h2 id="what-cybershop-never-does">What CyberShop never does</h2>
         <ul className="safety-list">
           {NEVER.map((n) => (
             <li key={n}>{n}</li>
@@ -101,21 +114,21 @@ export default async function SafetyPage() {
           <a href={`mailto:${supportEmail}`}>{supportEmail}</a> — we will act on it.
         </p>
 
-        <h2>Red flags — walk away</h2>
+        <h2 id="red-flags-walk-away">Red flags — walk away</h2>
         <ul className="safety-list">
           {RED_FLAGS.map((f) => (
             <li key={f}>{f}</li>
           ))}
         </ul>
 
-        <h2>If something goes wrong</h2>
+        <h2 id="if-something-goes-wrong">If something goes wrong</h2>
         <ol className="safety-list">
           {IF_IT_GOES_WRONG.map((f) => (
             <li key={f}>{f}</li>
           ))}
         </ol>
 
-        <h2>For vendors</h2>
+        <h2 id="for-vendors">For vendors</h2>
         <ul className="safety-list">
           <li>Use real photos of the actual item or work. Misleading ads get taken down.</li>
           <li>Price honestly. “Price on request” beats a bait figure every time.</li>
@@ -124,7 +137,7 @@ export default async function SafetyPage() {
           <li>If a buyer is unhappy, fix it in the thread. Reputation is the only currency here.</li>
         </ul>
 
-        <h2>Our part</h2>
+        <h2 id="our-part">Our part</h2>
         <p style={{ color: 'var(--ink-dim)' }}>
           We review reports, remove scam listings, suspend vendors who break the rules, and keep a
           record of what happened. We cannot guarantee a seller or refund a payment we never

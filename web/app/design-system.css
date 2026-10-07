@@ -1655,3 +1655,76 @@ ol.safety-list {
   .is-stacked tbody td:not([data-label]) { display: block; }
   .is-stacked tbody td:not([data-label])::before { content: none; }
 }
+
+/* §22 · Contents list for the long legal pages (terms, privacy, safety)
+   ---------------------------------------------------------------------------
+   Those pages are six to ten sections of dense text with no way around them
+   but scrolling. This is a plain list of anchor links above the document — no
+   JavaScript, so it is there for crawlers and slow connections alike.
+
+   Anchors land correctly because `h2[id]` already carries
+   `scroll-margin-top: 84px` (cine.css), clearing the sticky header.
+   --------------------------------------------------------------------------- */
+.page-nav {
+  margin: 0 0 26px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+}
+.page-nav-title {
+  margin: 0 0 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.page-nav-intro {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+}
+.page-nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 700px) {
+  .page-nav ol {
+    grid-template-columns: 1fr 1fr;
+    gap: 1px 14px;
+  }
+}
+.page-nav a {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-height: 40px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+  text-decoration: none;
+}
+.page-nav a:hover {
+  background: var(--glass-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+.page-nav a:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 1px;
+}
+/* Section number, purely decorative — the link text already reads in order. */
+.page-nav a > span {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--em);
+  opacity: 0.75;
+}

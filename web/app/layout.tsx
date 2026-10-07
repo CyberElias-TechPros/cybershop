@@ -16,7 +16,11 @@ import SafetyRibbon from '@/components/SafetyRibbon';
 import RouteProgress from '@/components/RouteProgress';
 
 const fraunces = Fraunces({
-  src: [{ path: './fonts/Fraunces.ttf', weight: '300 700', style: 'normal' }],
+  // `Fraunces.woff2` is the subsetted, woff2-compressed build of
+  // `fonts/Fraunces.ttf` — see app/fonts/README.md for how it is derived.
+  // The .ttf stays in the repo as the source for the OG-card font; it is far
+  // too heavy to ship to a browser (352 KB vs 103 KB).
+  src: [{ path: './fonts/Fraunces.woff2', weight: '300 700', style: 'normal' }],
   variable: '--font-fraunces',
   display: 'swap',
 });

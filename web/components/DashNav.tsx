@@ -20,6 +20,7 @@ interface NavLink {
 
 const VENDOR_LINKS: NavLink[] = [
   { href: '/dashboard', icon: '📊', label: 'Overview', primary: true },
+  { href: '/dashboard/analytics', icon: '📈', label: 'Analytics', primary: true },
   { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue', primary: true },
   { href: '/dashboard/leads', icon: '💬', label: 'Leads', primary: true },
   { href: '/dashboard/inbox', icon: '📥', label: 'Inbox', primary: true },

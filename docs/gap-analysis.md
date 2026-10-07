@@ -12,8 +12,9 @@ platform), **money safety** (an unsigned payment webhook), and the whole
 **operational layer** that turns working code into a live business: config
 self-checks, security headers, a runbook, backups, share cards.
 
-Everything in "Fixed in this change" below is done and tested. The "Next"
-section is what I would build after this, in the order I would build it.
+Everything in "Fixed in this change" below is done and tested — nine items,
+including the two that were blocking a live launch. The "Next" section is what I
+would build after this, in the order I would build it.
 
 ---
 
@@ -21,7 +22,7 @@ section is what I would build after this, in the order I would build it.
 
 Read the whole of `worker/src` and `web/`, then traced each user story end to
 end against the code: register → pay → publish → be found → be contacted →
-convert → renew → expire. Ran the worker suite (56 → 62 tests), `tsc --noEmit`,
+convert → renew → expire. Ran the worker suite (56 → 65 tests), `tsc --noEmit`,
 `next build`, and curl sweeps of every route.
 
 **Limits you should know about.** There is no browser in this environment
@@ -49,7 +50,8 @@ Worth writing down, because "what's missing" is only meaningful against it.
 | Admin: payments, vendors, verifications, reports, listings, categories, plans, audit log | ✅ complete |
 | Trust & safety: ribbon, per-CTA reminder, `/safety`, terms, reports, blocks | ✅ complete |
 | Dependent flows: expiry → grace → suspension, scheduled publishing, saved-search alerts, analytics rollup | ✅ complete (hourly cron) |
-| SEO: per-item SEO fields, JSON-LD, sitemap, robots | ✅ complete |
+| SEO: per-item SEO fields, JSON-LD, sitemap, robots, composed share cards | ✅ complete |
+| Analytics: totals, trend, per-listing conversion, best hour — vendor-facing | ✅ complete (added in this change) |
 
 ---
 
@@ -130,7 +132,19 @@ categories, socials, an offer, ID verification — and lists what's left, heavie
 first, each linking to the screen that fixes it. Server-rendered, so there is no
 spinner.
 
-### 8. Shared links rendered as a bare photo — **P1, growth**
+### 8. Vendors could not read their own analytics — **P1**
+
+Events were collected and rolled up hourly, but the only place a vendor saw them
+was four counters and a top-five list on the overview, both fixed at 30 days.
+Dashboard → Analytics now gives them a real read model
+(`worker/src/lib/vendor-analytics.ts`): totals with the change against the
+previous equal window, a gap-filled daily trend (a day with no traffic is a zero,
+not a missing row, or the chart silently compresses time), per-listing views /
+clicks / view-to-WhatsApp rate, and the hour and weekday most clicks land on.
+Pure CSS, no chart library. Three tests cover the trend, the deltas and
+cross-store isolation.
+
+### 9. Shared links rendered as a bare photo — **P1, growth**
 
 This marketplace grows by vendors pasting a listing into a WhatsApp group, so
 the preview *is* the shop window. Listings and stores declared
@@ -149,16 +163,16 @@ with no photo.
 
 | # | Gap | Why it matters | Effort |
 |---|---|---|---|
-| 1 | **Vendors can't explore their analytics.** Events are collected and rolled up, but the dashboard only shows 7-day counters and top-30-days listings. No date range, no per-item drilldown, no trend, no export. | Vendors cannot tell *what to restock or re-shoot*, which is the difference between a listing fee and a subscription they renew. | 2–3 days |
-| 2 | **Reports have no workflow.** The queue exists, but a report has no state (new → triaged → actioned), no assignment, no SLA clock, and the reporter is never told the outcome. | Trust is the product in a no-checkout marketplace. An unanswered report is the fastest way to lose it. | 2 days |
+| 1 | **Reports have no workflow.** The queue exists, but a report has no state (new → triaged → actioned), no assignment, no SLA clock, and the reporter is never told the outcome. | Trust is the product in a no-checkout marketplace. An unanswered report is the fastest way to lose it. | 2 days |
 | 3 | **No payment reconciliation.** Payments are recorded locally; nothing compares them against Paystack daily or exports for accounting. | A drift between "approved in CyberShop" and "settled by Paystack" is invisible until it's expensive. | 1–2 days |
-| 4 | **Admin accounts have no 2FA.** An admin approves payments, verifies IDs, suspends stores. | One phished password is a money and reputation problem. | 1–2 days |
-| 5 | **Admin tables don't stack on phones** (carried over from the responsive audit). Below ~640px they are horizontal scrollers. | Admins triage from phones. | 1 day |
+| 3 | **Admin accounts have no 2FA.** An admin approves payments, verifies IDs, suspends stores. | One phished password is a money and reputation problem. | 1–2 days |
+| 4 | **Admin tables don't stack on phones** (carried over from the responsive audit). Below ~640px they are horizontal scrollers. | Admins triage from phones. | 1 day |
 
 ### P2 — before scale
 
 | # | Gap | Why | Effort |
 |---|---|---|---|
+| 5 | **Analytics has no export.** The screen exists; there is no CSV download or date-range picker (7/30/90 presets only). | Accountants and agencies want the file. | 0.5 day |
 | 6 | **Search is `LIKE '%q%'`** ordered by featured-then-newest. Fine to ~10k listings. | After that: no typo tolerance, no relevance, no "did you mean", slow queries. Move to FTS5 or an index. | 3–5 days |
 | 7 | **No alerting.** Cloudflare observability is on, but nothing routes errors to a human. | You learn about a broken checkout from a vendor, not from a dashboard. | 0.5 day |
 | 8 | **`<button>` nested inside `<a class="card">`** on listing cards — invalid HTML (carried over from round 1). | Screen readers and keyboard users get two overlapping targets. | 0.5 day |

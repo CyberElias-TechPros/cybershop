@@ -11,6 +11,7 @@ import {
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
 import { entitlementFor } from '../lib/entitlement';
 import { storeCompleteness } from '../lib/completeness';
+import { vendorAnalytics } from '../lib/vendor-analytics';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
@@ -712,6 +713,22 @@ app.delete('/whatsapp/:id', async (c) => {
 });
 
 // ---------------------------------------------------------------- plans & payments
+
+// ------------------------------------------------------------------ analytics
+/**
+ * Dashboard → Analytics.
+ *
+ * Everything the overview shows as a single number, but sliced by day and by
+ * listing, with the change against the previous equal window. Vendors cannot
+ * act on "312 views" — they can act on "Web Development is getting the views
+ * and Graphic Design is getting the clicks, and both are down 20% on last
+ * month".
+ */
+app.get('/analytics', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const days = clampInt(c.req.query('days'), 7, 365, 30);
+  return c.json({ ok: true, analytics: await vendorAnalytics(c.env, business.id, days) });
+});
 
 app.get('/plans', async (c) => {
   const { business } = await requireVendor(c.env, c);

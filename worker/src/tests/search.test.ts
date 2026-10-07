@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { searchTerms, termVariants, termClauses, relevanceSql, suggestionStem, likeLiteral } from '../lib/search';
+import { searchTerms, termVariants, termClauses, relevanceSql, suggestionStem, likeLiteral, likeContains, likePrefix, MAX_LIKE_PATTERN, MAX_TERM } from '../lib/search';
 
 /**
  * Search matching. The point of these tests is the three things buyers actually
@@ -108,5 +108,49 @@ describe('suggestion stem', () => {
     expect(likeLiteral('100%')).toBe('100\\%');
     expect(likeLiteral('a_b')).toBe('a\\_b');
     expect(likeLiteral('plain')).toBe('plain');
+  });
+});
+
+/**
+ * D1 rejects a LIKE pattern longer than 48 bytes ("LIKE or GLOB pattern too
+ * complex") — vastly lower than stock SQLite's 50,000. Every search box in the
+ * app caps its query at 60–80 characters, which means a long query used to
+ * build a 62–82 byte pattern and throw, turning the endpoint into a 500.
+ *
+ * These tests pin the ceiling so it cannot creep back in.
+ */
+describe('D1 LIKE pattern limit', () => {
+  const long = 'a'.repeat(200);
+
+  it('never builds a pattern longer than the limit', () => {
+    expect(likeContains(long).length).toBeLessThanOrEqual(MAX_LIKE_PATTERN);
+    expect(likePrefix(long).length).toBeLessThanOrEqual(MAX_LIKE_PATTERN);
+    expect(likeContains('x').length).toBe(3);
+  });
+
+  it('truncates a single absurd word instead of rejecting the query', () => {
+    // A 200-character "word" is a paste accident, not a search. Matching its
+    // first 40 characters beats a 500.
+    expect(searchTerms(long)[0]).toHaveLength(MAX_TERM);
+  });
+
+  it('keeps every generated pattern inside the limit', () => {
+    const terms = searchTerms(`${long} ${'b'.repeat(90)} shoes`);
+    const clauses = termClauses(terms, ['l.name', 'l.description', 'b.name']);
+    for (const p of clauses.params) {
+      expect(p.length).toBeLessThanOrEqual(MAX_LIKE_PATTERN);
+    }
+    const score = relevanceSql('l.name', 'l.description', terms);
+    for (const p of score.params) {
+      expect(p.length).toBeLessThanOrEqual(MAX_LIKE_PATTERN);
+    }
+  });
+
+  it('caps the plural variant too — the +s must not push it over', () => {
+    const atLimit = 'z'.repeat(MAX_TERM);
+    for (const v of termVariants(atLimit)) {
+      expect(v.length).toBeLessThanOrEqual(MAX_TERM + 2); // +2 for 'es'
+      expect(`%${v}%`.length).toBeLessThanOrEqual(MAX_LIKE_PATTERN);
+    }
   });
 });

@@ -5,6 +5,7 @@ import { grantEntitlement, revokeEntitlement, setPlatformOwner, entitlementFor }
 import { resolveReport, claimReport, slaFor, REPORT_OUTCOMES, REPORT_SLA_HOURS } from '../lib/moderation';
 import { reconcilePayments, reconciliationRows } from '../lib/reconcile';
 import { healthSnapshot, ALERT_RULES } from '../lib/errorlog';
+import { likeContains } from '../lib/search';
 import { csvResponse } from '../lib/csv';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
 import { nowIso, clampInt } from '../lib/util';
@@ -71,7 +72,7 @@ app.get('/vendors', async (c) => {
   let where = 'WHERE b.deleted_at IS NULL';
   const params: (string | number)[] = [];
   if (status !== 'all') { where += ' AND b.status = ?'; params.push(status); }
-  if (q) { where += ' AND (b.name LIKE ? OR b.slug LIKE ? OR u.email LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (b.name LIKE ? OR b.slug LIKE ? OR u.email LIKE ?)'; params.push(likeContains(q), likeContains(q), likeContains(q)); }
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
     `SELECT b.id, b.name, b.slug, b.status, b.is_featured, b.featured_until, b.created_at, u.email, u.phone,
@@ -260,7 +261,7 @@ app.get('/users', async (c) => {
   const perPage = 30;
   let where = 'WHERE deleted_at IS NULL';
   const params: (string | number)[] = [];
-  if (q) { where += ' AND (email LIKE ? OR name LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (email LIKE ? OR name LIKE ?)'; params.push(likeContains(q), likeContains(q)); }
   if (['admin', 'vendor', 'buyer'].includes(role)) { where += ' AND role = ?'; params.push(role); }
   const total = ((await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await c.env.DB.prepare(
@@ -623,7 +624,7 @@ app.get('/listings', async (c) => {
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
      WHERE l.deleted_at IS NULL AND l.status = ? AND (? = '' OR l.name LIKE ? OR b.name LIKE ?)
      ORDER BY l.updated_at DESC LIMIT ? OFFSET ?`
-  ).bind(status, q, `%${q}%`, `%${q}%`, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+  ).bind(status, q, likeContains(q), likeContains(q), perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   return c.json({ ok: true, listings: rows });
 });
 

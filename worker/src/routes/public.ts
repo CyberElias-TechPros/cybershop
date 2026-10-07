@@ -15,7 +15,7 @@ import { resolveWhatsappNumber } from '../lib/routing';
 import { blockedBusinessIds, isBlocked, notInClause } from '../lib/blocks';
 import { reviewList, reviewSummary } from '../lib/reviews';
 import { parseStorefront } from '../lib/storefront';
-import { searchTerms, termClauses, relevanceSql, suggestionStem } from '../lib/search';
+import { searchTerms, termClauses, relevanceSql, suggestionStem, likeContains } from '../lib/search';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -269,7 +269,7 @@ app.get('/businesses', async (c) => {
   const blockedBiz = await blockFilter(c);
   let where = `WHERE ${LIVE}${blockedBiz.sql}`;
   const params: (string | number)[] = [...blockedBiz.params];
-  if (q) { where += ` AND (b.name LIKE ? OR b.about LIKE ? OR b.city LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where += ` AND (b.name LIKE ? OR b.about LIKE ? OR b.city LIKE ?)`; params.push(likeContains(q), likeContains(q), likeContains(q)); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM business_categories bc WHERE bc.business_id = b.id AND bc.category_id = (SELECT id FROM categories WHERE slug = ?))`; params.push(cat); }
   if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b ${where}`).bind(...params).first()) as { n: number }).n;
@@ -853,7 +853,7 @@ app.get('/suggest', async (c) => {
   const q = (c.req.query('q') || '').trim().slice(0, 60);
   if (q.length < 2) return c.json({ ok: true, businesses: [], items: [] });
   await rateLimit(c.env, 'suggest', IP(c), 40, 60);
-  const like = `%${q}%`;
+  const like = likeContains(q);
   const blocked = await blockFilter(c);
   const businesses = (await c.env.DB.prepare(
     `SELECT name, slug FROM businesses b WHERE ${LIVE} AND name LIKE ?${blocked.sql} ORDER BY is_featured DESC, name LIMIT 5`

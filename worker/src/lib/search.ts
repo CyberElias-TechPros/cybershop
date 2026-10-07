@@ -20,6 +20,32 @@
  * without a database.
  */
 
+/**
+ * D1 rejects a LIKE pattern longer than 48 bytes with
+ * "LIKE or GLOB pattern too complex" — far below stock SQLite's 50 000. It is
+ * measured against the *whole* pattern including wildcards, so `%term%` leaves
+ * only 46 characters for the term itself, and the plural variant we generate
+ * adds one more.
+ *
+ * 40 is comfortably inside that and far longer than any real search word. Going
+ * over the limit does not return fewer results — it throws, and the endpoint
+ * returns a 500. That was reachable from seven different search boxes.
+ */
+export const MAX_LIKE_PATTERN = 48;
+export const MAX_TERM = 40;
+
+/** `%term%`, safe to bind: long input is truncated, never rejected. */
+export function likeContains(value: string): string {
+  const t = String(value ?? '').toLowerCase().slice(0, MAX_TERM);
+  return `%${t}%`;
+}
+
+/** `term%`, for prefix matches (typeahead, "did you mean"). */
+export function likePrefix(value: string): string {
+  const t = String(value ?? '').toLowerCase().slice(0, MAX_TERM);
+  return `${t}%`;
+}
+
 /** Words too common to be worth requiring. */
 const STOPWORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from', 'in', 'is', 'it', 'of', 'on', 'or',
@@ -36,6 +62,9 @@ export function searchTerms(q: string): string[] {
     .toLowerCase()
     .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
     .split(/\s+/)
+    // Truncated, not skipped: a 200-character "word" is almost always a paste
+    // accident, and matching its first 40 characters beats a 500.
+    .map((w) => w.slice(0, MAX_TERM))
     .filter((w) => w.length >= 2 && !STOPWORDS.has(w));
   // De-duplicate, preserve order.
   return [...new Set(raw)].slice(0, 6);
@@ -47,15 +76,16 @@ export function searchTerms(q: string): string[] {
  * Returned longest-first so an exact form is preferred when both are stored.
  */
 export function termVariants(term: string): string[] {
-  const out = new Set<string>([term]);
-  if (term.length > 3) {
-    if (/(ss|sh|ch|x|z)$/.test(term)) out.add(`${term}es`);
-    else if (/[^aeiou]y$/.test(term)) out.add(`${term.slice(0, -1)}ies`);
-    else out.add(`${term}s`);
+  const t = term.slice(0, MAX_TERM);
+  const out = new Set<string>([t]);
+  if (t.length > 3) {
+    if (/(ss|sh|ch|x|z)$/.test(t)) out.add(`${t}es`);
+    else if (/[^aeiou]y$/.test(t)) out.add(`${t.slice(0, -1)}ies`);
+    else out.add(`${t}s`);
     // And the other direction: strip a plural to find the singular.
-    if (/ies$/.test(term)) out.add(`${term.slice(0, -3)}y`);
-    else if (/(ss|sh|ch|x|z)es$/.test(term)) out.add(term.slice(0, -2));
-    else if (/s$/.test(term) && !/ss$/.test(term)) out.add(term.slice(0, -1));
+    if (/ies$/.test(t)) out.add(`${t.slice(0, -3)}y`);
+    else if (/(ss|sh|ch|x|z)es$/.test(t)) out.add(t.slice(0, -2));
+    else if (/s$/.test(t) && !/ss$/.test(t)) out.add(t.slice(0, -1));
   }
   return [...out];
 }
@@ -77,7 +107,8 @@ export interface TermClause {
 export function termClauses(terms: string[], columns: string[]): TermClause {
   const params: string[] = [];
   const parts: string[] = [];
-  for (const term of terms) {
+  for (const raw of terms) {
+    const term = raw.slice(0, MAX_TERM);
     const variants = termVariants(term);
     const ors: string[] = [];
     for (const v of variants) {
@@ -107,7 +138,8 @@ export function relevanceSql(
 ): { sql: string; params: string[] } {
   const params: string[] = [];
   const cases: string[] = [];
-  for (const term of terms) {
+  for (const raw of terms) {
+    const term = raw.slice(0, MAX_TERM);
     const exact = term.toLowerCase();
     cases.push(`CASE WHEN LOWER(${nameCol}) = ? THEN 100 ELSE 0 END`);
     params.push(exact);

@@ -12,6 +12,7 @@ import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQu
 import { entitlementFor } from '../lib/entitlement';
 import { storeCompleteness } from '../lib/completeness';
 import { vendorAnalytics, analyticsRows } from '../lib/vendor-analytics';
+import { likeContains } from '../lib/search';
 import { csvResponse as sharedCsvResponse } from '../lib/csv';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
@@ -308,7 +309,7 @@ app.get('/items', async (c) => {
   let where = `WHERE l.business_id = ? AND l.deleted_at IS NULL`;
   const params: (string | number)[] = [business.id];
   if (['draft', 'published', 'archived'].includes(status)) { where += ' AND l.status = ?'; params.push(status); }
-  if (q) { where += ' AND (l.name LIKE ? OR l.description LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (l.name LIKE ? OR l.description LIKE ?)'; params.push(likeContains(q), likeContains(q)); }
   const total = ((await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await c.env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.status, l.price, l.price_type, l.item_type_id, l.category_id, l.featured, l.stock_status, l.published_at, l.whatsapp_number_id,

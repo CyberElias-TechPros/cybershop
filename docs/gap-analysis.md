@@ -157,27 +157,48 @@ with no photo.
 
 ---
 
+## Shipped next: the whole P1 and P2 backlog
+
+Every item in the two tables below is now built, tested and wired. The detail
+lives in the code; the table records what "done" means for each one.
+
+| # | Gap | What was built |
+|---|---|---|
+| 1 | **Reports had no workflow** | `worker/src/lib/moderation.ts` + `migrations/0011`. Every report gets a 48-hour `sla_due_at` at insert (`openReport`). An admin claims it (`POST /admin/reports/:id/claim`) which stamps `assignee_user_id` + `triaged_at` and flips open → investigating. Closing takes one of five outcomes and **acts on it** — `content_removed` unpublishes the listing, `store_suspended` suspends the store (following a listing home to its business) — then notifies the reporter in plain language. `reportSlaSweep()` runs hourly: one warning at 6 hours out, a breach flag + admin notification at zero. Queue is filterable by status and by "my queue". |
+| 2 | **No payment reconciliation** | `worker/src/lib/reconcile.ts` + `GET /admin/reconciliation?from=&to=[&format=csv]` + Admin → Reconciliation. Compares every Paystack-method payment against Paystack's own transaction list and names the four ways they diverge: `missing_on_paystack`, `amount_mismatch`, `missing_locally` (a lost webhook), `status_mismatch`. Bank transfers are excluded from both sides so the "difference" figure stays apples-to-apples. Runs daily from the cron and notifies admins on any mismatch. In mock mode it says there is nothing to reconcile rather than showing an empty all-clear. |
+| 3 | **Admin accounts had no 2FA** | `worker/src/lib/totp.ts` — RFC 6238 implemented on Web Crypto (no dependency), with a drift window of ±1 period and replay protection that refuses a spent code without rejecting the *next* code in the same 30-second window. Enrolment is two-step (`/auth/2fa/setup` → `/auth/2fa/confirm`) so a mistyped secret locks nobody out; confirming issues ten single-use recovery codes, hashed at rest, and signs out the sessions that predate 2FA. At login the password is spent but **no session is issued** until `/auth/login/2fa` succeeds — `getSession` treats a half-finished login as signed out, so it cannot be used for anything. `REQUIRE_ADMIN_2FA=1` (off by default, documented in `docs/production.md`) locks the admin console behind enrolment. UI: Settings → Security, plus the login page's second step. |
+| 4 | **Admin tables didn't stack on phones** | `design-system.css` §18: below 700px the first column of every admin table is pinned while the rest scrolls under it, so you never lose track of which store, listing or user a row is about. Full-width cells (empty states, skeletons) are excluded. |
+| 5 | **Analytics had no export** | `GET /vendor/analytics?days=N&format=csv` writes one sheet with three blocks — summary, daily trend, per-item — UTF-8 BOM so Excel reads ₦ correctly. The dashboard gained a Download CSV button and accepts any 1–365 day window (7/30/90/12-month chips are shortcuts). All CSV writing now goes through one `lib/csv.ts` that defuses leading `=`/`+`/`-`/`@`: item names are vendor-supplied and these files get opened in Excel. |
+| 6 | **Search was `LIKE '%q%'`** | `worker/src/lib/search.ts`. Three fixes, no FTS5 (D1 builds vary and a shadow index is not worth it at this scale): every term must match in any order, so "gown ankara" finds "Ankara Gown"; a conservative plural/singular variant means "gowns" finds "gown"; and results are ranked by *where* they matched — exact name, then leading word, then word boundary, then position in the name, then a description mention — before featured and recency. Applied to both the global search and the market feed. |
+| 7 | **No alerting** | `worker/src/lib/errorlog.ts`. Every 5xx and every unhandled throw is written to `error_log` with its route (scrubbed of keys and tokens). Two rules in `ALERT_RULES` watch the error rate and payment failures; `alert_state` guarantees one notification per bad hour, not one per error. Admin → Health shows the counts, the top routes and the last 50 entries. |
+| 10 | **Session/device management** | `worker/src/lib/session.ts`. Sessions record creation time, a trimmed user-agent and a **hash** of the IP (never the IP — it is personal data). Settings → Security lists every device as "Chrome on Windows", flags the current one, and can sign out one or all others. |
+
+Still open, in order: items 8 (nested interactive elements on listing cards),
+9 (vendor notification preferences) and 11 (media gateway untested end to
+end).
+
+---
+
 ## Next, in the order I would build it
 
 ### P1 — before the first paying vendor
 
-| # | Gap | Why it matters | Effort |
-|---|---|---|---|
-| 1 | **Reports have no workflow.** The queue exists, but a report has no state (new → triaged → actioned), no assignment, no SLA clock, and the reporter is never told the outcome. | Trust is the product in a no-checkout marketplace. An unanswered report is the fastest way to lose it. | 2 days |
-| 3 | **No payment reconciliation.** Payments are recorded locally; nothing compares them against Paystack daily or exports for accounting. | A drift between "approved in CyberShop" and "settled by Paystack" is invisible until it's expensive. | 1–2 days |
-| 3 | **Admin accounts have no 2FA.** An admin approves payments, verifies IDs, suspends stores. | One phished password is a money and reputation problem. | 1–2 days |
-| 4 | **Admin tables don't stack on phones** (carried over from the responsive audit). Below ~640px they are horizontal scrollers. | Admins triage from phones. | 1 day |
+*(All four of these are done — see the table above. This list is kept for the
+record of what the backlog was.)*
+
+| # | Gap | Why it mattered |
+|---|---|---|
+| 1 | **Reports had no workflow** — no state, no assignment, no SLA clock, and the reporter was never told the outcome. | Trust is the product in a no-checkout marketplace. An unanswered report is the fastest way to lose it. |
+| 2 | **No payment reconciliation** — payments recorded locally, nothing compared against Paystack. | A drift between "approved in CyberShop" and "settled by Paystack" is invisible until it's expensive. |
+| 3 | **Admin accounts had no 2FA.** | One phished password is a money and reputation problem. |
+| 4 | **Admin tables didn't stack on phones.** | Admins triage from phones. |
 
 ### P2 — before scale
 
 | # | Gap | Why | Effort |
 |---|---|---|---|
-| 5 | **Analytics has no export.** The screen exists; there is no CSV download or date-range picker (7/30/90 presets only). | Accountants and agencies want the file. | 0.5 day |
-| 6 | **Search is `LIKE '%q%'`** ordered by featured-then-newest. Fine to ~10k listings. | After that: no typo tolerance, no relevance, no "did you mean", slow queries. Move to FTS5 or an index. | 3–5 days |
-| 7 | **No alerting.** Cloudflare observability is on, but nothing routes errors to a human. | You learn about a broken checkout from a vendor, not from a dashboard. | 0.5 day |
 | 8 | **`<button>` nested inside `<a class="card">`** on listing cards — invalid HTML (carried over from round 1). | Screen readers and keyboard users get two overlapping targets. | 0.5 day |
 | 9 | **No vendor notification preferences.** Lead alerts are all-or-nothing. | Vendors who can't tune it mute it, and then churn. | 1 day |
-| 10 | **Session/device management.** No "log out my other devices", no active sessions list. | Standard account hygiene; cheap. | 0.5 day |
 | 11 | **Media gateway is untested end to end.** `MEDIA_DRIVER=gateway` is written but only D1 is exercised in tests. | The documented production path is the one nobody has run. | 1 day |
 
 ### P3 — deliberately not built, and why

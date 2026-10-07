@@ -21,6 +21,13 @@ export interface Env {
   MAIL_FROM?: string;
   MAIL_FROM_NAME?: string;
   MAIL_ENDPOINT?: string;
+  /**
+   * When '1', an admin without two-factor authentication cannot use the admin
+   * console at all — they are sent to set it up. Off by default so a fresh
+   * install is not locked out on day one; turn it on once every admin is
+   * enrolled (see docs/production.md).
+   */
+  REQUIRE_ADMIN_2FA?: string;
   /** Optional. When set, a verified custom domain is attached to the Vercel project for TLS. */
   VERCEL_TOKEN?: string;
   VERCEL_PROJECT_ID?: string;

@@ -70,7 +70,11 @@ export async function getSession(env: Env, c: Context): Promise<SessionUser | nu
     await env.DB.prepare('UPDATE sessions SET last_activity = ? WHERE id = ?').bind(now, id).run();
   }
   try {
-    const payload = JSON.parse(row.payload) as SessionUser;
+    const payload = JSON.parse(row.payload) as SessionUser & { mfa?: boolean };
+    // A half-finished 2FA login is not a login. It is a 10-minute challenge
+    // that only /auth/login/2fa may complete; everywhere else it reads as
+    // signed-out, so it cannot be used to do anything.
+    if (payload.mfa) return null;
     // refresh business_id from DB (business may have been recreated / deleted)
     if (payload.role === 'vendor') {
       const binding = await resolveVendorBinding(env, payload.id);
@@ -98,6 +102,16 @@ export async function requireUser(env: Env, c: Context): Promise<SessionUser> {
 export async function requireAdmin(env: Env, c: Context): Promise<SessionUser> {
   const user = await requireUser(env, c);
   if (user.role !== 'admin') throw forbidden('Admin access required.');
+  // An admin approves bank transfers, verifies IDs, suspends stores and grants
+  // plans. With REQUIRE_ADMIN_2FA on, a password is not enough for any of it.
+  if (env.REQUIRE_ADMIN_2FA === '1') {
+    const row = (await env.DB.prepare('SELECT totp_enabled_at FROM users WHERE id = ?').bind(user.id).first()) as
+      | { totp_enabled_at: string | null }
+      | null;
+    if (!row?.totp_enabled_at) {
+      throw new AppError(403, 'mfa_required', 'Turn on two-factor authentication before using the admin console.');
+    }
+  }
   return user;
 }
 

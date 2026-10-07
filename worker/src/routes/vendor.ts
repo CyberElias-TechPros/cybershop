@@ -11,7 +11,8 @@ import {
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
 import { entitlementFor } from '../lib/entitlement';
 import { storeCompleteness } from '../lib/completeness';
-import { vendorAnalytics } from '../lib/vendor-analytics';
+import { vendorAnalytics, analyticsRows } from '../lib/vendor-analytics';
+import { csvResponse as sharedCsvResponse } from '../lib/csv';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
@@ -726,8 +727,13 @@ app.delete('/whatsapp/:id', async (c) => {
  */
 app.get('/analytics', async (c) => {
   const { business } = await requireVendor(c.env, c);
-  const days = clampInt(c.req.query('days'), 7, 365, 30);
-  return c.json({ ok: true, analytics: await vendorAnalytics(c.env, business.id, days) });
+  const days = clampInt(c.req.query('days'), 1, 365, 30);
+  const analytics = await vendorAnalytics(c.env, business.id, days);
+  // `?format=csv` is the export the dashboard's "Download CSV" button points at.
+  if (c.req.query('format') === 'csv') {
+    return csvResponse(c, analyticsRows(analytics), `cybershop-analytics-${new Date().toISOString().slice(0, 10)}.csv`);
+  }
+  return c.json({ ok: true, analytics });
 });
 
 app.get('/plans', async (c) => {
@@ -999,19 +1005,11 @@ function safeJson(v: string | null): unknown {
   try { return v ? JSON.parse(v) : null; } catch { return null; }
 }
 
-function csvResponse(c: Context, rows: (string | number)[][], filename: string): Response {
-  const esc = (v: string | number) => {
-    const s = String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const body = '\ufeff' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
-  return new Response(body, {
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="${filename}"`,
-      'cache-control': 'no-store',
-    },
-  });
+function csvResponse(_c: Context, rows: unknown[][], filename: string): Response {
+  // Delegates to the shared writer, which escapes every cell and defuses
+  // leading `=`/`+`/`-`/`@` — item names here are vendor-supplied and these
+  // files get opened in Excel.
+  return sharedCsvResponse(filename, rows);
 }
 
 export default app;

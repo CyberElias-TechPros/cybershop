@@ -1272,3 +1272,224 @@ ol.safety-list {
   border-color: transparent;
   color: #04150d;
 }
+
+/* ---------------------------------------------------------------------------
+   §16 · Moderation queue + shared dialog
+   --------------------------------------------------------------------------- */
+.sla-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--ink-dim);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sla-pill.ok { color: var(--ink-dim); }
+.sla-pill.warn { border-color: rgba(242, 200, 121, 0.5); background: rgba(242, 200, 121, 0.12); color: var(--gold); }
+.sla-pill.danger { border-color: transparent; background: #b3261e; color: #fff; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 6, 5, 0.72);
+  backdrop-filter: blur(3px);
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+}
+.field {
+  display: block;
+  margin: 12px 0;
+}
+.field .label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* §17 · Security page (2FA enrolment, recovery codes, devices) */
+.qr-box {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--glass);
+}
+.qr-box img {
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+.totp-secret {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  word-break: break-all;
+}
+.backup-codes {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.backup-codes code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.device-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--glass);
+}
+@media (max-width: 500px) {
+  .backup-codes { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .device-list li { flex-direction: column; align-items: flex-start; }
+}
+
+.totp-input {
+  font-size: 1.6rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding-inline: 0.5em;
+}
+
+/* ---------------------------------------------------------------------------
+   §18 · Admin tables on a phone
+   ---------------------------------------------------------------------------
+   Nine admin screens are tables. On a 360 px screen a seven-column table
+   scrolls sideways — which is fine — but you lose the leftmost column, i.e.
+   the store, listing or user you are looking at, and every row becomes
+   anonymous. Pinning the first column keeps the subject of the row on screen
+   while the rest scrolls under it. The container keeps the right-edge fade so
+   it stays obvious that there is more table to the side.
+   --------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .table-wrap > .tbl,
+  .table-scroll > .data-table {
+    min-width: 520px;
+  }
+  .table-wrap > .tbl td,
+  .table-wrap > .tbl th,
+  .table-scroll > .data-table td,
+  .table-scroll > .data-table th {
+    padding: 10px 12px;
+  }
+  /* The subject of the row: name / store / listing. Never scrolls away. */
+  .table-wrap > .tbl tbody td:first-child,
+  .table-scroll > .data-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-1);
+    max-width: 52vw;
+    overflow-wrap: anywhere;
+  }
+  .table-wrap > .tbl thead th:first-child,
+  .table-scroll > .data-table thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--bg-1);
+  }
+  /* A hairline so the pinned column reads as a separate layer. */
+  .table-wrap > .tbl tbody td:first-child::after,
+  .table-scroll > .data-table tbody td:first-child::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+  }
+  .table-wrap > .tbl tbody td:first-child,
+  .table-scroll > .data-table tbody td:first-child {
+    position: sticky;
+  }
+  /* Full-width cells (empty states, skeletons) must not be pinned. */
+  .table-wrap > .tbl tbody td[colspan]:not([colspan='1']),
+  .table-scroll > .data-table tbody td[colspan]:not([colspan='1']) {
+    position: static;
+    max-width: none;
+    background: transparent;
+  }
+}
+
+.ok-banner { border-color: rgba(0, 214, 143, 0.35); background: rgba(0, 214, 143, 0.06); }
+.warn-banner { border-color: rgba(255, 138, 128, 0.4); background: rgba(255, 138, 128, 0.07); }
+/* Row of filters at the top of a panel: date from, date to, export. */
+.filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.filter-row .field .input { min-width: 150px; }
+@media (max-width: 520px) {
+  .filter-row { align-items: stretch; }
+  .filter-row .field { flex: 1 1 140px; }
+  .filter-row > .btn,
+  .filter-row > a.btn { flex: 1 1 100%; text-align: center; }
+}
+
+/* §19 · Stat tiles used by Admin → Reconciliation and Admin → Health.
+        (The vendor Analytics tiles use .num / .lbl / .sub instead.) */
+.stat-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-sub { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+.stat-grid .stat > strong {
+  display: block;
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+  line-height: 1.2;
+  margin: 4px 0 2px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}

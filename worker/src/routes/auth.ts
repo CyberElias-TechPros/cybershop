@@ -3,8 +3,8 @@ import type { Env } from '../config';
 import { hashPassword, verifyPassword, passwordNeedsUpgrade } from '../lib/crypto';
 import { createSession, requireUser, destroySession, getSession } from '../lib/auth';
 import { rateLimit } from '../lib/ratelimit';
-import { AppError, badRequest, validationError, conflict, forbidden, notFound } from '../lib/errors';
-import { slugify, assertSlugAvailable, nowIso, randomToken } from '../lib/util';
+import { AppError, badRequest, validationError, conflict, forbidden, notFound, unauthorized } from '../lib/errors';
+import { slugify, assertSlugAvailable, nowIso, randomToken, nowUnix } from '../lib/util';
 import { reqStr, reqEmail, reqPassword, optStr, isEmail, reqPhone } from '../lib/validate';
 import { activateFreePlan } from '../lib/payments';
 import { normalizeWaNumber } from '../lib/wa';
@@ -12,6 +12,11 @@ import { clientIp } from '../lib/ip';
 import { resolveVendorBinding } from '../lib/access';
 import { ensureReferralCode, referrerIdForCode } from '../lib/referral';
 import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
+import { audit } from '../lib/audit';
+import { notify } from '../lib/notify';
+import { createSessionRow, sessionCookie, listSessions, revokeSession, revokeOtherSessions, deviceLabel, currentSessionId } from '../lib/session';
+import { randomBase32Secret, totpUri, verifyTotp, generateBackupCodes, spentCodeHash } from '../lib/totp';
+import { sha256Hex } from '../lib/util';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -103,8 +108,230 @@ app.post('/login', async (c) => {
   if (user.status !== 'active') throw new AppError(403, 'account_suspended', 'This account is suspended. Contact support.');
   await c.env.DB.prepare('UPDATE users SET last_login_at = ? WHERE id = ?').bind(nowIso(), user.id).run();
   const binding = user.role === 'vendor' ? await resolveVendorBinding(c.env, user.id) : { business_id: null, member_role: null };
-  await createSession(c.env, c, { id: user.id, role: user.role as never, name: user.name, email: user.email, business_id: binding.business_id, member_role: binding.member_role } as never);
+  const payload = { id: user.id, role: user.role as never, name: user.name, email: user.email, business_id: binding.business_id, member_role: binding.member_role };
+
+  // Second factor. The password is spent at this point, but the session is not
+  // issued until the code checks out — otherwise 2FA is decoration.
+  const twoFa = await c.env.DB.prepare('SELECT totp_secret, totp_enabled_at FROM users WHERE id = ?').bind(user.id).first() as
+    { totp_secret: string | null; totp_enabled_at: string | null } | null;
+  if (twoFa?.totp_secret && twoFa.totp_enabled_at) {
+    const id = await createSessionRow(c.env, user.id, { ...payload, mfa: true }, c.req.raw);
+    c.header('Set-Cookie', sessionCookie(c.env, id).replace(/Max-Age=\d+/, 'Max-Age=600'));
+    return c.json({ ok: true, mfa_required: true, message: 'Enter the 6-digit code from your authenticator app.' });
+  }
+
+  await createSession(c.env, c, payload as never);
   return c.json({ ok: true, user: { id: user.id, role: user.role, name: user.name, email: user.email, business_id: binding.business_id } });
+});
+
+/**
+ * Step 2 of a 2FA login. The half-session above is marked `mfa: true` and is
+ * refused by `requireUser` until this completes, so an unconfirmed login cannot
+ * quietly turn into a working one.
+ */
+app.post('/login/2fa', async (c) => {
+  const ip = clientIp(c);
+  const sessionId = await currentSessionId(c);
+  await rateLimit(c.env, 'login', `${ip}:2fa`, 10, 900);
+  if (!sessionId) throw unauthorized();
+  const row = (await c.env.DB.prepare('SELECT user_id, payload, last_activity FROM sessions WHERE id = ?').bind(sessionId).first()) as
+    { user_id: number; payload: string; last_activity: number } | null;
+  if (!row) throw unauthorized();
+  let payload: Record<string, unknown>;
+  try { payload = JSON.parse(row.payload) as Record<string, unknown>; } catch { throw unauthorized(); }
+  if (!payload.mfa) throw badRequest('This session is already fully signed in.');
+  // The challenge window is 10 minutes. Past that, log in again.
+  if (nowUnix() - row.last_activity > 600) {
+    await c.env.DB.prepare('DELETE FROM sessions WHERE id = ?').bind(sessionId).run();
+    throw new AppError(401, 'mfa_expired', 'That code window expired. Sign in again.');
+  }
+
+  const body = await c.req.json().catch(() => null);
+  const code = String(body?.code || '').replace(/\D/g, '');
+  const user = (await c.env.DB.prepare(
+    'SELECT totp_secret, totp_backup_codes, totp_last_counter, totp_last_code_hash FROM users WHERE id = ?'
+  ).bind(row.user_id).first()) as
+    | { totp_secret: string | null; totp_backup_codes: string | null; totp_last_counter: number | null; totp_last_code_hash: string | null }
+    | null;
+  if (!user?.totp_secret) throw unauthorized();
+
+  let ok = false;
+  let counter: number | null = null;
+  if (/^\d{6}$/.test(code)) {
+    const v = await verifyTotp(user.totp_secret, code, {
+      lastCounter: user.totp_last_counter ?? null,
+      lastCodeHash: user.totp_last_code_hash ?? null,
+    });
+    ok = v.ok;
+    counter = v.counter;
+  } else if (code) {
+    // Recovery codes: XXXXX-XXXXXX shape, hashed at rest, single use.
+    const codes = JSON.parse(user.totp_backup_codes || '[]') as { code_hash: string; used_at: string | null }[];
+    const given = String(body?.code || '').trim().toUpperCase();
+    const hash = await sha256Hex(`backup:${given}`);
+    const idx = codes.findIndex((b) => b.code_hash === hash && !b.used_at);
+    if (idx >= 0) {
+      codes[idx]!.used_at = new Date().toISOString();
+      await c.env.DB.prepare('UPDATE users SET totp_backup_codes = ? WHERE id = ?').bind(JSON.stringify(codes), row.user_id).run();
+      ok = true;
+    }
+  }
+  if (!ok) {
+    await audit(c.env, { actor: { id: row.user_id, role: 'user' }, action: 'auth.2fa_failed', entityType: 'user', entityId: row.user_id, ip: clientIp(c) });
+    throw new AppError(401, 'invalid_code', 'That code is not right. Try the current one.');
+  }
+
+  const { mfa: _mfa, ...clean } = payload;
+  await c.env.DB.prepare('UPDATE sessions SET payload = ?, last_activity = ? WHERE id = ?')
+    .bind(JSON.stringify(clean), nowUnix(), sessionId).run();
+  if (counter) {
+    await c.env.DB.prepare('UPDATE users SET totp_last_counter = ?, totp_last_code_hash = ? WHERE id = ?')
+      .bind(counter, await spentCodeHash(counter, code), row.user_id).run();
+  }
+  return c.json({ ok: true, user: clean });
+});
+
+/**
+ * Two-factor enrolment.
+ *
+ * Two steps on purpose: you get a secret, you prove you can produce a code from
+ * it, and only then does it replace the old state. Confirming first means a
+ * mistyped secret locks nobody out.
+ */
+app.post('/2fa/setup', async (c) => {
+  const user = await requireUser(c.env, c);
+  const row = (await c.env.DB.prepare('SELECT totp_secret, totp_enabled_at FROM users WHERE id = ?').bind(user.id).first()) as
+    { totp_secret: string | null; totp_enabled_at: string | null } | null;
+  if (row?.totp_secret && row.totp_enabled_at) throw conflict('Two-factor authentication is already on.');
+  const secret = randomBase32Secret();
+  await c.env.DB.prepare('UPDATE users SET totp_pending_secret = ? WHERE id = ?').bind(secret, user.id).run();
+  await audit(c.env, { actor: user, action: 'auth.2fa_setup', entityType: 'user', entityId: user.id, ip: clientIp(c) });
+  return c.json({
+    ok: true,
+    secret,
+    uri: totpUri(secret, user.email),
+    // Shown once. Confirming returns the recovery codes, which are also shown
+    // once — that is the moment to write them down.
+    message: 'Add this to your authenticator app, then confirm with a code.',
+  });
+});
+
+app.post('/2fa/confirm', async (c) => {
+  const user = await requireUser(c.env, c);
+  const body = await c.req.json().catch(() => null);
+  const code = String(body?.code || '').replace(/\D/g, '');
+  if (code.length !== 6) throw badRequest('Enter the 6-digit code from your app.');
+  const row = (await c.env.DB.prepare('SELECT totp_pending_secret FROM users WHERE id = ?').bind(user.id).first()) as
+    { totp_pending_secret: string | null } | null;
+  if (!row?.totp_pending_secret) throw badRequest('Start setup first.');
+  const v = await verifyTotp(row.totp_pending_secret, code);
+  if (!v.ok) throw badRequest('That code is not right. Check the app and try the current one.');
+
+  const codes = generateBackupCodes();
+  const hashed = await Promise.all(
+    codes.map(async (plain) => ({ code_hash: await sha256Hex(`backup:${plain}`), used_at: null }))
+  );
+  // Note: the enrolment code is deliberately *not* recorded as a spent login
+  // code. Enrolment is not a sign-in, and seeding the replay guard here would
+  // reject the code this user then types on their very next login, if it lands
+  // inside the same 30-second window.
+  await c.env.DB.prepare(
+    `UPDATE users SET totp_secret = totp_pending_secret, totp_pending_secret = NULL, totp_enabled_at = ?,
+       totp_backup_codes = ?, totp_last_counter = NULL, totp_last_code_hash = NULL WHERE id = ?`
+  ).bind(new Date().toISOString(), JSON.stringify(hashed), user.id).run();
+  void v.counter;
+
+  // Sessions opened before 2FA existed never proved a second factor. Drop them
+  // (this one excepted) so the old password-only logins do not outlive enrolment.
+  const keep = await currentSessionId(c);
+  const revoked = await revokeOtherSessions(c.env, user.id, keep ?? undefined);
+  await audit(c.env, { actor: user, action: 'auth.2fa_enabled', entityType: 'user', entityId: user.id, ip: clientIp(c), meta: { revoked } });
+  await notify(c.env, {
+    userId: user.id,
+    type: 'security.2fa_enabled',
+    title: 'Two-factor authentication is on',
+    body: 'From now on, signing in needs a code from your app. Save the recovery codes we just gave you.',
+    data: { revoked_sessions: revoked },
+  }).catch(() => {});
+  return c.json({
+    ok: true,
+    backup_codes: codes,
+    revoked_sessions: revoked,
+    message: 'Two-factor authentication is on. These ten codes work once each if you lose your phone — save them now.',
+  });
+});
+
+app.post('/2fa/disable', async (c) => {
+  const user = await requireUser(c.env, c);
+  const body = await c.req.json().catch(() => null);
+  const password = String(body?.password || '');
+  if (!password) throw badRequest('Confirm with your password.');
+  const row = (await c.env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(user.id).first()) as
+    { password_hash: string } | null;
+  if (!row || !(await verifyPassword(password, row.password_hash))) throw badRequest('Password is incorrect.');
+  const code = String(body?.code || '').replace(/\D/g, '');
+  if (code.length === 6) {
+    const s2 = (await c.env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(user.id).first()) as { totp_secret: string | null } | null;
+    if (s2?.totp_secret && !(await verifyTotp(s2.totp_secret, code)).ok) throw badRequest('That code is not right.');
+  }
+  await c.env.DB.prepare(
+    'UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_backup_codes = NULL, totp_last_counter = NULL WHERE id = ?'
+  ).bind(user.id).run();
+  await audit(c.env, { actor: user, action: 'auth.2fa_disabled', entityType: 'user', entityId: user.id, ip: clientIp(c) });
+  await notify(c.env, {
+    userId: user.id,
+    type: 'security.2fa_disabled',
+    title: 'Two-factor authentication was turned off',
+    body: 'If that was not you, change your password now and contact support.',
+  }).catch(() => {});
+  return c.json({ ok: true });
+});
+
+app.get('/2fa/status', async (c) => {
+  const user = await requireUser(c.env, c);
+  const row = (await c.env.DB.prepare('SELECT totp_enabled_at, totp_backup_codes FROM users WHERE id = ?').bind(user.id).first()) as
+    { totp_enabled_at: string | null; totp_backup_codes: string | null } | null;
+  const codes = JSON.parse(row?.totp_backup_codes || '[]') as { used_at: string | null }[];
+  return c.json({
+    ok: true,
+    enabled: Boolean(row?.totp_enabled_at),
+    enabled_at: row?.totp_enabled_at ?? null,
+    backup_codes_left: codes.filter((b) => !b.used_at).length,
+  });
+});
+
+/** The devices this account is signed in on, and the ability to drop one. */
+app.get('/sessions', async (c) => {
+  const user = await requireUser(c.env, c);
+  const current = await currentSessionId(c);
+  const sessions = await listSessions(c.env, user.id, current ?? undefined);
+  return c.json({
+    ok: true,
+    sessions: sessions.map((s) => ({
+      id: s.id,
+      current: Boolean(s.current),
+      device: deviceLabel(s.user_agent),
+      created_at: s.created_at,
+      last_activity: s.last_activity,
+      ip_hash: s.ip_hash,
+    })),
+  });
+});
+
+app.post('/sessions/:id/revoke', async (c) => {
+  const user = await requireUser(c.env, c);
+  const id = String(c.req.param('id') || '');
+  if (!(await revokeSession(c.env, user.id, id))) throw notFound('Session not found.');
+  await audit(c.env, { actor: user, action: 'session.revoke', entityType: 'session', entityId: null, ip: clientIp(c), meta: { session_id: id } });
+  return c.json({ ok: true });
+});
+
+app.post('/sessions/revoke-others', async (c) => {
+  const user = await requireUser(c.env, c);
+  const keep = await currentSessionId(c);
+  const n = await revokeOtherSessions(c.env, user.id, keep ?? undefined);
+  await audit(c.env, { actor: user, action: 'session.revoke_others', entityType: 'user', entityId: user.id, ip: clientIp(c), meta: { count: n } });
+  return c.json({ ok: true, revoked: n });
 });
 
 app.post('/logout', async (c) => {

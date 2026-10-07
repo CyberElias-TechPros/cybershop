@@ -55,6 +55,49 @@ export interface VendorAnalytics {
 
 const num = (v: unknown): number => Number(v ?? 0);
 
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * The whole analytics payload as spreadsheet rows.
+ *
+ * Three blocks in one sheet — summary, daily trend, per-item — because the
+ * questions vendors actually have ("is this working?", "which day is busiest?",
+ * "which item earns the clicks?") are three different tables, and one sheet
+ * that answers all three beats three exports nobody runs.
+ */
+export function analyticsRows(a: VendorAnalytics): unknown[][] {
+  const rows: unknown[][] = [];
+  rows.push(['CyberShop analytics']);
+  rows.push(['Window', `${a.from.slice(0, 10)} to today`, `${a.days} days`]);
+  rows.push([]);
+  rows.push(['Metric', 'Value', 'Change vs previous period (%)']);
+  rows.push(['Storefront views', a.totals.storefront_views, a.deltas.storefront_views]);
+  rows.push(['Item views', a.totals.item_views, a.deltas.item_views]);
+  rows.push(['WhatsApp clicks', a.totals.wa_clicks, a.deltas.wa_clicks]);
+  rows.push(['Unique visitors', a.totals.visitors, '']);
+  rows.push(['Enquiries', a.totals.enquiries, '']);
+  rows.push(['View-to-click rate (%)', a.totals.view_to_click, '']);
+  rows.push([
+    'Busiest hour',
+    a.best.hour === null ? '' : `${String(a.best.hour).padStart(2, '0')}:00`,
+    '',
+  ]);
+  rows.push(['Busiest day', a.best.weekday === null ? '' : WEEKDAYS[a.best.weekday] ?? '', '']);
+  rows.push([]);
+  rows.push(['Daily trend']);
+  rows.push(['Date', 'Storefront views', 'Item views', 'WhatsApp clicks', 'Unique visitors']);
+  for (const d of a.trend) {
+    rows.push([d.day, d.storefront_views, d.item_views, d.wa_clicks, d.visitors]);
+  }
+  rows.push([]);
+  rows.push(['Per item']);
+  rows.push(['Item', 'Type', 'Views', 'WhatsApp clicks', 'Click-through (%)']);
+  for (const i of a.items) {
+    rows.push([i.name, i.type_name, i.views, i.clicks, i.ctr === null ? '' : i.ctr]);
+  }
+  return rows;
+}
+
 export async function vendorAnalytics(env: Env, businessId: number, days: number): Promise<VendorAnalytics> {
   const span = Math.min(Math.max(days, 1), 365);
   const since = `-${span} days`;

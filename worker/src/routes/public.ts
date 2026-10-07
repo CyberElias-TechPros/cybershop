@@ -3,6 +3,7 @@ import type { Env } from '../config';
 import { rateLimit } from '../lib/ratelimit';
 import { badRequest, forbidden, notFound, validationError } from '../lib/errors';
 import { recordView, trackEvent } from '../lib/analytics';
+import { openReport, REPORT_SLA_HOURS } from '../lib/moderation';
 import { getSession } from '../lib/auth';
 import { mediaUrl, getMedia, storeD1Media, magicMime } from '../lib/media';
 import { renderTemplate } from '../lib/wa';
@@ -14,6 +15,7 @@ import { resolveWhatsappNumber } from '../lib/routing';
 import { blockedBusinessIds, isBlocked, notInClause } from '../lib/blocks';
 import { reviewList, reviewSummary } from '../lib/reviews';
 import { parseStorefront } from '../lib/storefront';
+import { searchTerms, termClauses, relevanceSql, suggestionStem } from '../lib/search';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -487,7 +489,18 @@ app.get('/listings', async (c) => {
   const blockedList = await blockFilter(c);
   let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND ${LIVE}${blockedList.sql}`;
   const params: (string | number)[] = [...blockedList.params];
-  if (q) { where += ` AND (l.name LIKE ? OR l.description LIKE ? OR b.name LIKE ?)`; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  // Every word must appear somewhere, in any order, with a plural-tolerant
+  // form — the same matcher the global search box uses (see lib/search.ts).
+  let scoreSql = '0';
+  const scoreParams: string[] = [];
+  if (q) {
+    const terms = searchTerms(q).length ? searchTerms(q) : [q.toLowerCase()];
+    const clauses = termClauses(terms, ['l.name', 'l.description', 'b.name']);
+    if (clauses.sql) { where += ` AND ${clauses.sql}`; params.push(...clauses.params); }
+    const scored = relevanceSql('l.name', 'l.description', terms);
+    scoreSql = scored.sql;
+    scoreParams.push(...scored.params);
+  }
   if (city) { where += ` AND LOWER(b.city) = LOWER(?)`; params.push(city); }
   if (cat) { where += ` AND EXISTS (SELECT 1 FROM categories c WHERE c.id = l.category_id AND c.slug = ?)`; params.push(cat); }
   if (type) { where += ` AND EXISTS (SELECT 1 FROM item_types t0 WHERE t0.id = l.item_type_id AND t0.slug = ?)`; params.push(type); }
@@ -502,11 +515,15 @@ app.get('/listings', async (c) => {
     where += ` AND (SELECT AVG(rating) FROM reviews r WHERE r.listing_id = l.id AND r.status = 'published') >= ?`;
     params.push(minRating);
   }
+  // When there is a query, relevance outranks recency — otherwise "newest"
+  // buries the exact match under a hundred loose ones. Only 'newest' is
+  // re-ranked; an explicit price or rating sort is the buyer's stated wish.
+  const relevanceOrder = scoreParams.length ? `${scoreSql} DESC, ` : '';
   const order =
-    sort === 'price_asc' ? `l.price IS NULL, l.price ASC, l.published_at DESC` :
-    sort === 'price_desc' ? `l.price IS NULL, l.price DESC, l.published_at DESC` :
-    sort === 'rating' ? `(SELECT AVG(rating) FROM reviews r WHERE r.listing_id = l.id AND r.status = 'published') DESC, l.published_at DESC` :
-    `l.featured DESC, l.published_at DESC`;
+    sort === 'price_asc' ? `${relevanceOrder}l.price IS NULL, l.price ASC, l.published_at DESC` :
+    sort === 'price_desc' ? `${relevanceOrder}l.price IS NULL, l.price DESC, l.published_at DESC` :
+    sort === 'rating' ? `${relevanceOrder}(SELECT AVG(rating) FROM reviews r WHERE r.listing_id = l.id AND r.status = 'published') DESC, l.published_at DESC` :
+    `${relevanceOrder}l.featured DESC, l.published_at DESC`;
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, l.featured, t.url_segment, t.slug AS type_slug,
@@ -518,7 +535,8 @@ app.get('/listings', async (c) => {
             (SELECT m3.driver FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_driver
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
      ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
-  ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+     // The score's placeholders are in ORDER BY, so they bind after the WHERE ones.
+  ).bind(...params, ...scoreParams, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const items = rows.map((it) => {
     const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null; logo_media_id: number | null; logo_storage_key: string | null; logo_driver: 'd1' | 'gateway' | null };
     return {
@@ -562,10 +580,26 @@ app.post('/reports', async (c) => {
     if (!row) throw notFound('Business not found.');
   }
   const user = await getSession(env, c);
-  await env.DB.prepare(
+  const res = await env.DB.prepare(
     `INSERT INTO reports (reporter_user_id, entity_type, entity_id, reason, details) VALUES (?, ?, ?, ?, ?)`
   ).bind(user?.id ?? null, entityType, entityId, reason, details).run();
-  return c.json({ ok: true, message: 'Thanks. Our team will review this.' });
+  const reportId = Number(res.meta.last_row_id);
+  // The clock starts now, not when somebody remembers to look at the queue.
+  await openReport(env, reportId);
+  const admins = (await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`).all()).results as { id: number }[];
+  for (const a of admins) {
+    await notify(env, {
+      userId: a.id,
+      type: 'report.new',
+      title: 'New report to review',
+      body: `${reason.replace('_', ' ')} reported on a ${entityType}. It is due within ${REPORT_SLA_HOURS} hours.`,
+      data: { report_id: reportId, entity_type: entityType, entity_id: entityId },
+    });
+  }
+  return c.json({
+    ok: true,
+    message: `Thanks — our team will review this within ${REPORT_SLA_HOURS} hours and let you know what we decided.`,
+  });
 });
 
 /** Global search (businesses + published items). */
@@ -575,17 +609,32 @@ app.get('/search', async (c) => {
   const city = c.req.query('city')?.trim().slice(0, 80) || '';
   const page = clampInt(c.req.query('page'), 1, 100, 1);
   if (q.length < 2) return c.json({ ok: true, businesses: [], items: [], total: 0, page });
-  const like = `%${q.slice(0, 60)}%`;
   const blockedSearch = await blockFilter(c);
-  let bizWhere = `WHERE ${LIVE} AND b.name LIKE ?${blockedSearch.sql}`;
-  const bizParams: (string | number)[] = [like, ...blockedSearch.params];
+  const terms = searchTerms(q.slice(0, 60));
+  // An all-stopword query ("the of and") has no terms left to require; fall back
+  // to the raw string so the page still does something sensible.
+  const effective = terms.length ? terms : [q.slice(0, 60).toLowerCase()];
+
+  let bizWhere = `WHERE ${LIVE} ${blockedSearch.sql}`;
+  const bizParams: (string | number)[] = [...blockedSearch.params];
+  const bizClauses = termClauses(effective, ['b.name', 'b.about', 'b.city']);
+  if (bizClauses.sql) { bizWhere += ` AND ${bizClauses.sql}`; bizParams.push(...bizClauses.params); }
   if (city) { bizWhere += ` AND LOWER(b.city) = LOWER(?)`; bizParams.push(city); }
+  const bizScore = relevanceSql('b.name', 'b.about', effective);
   const businesses = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.city FROM businesses b ${bizWhere} LIMIT 8`
-  ).bind(...bizParams).all()).results as Record<string, unknown>[];
-  let itemWhere = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND ${LIVE} AND (l.name LIKE ? OR l.description LIKE ?)${blockedSearch.sql}`;
-  const itemParams: (string | number)[] = [like, like, ...blockedSearch.params];
+    `SELECT b.id, b.name, b.slug, b.city FROM businesses b ${bizWhere}
+     ORDER BY ${bizScore.sql} DESC, b.is_featured DESC, b.name ASC LIMIT 8`
+     // The score's placeholders are in ORDER BY, so they bind after the WHERE ones.
+  ).bind(...bizParams, ...bizScore.params).all()).results as Record<string, unknown>[];
+
+  let itemWhere = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND ${LIVE}${blockedSearch.sql}`;
+  const itemParams: (string | number)[] = [...blockedSearch.params];
+  // A listing matches on its own name or description, or on the name of the
+  // store selling it — buyers search "Zara" as often as they search "gown".
+  const itemClauses = termClauses(effective, ['l.name', 'l.description', 'b.name']);
+  if (itemClauses.sql) { itemWhere += ` AND ${itemClauses.sql}`; itemParams.push(...itemClauses.params); }
   if (city) { itemWhere += ` AND LOWER(b.city) = LOWER(?)`; itemParams.push(city); }
+  const itemScore = relevanceSql('l.name', 'l.description', effective);
   const items = (await env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.price, l.price_type, t.url_segment, b.slug AS biz_slug, b.name AS biz_name, b.city,
             (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
@@ -593,8 +642,8 @@ app.get('/search', async (c) => {
             (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
      ${itemWhere}
-     ORDER BY l.featured DESC, l.published_at DESC LIMIT 24`
-  ).bind(...itemParams).all()).results as Record<string, unknown>[];
+     ORDER BY ${itemScore.sql} DESC, l.featured DESC, l.published_at DESC LIMIT 24`
+  ).bind(...itemParams, ...itemScore.params).all()).results as Record<string, unknown>[];
   const itemsOut = items.map((it) => {
     const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; url_segment: string; biz_slug: string; biz_name: string; city: string | null; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
     return {
@@ -605,7 +654,7 @@ app.get('/search', async (c) => {
   });
   let suggestions: { label: string; href: string }[] = [];
   if (businesses.length + itemsOut.length === 0 && q.length >= 2) {
-    const stem = `${q.slice(0, 4)}%`;
+    const stem = `${suggestionStem(q)}%`;
     const cats = (await env.DB.prepare(`SELECT name, slug FROM categories WHERE is_active = 1 AND deleted_at IS NULL AND name LIKE ? LIMIT 4`).bind(stem).all()).results as { name: string; slug: string }[];
     suggestions = cats.map((cat) => ({ label: cat.name, href: `/categories/${cat.slug}` }));
   }

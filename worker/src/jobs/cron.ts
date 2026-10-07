@@ -5,6 +5,9 @@ import { pruneRateLimits } from '../lib/ratelimit';
 import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from '../lib/premium';
 import { restoreCredit } from '../lib/referral';
 import { entitledBusinessIds, syncEntitlement } from '../lib/entitlement';
+import { reportSlaSweep } from '../lib/moderation';
+import { reconcilePayments } from '../lib/reconcile';
+import { ALERT_RULES, shouldAlert, markAlertSent, pruneErrorLog } from '../lib/errorlog';
 
 /** Hourly maintenance job (Cloudflare Cron Trigger). Idempotent. */
 export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string, number> }> {
@@ -153,8 +156,56 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
     summary.abandoned_payments = (summary.abandoned_payments || 0) + 1;
   }
 
-  // 12. Housekeeping
+  // 12. Trust & safety: warn on reports nearing their 48-hour SLA and flag the
+  //     ones that have missed it. A marketplace is judged by how fast it answers
+  //     a report, not by how many it receives.
+  const sla = await reportSlaSweep(env);
+  summary.report_sla_warned = sla.warned;
+  summary.report_sla_breached = sla.breached;
+
+  // 13. Yesterday's money, checked against Paystack. Silent when it agrees;
+  //     a notification per discrepancy when it does not.
+  try {
+    const recon = await reconcilePayments(env, { from: todayStr(), to: todayStr() });
+    if (recon.available && recon.discrepancies.length > 0) {
+      const admins = (await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`).all()).results as { id: number }[];
+      const money = recon.discrepancies.filter((d) => d.kind !== 'missing_on_paystack');
+      for (const a of admins) {
+        await notify(env, {
+          userId: a.id,
+          type: 'reconciliation.mismatch',
+          title: `${recon.discrepancies.length} payment mismatch(es) found`,
+          body: money.length
+            ? `${money.length} involve real money. Open Admin → Reconciliation.`
+            : 'Abandoned checkouts only — no money is missing.',
+          data: { date: todayStr() },
+        });
+      }
+      summary.reconciliation_mismatches = recon.discrepancies.length;
+    }
+  } catch (e) {
+    // Reconciliation must never take the hourly job down with it.
+    console.error('[cron] reconciliation failed', e);
+  }
+
+  // 14. Alert on error rates. One notification per bad hour, not one per error.
+  try {
+    for (const rule of ALERT_RULES) {
+      if (!(await shouldAlert(env, rule))) continue;
+      const admins = (await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`).all()).results as { id: number }[];
+      for (const a of admins) {
+        await notify(env, { userId: a.id, type: 'health.alert', title: rule.title, body: rule.body, data: { alert_key: rule.key } });
+      }
+      await markAlertSent(env, rule.key);
+      summary[`alert_${rule.key}`] = 1;
+    }
+  } catch (e) {
+    console.error('[cron] alerting failed', e);
+  }
+
+  // 15. Housekeeping
   await pruneRateLimits(env);
+  summary.error_log_pruned = await pruneErrorLog(env);
   await env.DB.prepare(`DELETE FROM upload_tokens WHERE expires_at < ? AND used_at IS NOT NULL`).bind(Math.floor(Date.now() / 1000) - 86400).run();
   await env.DB.prepare(`DELETE FROM sessions WHERE last_activity < ?`).bind(Math.floor(Date.now() / 1000) - 30 * 86400).run();
 

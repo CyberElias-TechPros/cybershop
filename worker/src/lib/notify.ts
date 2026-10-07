@@ -29,6 +29,7 @@ const EMAIL_TYPES = new Set([
   'thread.new',
   'review.new',
   'follow_up.due',
+  'report.resolved',
   'staff.joined',
 ]);
 

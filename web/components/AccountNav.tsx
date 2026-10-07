@@ -10,6 +10,7 @@ const LINKS = [
   { href: '/account/messages', label: 'Messages' },
   { href: '/account/alerts', label: 'Alerts' },
   { href: '/account/settings', label: 'Settings' },
+  { href: '/account/security', label: 'Security' },
 ];
 
 export default function AccountNav({

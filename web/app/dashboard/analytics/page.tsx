@@ -32,7 +32,8 @@ interface Analytics {
   best: { hour: number | null; weekday: number | null };
 }
 
-const RANGES = [7, 30, 90];
+const RANGES = [7, 30, 90, 365];
+const RANGE_LABEL: Record<number, string> = { 7: '7 days', 30: '30 days', 90: '90 days', 365: '12 months' };
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function n(v: number): string {
@@ -57,7 +58,10 @@ function hourLabel(h: number): string {
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ days?: string }> }) {
   const me = await requireVendor();
   const sp = await searchParams;
-  const days = RANGES.includes(Number(sp.days)) ? Number(sp.days) : 30;
+  // Any number of days is accepted, clamped server-side to 1–365; the chips are
+  // just the shortcuts people reach for.
+  const raw = Number(sp.days);
+  const days = Number.isFinite(raw) && raw >= 1 && raw <= 365 ? Math.floor(raw) : 30;
 
   let data: Analytics | null = null;
   let error = '';
@@ -80,10 +84,19 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
         <div className="chip-row" role="group" aria-label="Date range">
           {RANGES.map((d) => (
             <Link key={d} className={`chip${d === days ? ' on' : ''}`} href={`/dashboard/analytics?days=${d}`}>
-              {d} days
+              {RANGE_LABEL[d]}
             </Link>
           ))}
         </div>
+        <a
+          className="btn btn-ghost"
+          // Same-origin: the Next.js proxy carries the vendor's session cookie,
+          // so no token ever appears in the URL.
+          href={`/api/vendor/analytics?days=${days}&format=csv`}
+          download={`cybershop-analytics-${days}d.csv`}
+        >
+          Download CSV
+        </a>
       </div>
 
       {error && <div className="form-msg error">{error}</div>}

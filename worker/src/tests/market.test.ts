@@ -66,6 +66,53 @@ describe('classifieds feed + reports (Jiji-style, no checkout)', () => {
     expect(item.json.business.created_at).toBeTruthy();
   });
 
+  it('finds things however the buyer words it', async () => {
+    // The three failures of a plain LIKE '%q%': word order, plurals, and the
+    // right result buried under loose ones.
+    const v = await registerVendor('srch', 'Lagos');
+    await createItem(v.cookie, 'Ankara Gown', 1500000);
+    await createItem(v.cookie, 'Leather Bag', 900000);
+
+    const nameOf = (r: { json: any }) => (r.json.items as { name: string }[]).map((i) => i.name);
+
+    // 1. Words in the buyer's order, not the seller's.
+    const reversed = await api('/api/public/search?q=gown%20ankara');
+    expect(reversed.status).toBe(200);
+    expect(nameOf(reversed)).toContain('Ankara Gown');
+
+    // 2. A plural finds the singular (and vice versa).
+    const plural = await api('/api/public/search?q=gowns');
+    expect(nameOf(plural)).toContain('Ankara Gown');
+    const singular = await api('/api/public/search?q=bags');
+    expect(nameOf(singular)).toContain('Leather Bag');
+
+    // 3. It does not simply return everything.
+    const bagOnly = await api('/api/public/search?q=leather');
+    expect(nameOf(bagOnly)).toContain('Leather Bag');
+    expect(nameOf(bagOnly)).not.toContain('Ankara Gown');
+
+    // 4. The item that leads with the word outranks one that mentions it in
+    //    passing — otherwise the exact match is buried under loose ones.
+    await createItem(v.cookie, 'Gift box with a gown inside', 400000);
+    const ranked = nameOf(await api('/api/public/search?q=gown'));
+    expect(ranked.indexOf('Ankara Gown')).toBeGreaterThanOrEqual(0);
+    expect(ranked.indexOf('Ankara Gown')).toBeLessThan(ranked.indexOf('Gift box with a gown inside'));
+
+    // 5. Stopwords do not empty the result set.
+    const stop = await api('/api/public/search?q=the%20gown');
+    expect(nameOf(stop)).toContain('Ankara Gown');
+
+    // 6. Nonsense returns nothing rather than everything.
+    const none = await api('/api/public/search?q=zzzzzqqqq');
+    expect(none.status).toBe(200);
+    expect(nameOf(none)).toEqual([]);
+    expect(Array.isArray(none.json.suggestions)).toBe(true);
+
+    // 7. Too short a query is a no-op, not a table scan.
+    const tiny = await api('/api/public/search?q=a');
+    expect(tiny.json.total).toBe(0);
+  });
+
   it('accepts a guest report on a real listing and 404s a fake id', async () => {
     const v = await registerVendor('rep', 'Ikeja');
     const item = await createItem(v.cookie, 'Report Me Dress', 1200000);

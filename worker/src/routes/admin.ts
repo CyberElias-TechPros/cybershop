@@ -2,6 +2,10 @@ import { Hono, type Context } from 'hono';
 import type { Env } from '../config';
 import { requireAdmin, requireUser } from '../lib/auth';
 import { grantEntitlement, revokeEntitlement, setPlatformOwner, entitlementFor } from '../lib/entitlement';
+import { resolveReport, claimReport, slaFor, REPORT_OUTCOMES, REPORT_SLA_HOURS } from '../lib/moderation';
+import { reconcilePayments, reconciliationRows } from '../lib/reconcile';
+import { healthSnapshot, ALERT_RULES } from '../lib/errorlog';
+import { csvResponse } from '../lib/csv';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
 import { nowIso, clampInt } from '../lib/util';
 import { reqStr, optStr, reqInt, isHttpUrl } from '../lib/validate';
@@ -637,10 +641,39 @@ app.post('/listings/:id/archive', async (c) => {
 app.get('/reports', async (c) => {
   await requireAdmin(c.env, c);
   const status = c.req.query('status') || 'open';
+  // 'mine' is the queue an admin actually works: whatever is assigned to them,
+  // plus anything unassigned. Without it two admins pick up the same report.
+  const scope = c.req.query('scope') || 'all';
+  const admin = c.req.query('scope') === 'mine' ? await requireAdmin(c.env, c) : null;
+  let where = 'WHERE r.status = ?';
+  const params: (string | number)[] = [status];
+  if (scope === 'mine' && admin) {
+    where += ' AND (r.assignee_user_id = ? OR r.assignee_user_id IS NULL)';
+    params.push(admin.id);
+  }
   const rows = (await c.env.DB.prepare(
-    `SELECT r.*, u.email AS reporter_email FROM reports r LEFT JOIN users u ON u.id = r.reporter_user_id WHERE r.status = ? ORDER BY r.created_at DESC LIMIT 100`
-  ).bind(status).all()).results as Record<string, unknown>[];
-  return c.json({ ok: true, reports: rows });
+    `SELECT r.*, u.email AS reporter_email, a.email AS assignee_email,
+            b.name AS business_name, l.name AS listing_name
+     FROM reports r
+       LEFT JOIN users u ON u.id = r.reporter_user_id
+       LEFT JOIN users a ON a.id = r.assignee_user_id
+       -- A report on a listing is really a report on the store that owns it,
+       -- so both names resolve whatever was reported.
+       LEFT JOIN listings l ON l.id = CASE WHEN r.entity_type = 'listing' THEN r.entity_id END
+       LEFT JOIN businesses b ON b.id = COALESCE(l.business_id, CASE WHEN r.entity_type = 'business' THEN r.entity_id END)
+     ${where} ORDER BY COALESCE(r.sla_due_at, r.created_at) ASC LIMIT 100`
+  ).bind(...params).all()).results as Record<string, unknown>[];
+
+  // The SLA clock is computed here rather than in SQL so the UI never has to
+  // re-derive "how overdue is this" in three different places.
+  const reports = rows.map((r) => ({
+    ...r,
+    sla: slaFor(String(r.created_at ?? ''), (r.sla_due_at as string | null) ?? null),
+  }));
+  const counts = (await c.env.DB.prepare(
+    `SELECT status, COUNT(*) AS n FROM reports GROUP BY status`
+  ).all()).results as { status: string; n: number }[];
+  return c.json({ ok: true, reports, counts, sla_hours: REPORT_SLA_HOURS });
 });
 
 app.post('/reports', async (c) => {
@@ -656,16 +689,73 @@ app.post('/reports', async (c) => {
   return c.json({ ok: true, message: 'Thanks. Our team will review this.' });
 });
 
+app.post('/reports/:id/claim', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  await claimReport(c.env, id, admin.id);
+  await audit(c.env, { actor: admin, action: 'report.claim', entityType: 'report', entityId: id, ip: ip(c) });
+  return c.json({ ok: true });
+});
+
 app.post('/reports/:id/resolve', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
   const body = await c.req.json().catch(() => null);
   const status = body?.status;
   if (!['resolved', 'dismissed', 'investigating'].includes(String(status))) throw badRequest('Invalid status.');
-  const res = await c.env.DB.prepare('UPDATE reports SET status = ?, resolved_by = ?, resolution_note = ? WHERE id = ?').bind(status, admin.id, optStr(body?.note, 500), id).run();
-  if (res.meta.changes === 0) throw notFound('Report not found.');
-  await audit(c.env, { actor: admin, action: 'report.resolve', entityType: 'report', entityId: id, ip: ip(c), meta: { status } });
-  return c.json({ ok: true });
+  const outcome = String(body?.outcome || (status === 'dismissed' ? 'unfounded' : 'no_action'));
+  if (!REPORT_OUTCOMES.includes(outcome as (typeof REPORT_OUTCOMES)[number])) throw badRequest('Invalid outcome.');
+
+  if (status === 'investigating') {
+    await claimReport(c.env, id, admin.id);
+    await audit(c.env, { actor: admin, action: 'report.triage', entityType: 'report', entityId: id, ip: ip(c) });
+    return c.json({ ok: true });
+  }
+
+  const { acted } = await resolveReport(c.env, {
+    reportId: id,
+    adminId: admin.id,
+    status: status as 'resolved' | 'dismissed',
+    outcome: outcome as (typeof REPORT_OUTCOMES)[number],
+    note: optStr(body?.note, 500) || null,
+    // Default on: closing a report without doing the thing is worse than
+    // leaving it open, because it looks handled.
+    act: body?.act !== false,
+  });
+  return c.json({ ok: true, acted });
+});
+
+// ------------------------------------------------------------- reconciliation
+
+/**
+ * Admin → Reconciliation: compare what we recorded against what Paystack
+ * actually settled. `?format=csv` returns the same thing as a spreadsheet.
+ */
+app.get('/reconciliation', async (c) => {
+  await requireAdmin(c.env, c);
+  const to = c.req.query('to')?.slice(0, 10) || undefined;
+  const from = c.req.query('from')?.slice(0, 10) || undefined;
+  const r = await reconcilePayments(c.env, { from, to });
+  if (c.req.query('format') === 'csv') {
+    return csvResponse(`cybershop-reconciliation-${r.from}_${r.to}.csv`, reconciliationRows(r));
+  }
+  return c.json({ ok: true, reconciliation: r });
+});
+
+/**
+ * Admin → Health: what has been going wrong, and where.
+ *
+ * Every 5xx is recorded (see lib/errorlog.ts). This is the screen that turns
+ * "a buyer said it was broken" into "this route, this many times, since then".
+ */
+app.get('/health', async (c) => {
+  await requireAdmin(c.env, c);
+  const hours = Math.min(720, Math.max(1, Number(c.req.query('hours') || 24) || 24));
+  const health = await healthSnapshot(c.env, hours);
+  const recent = (await c.env.DB.prepare(
+    `SELECT id, scope, route, status, code, message, created_at FROM error_log ORDER BY id DESC LIMIT 50`
+  ).all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, health, recent, alert_rules: ALERT_RULES.map((r) => ({ key: r.key, threshold: r.threshold, window_minutes: r.windowMinutes })) });
 });
 
 // ---------------------------------------------------------------- audit & settings

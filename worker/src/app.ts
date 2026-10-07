@@ -18,6 +18,7 @@ import sitemapRoutes from './routes/sitemap';
 import qrRoutes from './routes/qr';
 import { runHourlyJobs } from './jobs/cron';
 import { reportEnv } from './lib/envcheck';
+import { logError } from './lib/errorlog';
 
 /**
  * Routes open to the browser or external services (no internal secret required):
@@ -86,9 +87,26 @@ export function buildApp(): Hono<{ Bindings: Env }> {
 
   app.onError((err, c) => {
     if (err instanceof AppError) {
+      // 5xx are the ones worth counting: a 400 is a user mistake, a 500 is ours.
+      if (err.status >= 500) {
+        c.executionCtx?.waitUntil?.(
+          logError(c.env, { scope: 'api', route: c.req.path, status: err.status, code: err.code, message: err.message })
+        );
+      }
       return c.json({ ok: false, error: { code: err.code, message: err.message, details: err.details } }, err.status as 200);
     }
     console.error('[api error]', err);
+    // An unhandled throw is the only kind of error we can genuinely be blind to,
+    // so it is the one that most needs recording.
+    c.executionCtx?.waitUntil?.(
+      logError(c.env, {
+        scope: 'api',
+        route: c.req.path,
+        status: 500,
+        code: 'internal_error',
+        message: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+      })
+    );
     return c.json({ ok: false, error: { code: 'internal_error', message: errorMessage(err) } }, 500);
   });
 

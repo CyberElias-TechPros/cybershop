@@ -35,12 +35,14 @@ const VENDOR_LINKS: NavLink[] = [
   { href: '/dashboard/domain', icon: '🌐', label: 'Domain' },
   { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing' },
   { href: '/dashboard/settings', icon: '⚙️', label: 'Settings' },
+  { href: '/account/security', icon: '🔐', label: 'Security' },
 ];
 
 const ADMIN_LINKS: NavLink[] = [
   { href: '/admin', icon: '📊', label: 'Overview', primary: true },
   { href: '/admin/vendors', icon: '🏢', label: 'Vendors', primary: true },
   { href: '/admin/payments', icon: '💳', label: 'Payments', primary: true },
+  { href: '/admin/reconciliation', icon: '🧾', label: 'Reconciliation' },
   { href: '/admin/listings', icon: '🏷️', label: 'Listings', primary: true },
   { href: '/admin/reports', icon: '🚩', label: 'Reports', primary: true },
   { href: '/admin/users', icon: '👥', label: 'Users' },
@@ -51,8 +53,10 @@ const ADMIN_LINKS: NavLink[] = [
   { href: '/admin/domains', icon: '🌐', label: 'Domains' },
   { href: '/admin/verifications', icon: '🪪', label: 'Verified ID' },
   { href: '/admin/audit', icon: '📜', label: 'Audit log' },
+  { href: '/admin/health', icon: '🩺', label: 'Health' },
   { href: '/admin/templates', icon: '✉️', label: 'WA templates' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings' },
+  { href: '/account/security', icon: '🔐', label: 'My security' },
 ];
 
 /**

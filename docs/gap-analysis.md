@@ -14,7 +14,15 @@ self-checks, security headers, a runbook, backups, share cards.
 
 Everything in "Fixed in this change" below is done and tested — nine items,
 including the two that were blocking a live launch. The "Next" section is what I
-would build after this, in the order I would build it.
+would have built after this.
+
+**That section is now empty.** Every P1 and P2 item in it — reports with a
+workflow, payment reconciliation, admin 2FA, admin tables on phones, analytics
+export, search relevance, alerting, nested interactive elements, notification
+preferences, device management and the media gateway — has since been built.
+Each one is recorded below with what "done" means. What remains is the P3 list
+at the bottom, which is a set of decisions not to build, and the standing
+caveat that nothing here has ever been looked at in a browser.
 
 ---
 
@@ -31,6 +39,11 @@ claims come from reading CSS and the DOM that the server returns, not from
 looking at a rendered page. Two consequences: the responsive findings in
 `usability-audit.md` still need a human with a phone, and the new share cards
 have been confirmed to be valid 1200×630 PNGs but nobody has *looked* at one.
+
+Verification at the end of the work: 131 worker tests across 17 files,
+`tsc --noEmit` clean in both packages, `next build` clean, 56/56 routes
+returning 200 against a live worker, and a CI check that fails the build if an
+interactive element is ever nested inside another again.
 
 ---
 

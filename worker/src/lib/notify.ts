@@ -1,6 +1,7 @@
 import type { Env } from '../config';
 import { nowIso } from './util';
 import { sendEmail, mailHtml, mailConfigured } from './mail';
+import { emailAllowed } from './notifyprefs';
 
 /**
  * Types that mirror to email. Everything a user must not miss — money,
@@ -66,6 +67,9 @@ export async function notify(
 
   if (!mailConfigured(env) || !EMAIL_TYPES.has(args.type)) return;
   try {
+    // Per-category opt-out. Checked before the address is looked up, because a
+    // muted category should cost nothing at all.
+    if (!(await emailAllowed(env, args.userId, args.type))) return;
     const user = (await env.DB.prepare('SELECT email FROM users WHERE id = ? AND deleted_at IS NULL').bind(args.userId).first()) as { email: string } | null;
     if (!user?.email) return;
     const body = args.body ?? '';

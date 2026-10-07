@@ -173,9 +173,11 @@ lives in the code; the table records what "done" means for each one.
 | 7 | **No alerting** | `worker/src/lib/errorlog.ts`. Every 5xx and every unhandled throw is written to `error_log` with its route (scrubbed of keys and tokens). Two rules in `ALERT_RULES` watch the error rate and payment failures; `alert_state` guarantees one notification per bad hour, not one per error. Admin → Health shows the counts, the top routes and the last 50 entries. |
 | 10 | **Session/device management** | `worker/src/lib/session.ts`. Sessions record creation time, a trimmed user-agent and a **hash** of the IP (never the IP — it is personal data). Settings → Security lists every device as "Chrome on Windows", flags the current one, and can sign out one or all others. |
 
-Still open, in order: items 8 (nested interactive elements on listing cards),
-9 (vendor notification preferences) and 11 (media gateway untested end to
-end).
+| 8 | **Nested interactive elements** on listing cards — carried over from round 1. | Verified clean: `scripts/web-audit/jsx-nesting.mjs` scans every `.tsx` for an `<a>` or `<button>` inside another and exits non-zero on a hit. It runs in CI, so it cannot quietly come back. `ItemCard` uses the stretched-link pattern — the card is an `<article>`, the anchor covers it via `::after { inset: 0 }`, and the cart button is a sibling at `z-index: 2`. |
+| 9 | **No vendor notification preferences** — lead alerts were all-or-nothing. | `worker/src/lib/notifyprefs.ts` + `migrations/0013`. Seven categories (leads, money, account, reviews, reports, saved searches, security), each with its own email switch. Defaults are deliberately quiet: money, access and leads are on; everything else is opt-in. In-app is the record of what happened and is never switchable. Settings → Notifications. |
+| 11 | **Media gateway untested end to end** — `MEDIA_DRIVER=gateway` is the documented production path and only D1 had ever been run. | `src/tests/media-gateway.test.ts`, 12 tests. The PHP upload script is not this repo's to test, but the whole contract around it is: token issuance is business- and folder-scoped and expires in ten minutes; finalize refuses a forged signature, a rewritten payload, a spent token, a file outside the authorised folder, a path that climbs out of it, a non-image MIME, an oversized file, and a token belonging to another vendor. |
+
+That closes the P1 and P2 backlog. Nothing in either table is outstanding.
 
 ---
 
@@ -197,9 +199,8 @@ record of what the backlog was.)*
 
 | # | Gap | Why | Effort |
 |---|---|---|---|
-| 8 | **`<button>` nested inside `<a class="card">`** on listing cards — invalid HTML (carried over from round 1). | Screen readers and keyboard users get two overlapping targets. | 0.5 day |
-| 9 | **No vendor notification preferences.** Lead alerts are all-or-nothing. | Vendors who can't tune it mute it, and then churn. | 1 day |
-| 11 | **Media gateway is untested end to end.** `MEDIA_DRIVER=gateway` is written but only D1 is exercised in tests. | The documented production path is the one nobody has run. | 1 day |
+*(These three are done too — see the table above. The P1 and P2 backlog is
+closed.)*
 
 ### P3 — deliberately not built, and why
 

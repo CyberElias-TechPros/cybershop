@@ -1493,3 +1493,70 @@ ol.safety-list {
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
+
+/* §20 · Notification preferences (Settings → Notifications) */
+.pref-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 2px;
+}
+.pref-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pref-list li:last-child { border-bottom: 0; }
+.pref-copy { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.pref-copy span { font-size: 0.83rem; color: var(--muted); }
+
+/* A real switch, not a bare checkbox: the tap target is the whole row. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 6px;
+  border-radius: 999px;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.switch-track {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  transition: background 0.18s var(--ease);
+}
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.18s var(--ease), background 0.18s var(--ease);
+}
+.switch input:checked + .switch-track { background: var(--em); border-color: var(--em); }
+.switch input:checked + .switch-track::after { transform: translateX(18px); background: #04150d; }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--em); outline-offset: 3px; }
+.switch-label { font-size: 0.82rem; color: var(--muted); }
+.switch input:checked ~ .switch-label { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-track::after { transition: none; }
+}

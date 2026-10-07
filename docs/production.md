@@ -251,21 +251,31 @@ without an off-box copy is not a backup.
 |---|---|
 | Approve a bank transfer | Admin → Payments |
 | Verify a vendor's ID | Admin → Verifications |
-| Take down a listing / act on a report | Admin → Reports, Admin → Listings |
+| Take down a listing / act on a report | Admin → Reports — pick an outcome; the action happens with the decision |
 | Suspend a store | Admin → Vendors → Suspend |
 | Grant a free plan | Admin → Vendors → Grant plan |
 | Edit the safety notice | Admin → Settings → Trust & safety notice |
 | Extend/cancel a subscription | Admin → Subscriptions |
 | See everything an admin did | Admin → Audit log |
+| See what has been failing | Admin → Health |
+| Check the books against Paystack | Admin → Reconciliation |
 
 | Check | How often | How |
 |---|---|---|
 | Config is healthy | after every deploy | `curl -s <worker>/healthz \| jq .config` |
 | Failed payments | daily | Admin → Payments (filter `failed`) |
-| Reports queue | daily | Admin → Reports |
+| Reports queue | daily | Admin → Reports (anything breached is flagged in red) |
 | Pending verifications | daily | Admin → Verifications |
+| Server errors | daily | Admin → Health (a notification is already sent if the rate spikes) |
+| Money matches Paystack | weekly, and after any payment incident | Admin → Reconciliation |
 | Database dump | daily | `./scripts/backup-d1.sh` |
 | Worker errors | ongoing | Cloudflare dashboard → Workers → Logs (observability is enabled) |
+
+Two of these run themselves. The hourly cron reconciles yesterday's payments
+and notifies every admin if anything disagrees, and it watches the error rate
+and alerts once per bad hour rather than once per error — an alert you learn to
+ignore is worse than no alert. Both are idempotent, so a missed hour is not a
+gap, and neither can take the hourly job down with it.
 
 ---
 
@@ -288,6 +298,13 @@ Walk these once on production with real keys, end to end:
    owner's store did **not** move.
 6. **Share** — paste a listing link into WhatsApp and confirm the card, title
    and price render.
+7. **Second factor** — with `REQUIRE_ADMIN_2FA=1`, sign in as each admin and
+   confirm they are sent to Settings → Security to enrol before they can reach
+   the console. Have one of them lose their phone on purpose and sign back in
+   with a recovery code.
+8. **Reports end to end** — as a buyer, report a listing. As an admin, claim
+   it, close it as "Remove the listing", and confirm the buyer got told *and*
+   the listing came down. Then check the SLA clock on a fresh report reads 48h.
 
 ---
 
@@ -305,7 +322,13 @@ Walk these once on production with real keys, end to end:
 
 `APP_URL` · `WEB_ORIGIN` · `SESSION_SECURE` · `MEDIA_DRIVER` ·
 `MEDIA_BASE_URL` · `GATEWAY_PUBLIC_URL` · `PAYSTACK_MOCK` ·
-`PAYSTACK_WEBHOOK_URL`
+`PAYSTACK_WEBHOOK_URL` · `REQUIRE_ADMIN_2FA`
+
+`REQUIRE_ADMIN_2FA` is off by default so a fresh install is not locked out on
+day one. Set it to `1` once **every** admin has enrolled — an admin without a
+second factor is then refused the console entirely until they set one up. An
+admin approves bank transfers, verifies identity documents, suspends stores and
+grants plans; a password alone should not be that powerful.
 
 ### Vercel env vars
 

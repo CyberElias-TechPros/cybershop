@@ -285,25 +285,63 @@ but it stayed in the tab order — keyboard users tabbed into an off-screen "Cha
   the first HTML, menu with 13 links + close button + `role="dialog"`,
   `main[tabindex="-1"]`, no skeleton on public pages.
 
-## 3. Not changed — recommended next (with reasons)
+## 3. Recommended next — status
 
-These are real gaps; each needs either a visual pass or a product decision, and this
-sandbox has no browser to verify appearance in.
+Originally a list of gaps with reasons for deferring each one. Most are now
+closed, so this is a status table; the ones that are not explain why.
 
-| # | Gap | Recommendation | Why it wasn't done here |
+| # | Gap | Recommendation | Status |
 |---|---|---|---|
-| R1 | `<button>` (add to cart) nested inside `<a class="card">` in `ItemCard`/`ListingCard` — invalid HTML; screen readers expose one or the other, and VoiceOver on iOS often cannot activate the inner control | Stretched-link pattern: card becomes a `div`, the anchor covers it via `::after`, the button is a sibling | Restructures three card components and their CSS; needs eyes on the result |
-| R2 | `Fraunces.ttf` is 352KB and preloaded on every page; `icon-512.png` is 217KB | Convert to woff2 + latin-subset (≈ −60%), compress the icon, add a `maskable` icon for Android | Needs a font toolchain and a visual check of the display face |
-| R3 | `globals.css` (80KB) + `cine.css` (44KB) ship to every route, including the dashboard | Split workbench-only CSS (dash/admin tables, onboarding, auth) into segment stylesheets | Large mechanical refactor; worth doing with a bundle budget in CI |
-| R4 | Every public page is `force-dynamic` + `no-store`: one Worker round-trip per view, zero CDN cache | `unstable_cache`/ISR 30–60s for home, categories, businesses; SWR for listings — the single biggest TTFB win available | Product decision: how stale may the market be? |
-| R5 | Search has no typeahead, no recent searches, no "did you mean"; a 1-character query silently asks for more | Suggestion endpoint + recent-search chips (localStorage) | New API surface |
-| R6 | No visible affordance when `.main-nav` overflows | Edge fade/mask, or a "More categories" entry point | Cosmetic; the packing fix removed the overflow at common widths |
-| R7 | `manifest.ts` exists but there is no service worker — a failed navigation on a flaky network shows the browser's own error page | Minimal offline shell + retry | PWA was scoped to P3 in `docs/feature-matrix.md` |
-| R8 | The custom cursor removes native affordances (grab/pointer/text) and doubles pointer work | Consider dropping it; the hover ring already communicates state | Taste call for the art direction |
-| R9 | The 404 page has no search field — a dead end for a mistyped URL | Add `SearchForm` + popular categories | Trivial, but changes a designed page |
-| R10 | No `aria-live` feedback when filters/pagination replace a result list | Announce "N results" on change | Needs a decision on verbosity |
-| R11 | Long legal pages (terms/privacy) have no in-page navigation | Sticky section index | Content/design work |
-| R12 | Reel drag captures the pointer on `pointerdown` even when it starts on a card link | Capture after a small drag threshold | Behavioural tweak; current click-suppression already prevents accidental navigation |
+| R1 | `<button>` nested inside `<a class="card">` in `ItemCard`/`ListingCard` — invalid HTML, and VoiceOver on iOS often cannot reach the inner control | Stretched-link pattern | **Done.** Cards are no longer nested. `scripts/web-audit/jsx-nesting.mjs` scans every page and component and fails CI on any interactive element inside another; 158 files clean |
+| R2 | `Fraunces.ttf` is 352KB and preloaded on every page; `icon-512.png` is 217KB | woff2 + subset; compress the icon; add a maskable icon | **Done.** Font 352KB → 104KB by keeping the `wght` and `opsz` axes and pinning `SOFT`/`WONK` to the values they already sat at — no visual change. Glyph coverage was left whole (subsetting saved 1.4KB and dropped the minus sign). Icons 240KB → 95KB at PSNR 44dB. A maskable icon was already declared in `app/manifest.ts` |
+| R3 | CSS (125KB raw, 27KB gzip) ships to every route including the dashboard | Split workbench-only CSS into segment stylesheets | **Budget only — the split is not safe here.** See the note below |
+| R4 | Every public page is `force-dynamic`: one Worker round-trip per view, no reuse | Cache the browse surfaces | **Done.** Home, the market feed, the directory and category pages reuse an upstream response for 60s (300s for taxonomies) — but only for anonymous visitors. See the note below |
+| R5 | Search has no typeahead, no recent searches, no "did you mean" | Suggestion endpoint + recent-search chips | **Was already done.** `components/SearchForm.tsx` has debounced typeahead against `/api/public/suggest` and recent searches in `localStorage` |
+| R6 | No visible affordance when `.main-nav` overflows | Edge fade, or a "More categories" entry point | **Done.** A mask fades the right edge, with `scroll-padding-inline: 28px` so a keyboard-focused link never lands inside the faded band |
+| R7 | `manifest.ts` exists but there is no service worker, so a failed navigation shows the browser's error page | Minimal offline shell | **Was already done.** `public/sw.js` serves `public/offline.html` on a failed navigation; registered in production only by `components/OfflineSW.tsx` |
+| R8 | The custom cursor removes native affordances (grab/pointer/text) | Drop it, or restore the native cursors | **Done.** The ring stays as atmosphere; links, buttons, switches and selects get `pointer`, the reel gets `grab`/`grabbing`, disabled controls get `not-allowed` |
+| R9 | The 404 page has no search field — a dead end for a mistyped URL | Add a search field | **Was already done.** `app/not-found.tsx` renders `<SearchForm big />` |
+| R10 | No `aria-live` feedback when filters or pagination replace a result list | Announce "N results" on change | **Done.** `components/ResponsiveTables.tsx` watches each workbench table's row count and announces it politely; the visible counts that change under the user's fingers carry `role="status"` |
+| R11 | Long legal pages have no in-page navigation | Sticky section index | **Done.** `components/PageNav.tsx` — a server-rendered contents list on terms, privacy and safety, labels read from the `<h2>` elements they link to |
+| R12 | Reel drag captures the pointer on `pointerdown`, even when it starts on a card link | Capture after a small drag threshold | **Done.** Capture is deferred until the pointer has moved 6px, so a tap is left to the browser and opens the card |
+
+### R3 — why the CSS is not split
+
+The budget is in place (`scripts/web-audit/css-budget.mjs`, wired into CI, 32KB
+gzip per route against 26.9KB today), but the split itself is not, because the
+mechanism does not work in this app.
+
+Importing a stylesheet from a nested layout or page does not drop it into that
+route — Next builds the chunk, lists it in `app-build-manifest.json`, and then
+never emits the `<link>`. The styles are silently absent. Verified on a static
+route (`/safety`) and a dynamic one (`/admin`), with a probe rule that ended up
+in its own 31-byte file, referenced by the manifest, and loaded by nothing.
+
+So moving the workbench rules out of `design-system.css` would have shipped a
+dashboard with no styles and no error anywhere. The finding is recorded here so
+nobody tries it again without re-testing.
+
+What that leaves: the dashboard really does load 27KB of CSS it barely uses,
+and the only safe lever on that number today is deleting or tightening rules
+rather than moving them. The CI budget stops it growing.
+
+### R4 — why only anonymous visitors are cached
+
+The public endpoints run a block filter that reads the session and removes any
+business the signed-in visitor has blocked. Caching a page built from that
+response is not merely a leak of one visitor's block list — it shows a blocked
+seller back to the person who blocked them. On a marketplace where people block
+for harassment, that is the one failure this platform cannot have.
+
+So `api()` refuses to cache any request carrying a session cookie. Signed-in
+visitors always hit the Worker and always get their own view; anonymous
+visitors, who are most of the traffic on a public market, stop waiting on the
+upstream entirely. Measured: three signed-in views of `/` write zero cache
+entries, five anonymous views write one and reuse it four times.
+
+Search is untouched and stays live, as do the storefront and item pages — those
+two record `storefront_view` and `item_view`, and caching them would quietly
+deflate every vendor's analytics.
 
 ## 4. Suggested verification pass (needs a browser)
 
@@ -472,13 +510,21 @@ override (the one remaining hit is an identical value), and `css-cascade.mjs`
 confirms the intended winners. `tsc --noEmit` clean, `next build` clean,
 Worker suite 56/56.
 
-### 5.7 Still recommended (needs a browser to finish)
+### 5.7 — closed
 
-- **R1** (round 1) still stands: `<button>` nested inside `<a class="card">` in
-  `ItemCard`/`ListingCard` is invalid HTML and VoiceOver on iOS often cannot
-  reach the inner control.
-- The admin tables remain horizontal scrollers below ~640px. Converting them to
-  stacked record cards (`data-label` on each cell) would beat scrolling, but it
-  touches every table in the console.
-- The workbench nav on a tablet (861–1024px) is a sidebar; the phone chip
-  treatment may be preferable there too once someone can look at it.
+- **R1 nesting** — closed, and guarded against coming back by
+  `scripts/web-audit/jsx-nesting.mjs` in CI.
+- **Admin tables below ~640px** — closed. Below 560px of content width a row
+  becomes a stacked record card with its column heading beside each value; the
+  headings are copied off the table's own `<th>` elements at runtime by
+  `components/ResponsiveTables.tsx`, so adding a column cannot desynchronise
+  them. Between 560px and 700px the first column is pinned instead. Both are
+  *container* queries keyed to `.dash-main`, because at a 900px viewport the
+  248px sidebar leaves the content only ~590px wide and a viewport breakpoint
+  would have sat still while the table overflowed.
+- **The workbench nav on a tablet (861–1024px)** — kept as a sidebar. At 1024px
+  the sidebar still leaves ~712px of content, which is fine; the problem band
+  was 861–950px, and that is what the container queries above fix. Switching to
+  the chip treatment at that width would have spent a lot of vertical space on
+  fifteen destinations to solve a problem that was really about table width.
+

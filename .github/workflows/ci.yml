@@ -49,3 +49,5 @@ jobs:
       - name: Production build
         working-directory: web
         run: npm run build
+      - name: Audit (CSS shipped to every route must stay within budget)
+        run: node scripts/web-audit/css-budget.mjs web

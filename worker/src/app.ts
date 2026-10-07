@@ -17,6 +17,7 @@ import mediaFileRoutes from './routes/mediafile';
 import sitemapRoutes from './routes/sitemap';
 import qrRoutes from './routes/qr';
 import { runHourlyJobs } from './jobs/cron';
+import { reportEnv } from './lib/envcheck';
 
 /**
  * Routes open to the browser or external services (no internal secret required):
@@ -48,7 +49,17 @@ export function buildApp(): Hono<{ Bindings: Env }> {
     await next();
   });
 
-  app.get('/healthz', (c) => c.json({ ok: true, service: 'cybershop-api', time: new Date().toISOString() }));
+  app.get('/healthz', (c) => {
+    const r = reportEnv(c.env);
+    return c.json({
+      ok: true,
+      service: 'cybershop-api',
+      time: new Date().toISOString(),
+      // Coarse on purpose: which settings are wrong, never their values. Lets a
+      // deploy check confirm the keys landed without leaking them to the world.
+      config: { ok: r.ok, production: r.production, missing: r.missing, unsafe: r.unsafe, warnings: r.warnings },
+    });
+  });
 
   app.route('/api/auth', authRoutes);
   app.route('/api/account', accountRoutes);

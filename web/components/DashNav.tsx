@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 
 interface Props {
   businessName: string;
@@ -9,14 +10,22 @@ interface Props {
   isAdmin?: boolean;
 }
 
-const VENDOR_LINKS = [
-  { href: '/dashboard', icon: '📊', label: 'Overview' },
-  { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue' },
+interface NavLink {
+  href: string;
+  icon: string;
+  label: string;
+  /** Shown in the collapsed phone nav (the sections used every day). */
+  primary?: boolean;
+}
+
+const VENDOR_LINKS: NavLink[] = [
+  { href: '/dashboard', icon: '📊', label: 'Overview', primary: true },
+  { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue', primary: true },
+  { href: '/dashboard/leads', icon: '💬', label: 'Leads', primary: true },
+  { href: '/dashboard/inbox', icon: '📥', label: 'Inbox', primary: true },
+  { href: '/dashboard/media', icon: '🖼️', label: 'Media', primary: true },
   { href: '/dashboard/offers', icon: '🎁', label: 'Offers' },
   { href: '/dashboard/reviews', icon: '★', label: 'Reviews' },
-  { href: '/dashboard/media', icon: '🖼️', label: 'Media' },
-  { href: '/dashboard/leads', icon: '💬', label: 'Leads' },
-  { href: '/dashboard/inbox', icon: '📥', label: 'Inbox' },
   { href: '/dashboard/deposits', icon: '🔒', label: 'Deposits' },
   { href: '/dashboard/verification', icon: '🪪', label: 'Verification' },
   { href: '/dashboard/whatsapp', icon: '📱', label: 'WhatsApp' },
@@ -27,50 +36,74 @@ const VENDOR_LINKS = [
   { href: '/dashboard/settings', icon: '⚙️', label: 'Settings' },
 ];
 
-const ADMIN_LINKS = [
-  { href: '/admin', icon: '📊', label: 'Overview' },
-  { href: '/admin/vendors', icon: '🏢', label: 'Vendors' },
+const ADMIN_LINKS: NavLink[] = [
+  { href: '/admin', icon: '📊', label: 'Overview', primary: true },
+  { href: '/admin/vendors', icon: '🏢', label: 'Vendors', primary: true },
+  { href: '/admin/payments', icon: '💳', label: 'Payments', primary: true },
+  { href: '/admin/listings', icon: '🏷️', label: 'Listings', primary: true },
+  { href: '/admin/reports', icon: '🚩', label: 'Reports', primary: true },
   { href: '/admin/users', icon: '👥', label: 'Users' },
-  { href: '/admin/payments', icon: '💳', label: 'Payments' },
   { href: '/admin/categories', icon: '🗂️', label: 'Categories' },
   { href: '/admin/plans', icon: '🧩', label: 'Plans & Add-ons' },
   { href: '/admin/subscriptions', icon: '📅', label: 'Subscriptions' },
   { href: '/admin/reviews', icon: '★', label: 'Reviews' },
   { href: '/admin/domains', icon: '🌐', label: 'Domains' },
-  { href: '/admin/listings', icon: '🏷️', label: 'Listings' },
-  { href: '/admin/reports', icon: '🚩', label: 'Reports' },
   { href: '/admin/verifications', icon: '🪪', label: 'Verified ID' },
   { href: '/admin/audit', icon: '📜', label: 'Audit log' },
   { href: '/admin/templates', icon: '✉️', label: 'WA templates' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings' },
 ];
 
+/**
+ * Workbench navigation.
+ *
+ * The desktop shell is a plain sidebar. On a phone, fifteen links in a
+ * one-line horizontal scroller hid most of the workbench — you had to know a
+ * page existed and then swipe to find it. Below the shell breakpoint the links
+ * become chips that wrap: the five primary sections are always visible, and
+ * "More" reveals the rest in place.
+ */
 export default function DashNav({ businessName, unread, isAdmin }: Props) {
   const pathname = usePathname();
   const links = isAdmin ? ADMIN_LINKS : VENDOR_LINKS;
+  const [expanded, setExpanded] = useState(false);
+  const active = (href: string) => (href === '/dashboard' || href === '/admin' ? pathname === href : pathname.startsWith(href));
+  // The hidden section must never swallow the page the vendor is looking at.
+  const hiddenActive = links.some((l) => !l.primary && active(l.href));
+
   return (
-    <nav className="dash-nav" aria-label="Dashboard">
+    <nav className={`dash-nav${expanded ? ' is-expanded' : ''}`} aria-label="Dashboard">
       {!isAdmin && (
         <Link className="nav-brand" href="/dashboard">
           {businessName || 'My Store'}
         </Link>
       )}
-      {links.map((l) => {
-        const active = l.href === '/dashboard' ? pathname === '/dashboard' : pathname.startsWith(l.href);
-        return (
-          <Link key={l.href} href={l.href} className={active ? 'active' : ''}>
-            <span aria-hidden>{l.icon}</span>
-            {l.label}
-            {l.href === '/dashboard/leads' && unread > 0 && <span className="badge-count">{unread}</span>}
-          </Link>
-        );
-      })}
+      {links.map((l) => (
+        <Link
+          key={l.href}
+          href={l.href}
+          className={`${active(l.href) ? 'active' : ''}${l.primary ? '' : ' nav-more-item'}`}
+          aria-current={active(l.href) ? 'page' : undefined}
+        >
+          <span aria-hidden>{l.icon}</span>
+          {l.label}
+          {l.href === '/dashboard/leads' && unread > 0 && <span className="badge-count">{unread}</span>}
+        </Link>
+      ))}
       {!isAdmin && (
-        <Link href="/" className="" style={{ marginTop: 10 }}>
+        <Link href="/" className="nav-more-item">
           <span aria-hidden>🌐</span>
           View my store
         </Link>
       )}
+      <button
+        type="button"
+        className="nav-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+      >
+        {expanded ? '▲ Less' : `▼ More${hiddenActive ? ' •' : ''}`}
+      </button>
     </nav>
   );
 }

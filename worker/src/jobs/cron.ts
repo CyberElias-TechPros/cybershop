@@ -4,16 +4,27 @@ import { notify } from '../lib/notify';
 import { pruneRateLimits } from '../lib/ratelimit';
 import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from '../lib/premium';
 import { restoreCredit } from '../lib/referral';
+import { entitledBusinessIds, syncEntitlement } from '../lib/entitlement';
 
 /** Hourly maintenance job (Cloudflare Cron Trigger). Idempotent. */
 export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string, number> }> {
   const summary: Record<string, number> = {};
   const now = nowIso();
 
+  // 0. Stores on a granted plan (the platform owner's own store) are re-asserted
+  //    before anything else runs, so nothing below can expire, suspend or
+  //    downgrade them. A granted plan's subscription has expires_at = NULL,
+  //    which every sweep in this job already skips — this is the belt to that
+  //    braces: it also repairs the store if an admin suspended it by hand.
+  const entitled = await entitledBusinessIds(env);
+  for (const id of entitled) await syncEntitlement(env, id);
+  summary.entitlements_synced = entitled.length;
+
   // 1. Subscription expiry: active → expired (+7 day grace) → business 'expired'
   const expiring = (await env.DB.prepare(
     `SELECT s.id AS sub_id, s.business_id, s.expires_at FROM subscriptions s
-     WHERE s.status IN ('active','trialing') AND s.expires_at IS NOT NULL AND s.expires_at <= ?`
+     WHERE s.status IN ('active','trialing') AND s.expires_at IS NOT NULL AND s.expires_at <= ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(now).all()).results as { sub_id: number; business_id: number }[];
   for (const s of expiring) {
     const graceUntil = new Date(Date.now() + 7 * 86400_000).toISOString();
@@ -30,7 +41,8 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   const soonCutoff = new Date(Date.now() + 7 * 86400_000).toISOString();
   const soon = (await env.DB.prepare(
     `SELECT s.id AS sub_id, s.business_id FROM subscriptions s
-     WHERE s.status = 'active' AND s.expires_at IS NOT NULL AND s.expires_at <= ? AND s.expires_at > ?`
+     WHERE s.status = 'active' AND s.expires_at IS NOT NULL AND s.expires_at <= ? AND s.expires_at > ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(soonCutoff, now).all()).results as { sub_id: number; business_id: number }[];
   for (const s of soon) {
     await env.DB.prepare(`UPDATE subscriptions SET status = 'expiring' WHERE id = ? AND status = 'active'`).bind(s.sub_id).run();
@@ -45,7 +57,8 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   // 3. Grace period over → business suspended
   const graceOver = (await env.DB.prepare(
     `SELECT s.business_id, s.id AS sub_id FROM subscriptions s
-     WHERE s.status IN ('expired') AND s.grace_until IS NOT NULL AND s.grace_until <= ?`
+     WHERE s.status IN ('expired') AND s.grace_until IS NOT NULL AND s.grace_until <= ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(now).all()).results as { business_id: number; sub_id: number }[];
   for (const s of graceOver) {
     await env.DB.prepare(`UPDATE subscriptions SET status = 'grace' WHERE id = ?`).bind(s.sub_id).run();

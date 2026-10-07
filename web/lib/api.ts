@@ -11,6 +11,24 @@ export class ApiError extends Error {
 }
 
 /**
+ * Transient upstream failures worth retrying.
+ *
+ * This is the root cause of the "tap Dashboard, get an error screen, tap Try
+ * again, it works" bug: on Vercel the very first request of a cold serverless
+ * invocation races the Cloudflare Worker's cold start, and that race fails as
+ * a network error or a 5xx. Retrying inside the request (instead of making the
+ * visitor do it) removes the dead tap entirely.
+ */
+const RETRYABLE = new Set([408, 425, 429, 500, 502, 503, 504, 521, 522, 523, 524]);
+
+/** Per-attempt timeout. A hung Worker must not eat the visitor's page load. */
+const TIMEOUT_MS = Number(process.env.WORKER_TIMEOUT_MS ?? 8000);
+/** Total attempts for a read: 1 initial + 2 retries. */
+const ATTEMPTS = 3;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
  * Server-side fetch against the CyberShop API Worker.
  *
  * The Worker only trusts requests carrying the internal secret (it cannot be
@@ -23,17 +41,40 @@ export class ApiError extends Error {
  * was counted twice (and cost two Worker round-trips).
  */
 const request = cache(async <T,>(path: string, ip: string, cookie: string | null): Promise<T> => {
-  const res = await fetch(`${WORKER_URL}/api${path}`, {
-    cache: 'no-store',
-    headers: {
-      'content-type': 'application/json',
-      'x-internal-secret': WORKER_INTERNAL_SECRET,
-      'x-forwarded-for': ip,
-      ...(cookie ? { cookie } : {}),
-    },
-  });
-  if (res.status === 404) notFound();
-  if (!res.ok) {
+  const url = `${WORKER_URL}/api${path}`;
+  const headers: Record<string, string> = {
+    'content-type': 'application/json',
+    'x-internal-secret': WORKER_INTERNAL_SECRET,
+    'x-forwarded-for': ip,
+    ...(cookie ? { cookie } : {}),
+  };
+
+  let lastErr: unknown = null;
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        cache: 'no-store',
+        headers,
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+    } catch (e) {
+      // Network error / timeout — retryable.
+      lastErr = e;
+      if (attempt < ATTEMPTS) {
+        await sleep(120 * attempt);
+        continue;
+      }
+      throw new ApiError(503, 'The catalogue service is not answering. Please try again.');
+    }
+
+    if (res.status === 404) notFound();
+    if (res.ok) {
+      const j = (await res.json().catch(() => ({}))) as T & { ok?: boolean };
+      if (j && j.ok === false) throw new ApiError(res.status, 'API returned an error.');
+      return j;
+    }
+
     let message = `API error ${res.status}`;
     try {
       const j = (await res.json()) as { error?: { message?: string } };
@@ -41,11 +82,13 @@ const request = cache(async <T,>(path: string, ip: string, cookie: string | null
     } catch {
       /* non-JSON body */
     }
-    throw new ApiError(res.status, message);
+
+    const err = new ApiError(res.status, message);
+    lastErr = err;
+    if (!RETRYABLE.has(res.status) || attempt === ATTEMPTS) throw err;
+    await sleep(140 * attempt);
   }
-  const j = (await res.json()) as T & { ok?: boolean };
-  if (j && j.ok === false) throw new ApiError(res.status, 'API returned an error.');
-  return j;
+  throw lastErr instanceof Error ? lastErr : new ApiError(500, 'Unexpected API failure.');
 });
 
 export async function api<T>(path: string, opts: { ip?: string; cookie?: string | null } = {}): Promise<T> {

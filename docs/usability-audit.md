@@ -321,3 +321,164 @@ HTML. Before shipping, run one visual pass at 360×640, 390×844, 768×1024,
    the blackout lifts on return.
 6. Lighthouse mobile on `/` and on one item page (expect the biggest deltas from the
    particle field, the reveal blur and the hero stagger).
+
+---
+
+## 5. Round 2 — October 2026 (responsive gaps, store photos, trust, navigation)
+
+Date: 2026-10-06 · Scope: `web/` + `worker/` · Trigger: four reports from the
+operator — *"courses from the old flyer are stale"*, *"stores have no profile
+photo"*, *"tapping Dashboard shows 'the market is not available' until you press
+Try again"*, and *"check the mobile/tablet/desktop layout — I want everything
+reachable and a smoother UI/UX"*, plus a request for site-wide anti-scam
+disclaimers.
+
+**Method.** Same as round 1 (no Chromium in the sandbox): the stack was run
+locally, every route was rendered and inspected, and the CSS was verified with
+`scripts/web-audit/dead-overrides.mjs` (overrides that can never win) and
+`css-cascade.mjs` (which declaration actually wins). The Worker suite
+(`npm test`, 56 tests) and `next build` were run before and after.
+
+### 5.1 The catalogue — 13 current Cyber Elias Academy courses
+
+`scripts/seed-demo.sh` carried ten courses transcribed from an older CEA flyer
+(₦15k–₦30k, including WordPress and Python). The academy now publishes **13
+core short courses** with different fees and durations, so the seed was
+rewritten against the current course list and made convergent:
+
+| # | Course | Fee | Duration | Sessions | Level |
+|---|---|---|---|---|---|
+| 1 | Microsoft Office | ₦30,000 | 3 weeks | 6 · 2/week | Absolute beginner |
+| 2 | Typing & Computer Basics | ₦20,000 | 2 weeks | 4 · 2/week | Absolute beginner |
+| 3 | Graphic Design | ₦40,000 | 4 weeks | 8 · 2/week | Beginner |
+| 4 | Web Design | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 5 | Digital Marketing | ₦40,000 | 4 weeks | 8 · 2/week | Beginner |
+| 6 | Social Media Management | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 7 | Data Entry | ₦20,000 | 2 weeks | 4 · 2/week | Beginner |
+| 8 | Computer Repairs | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 9 | Web Development | ₦60,000 | 6 weeks | 12 · 2/week | Beginner |
+| 10 | Cybersecurity | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 11 | Business & Freelancing | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 12 | Content Creation | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 13 | Online Teaching | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+
+- **Idempotent upsert.** The script now lists the vendor's existing items and
+  `PUT`s a course that already exists (matching on slug) instead of `POST`ing
+  it, and `DELETE`s anything the academy no longer runs (WordPress, Python). A
+  store seeded from the old flyer therefore converges on the current 13 instead
+  of failing on duplicate slugs — and re-running is a no-op.
+- **Plan headroom.** The free plan caps a catalogue at 10 items, so the demo
+  store is moved to Starter the honest way (intent → bank proof → admin
+  approval) rather than by lowering the quota. Skipped when the store already
+  has room (`GET /vendor/business` → `quotas.max_listings`).
+- **Richer course fields.** Migration `0009` adds `sessions` and
+  *What you will produce* (`outcome`) to the academy field schema and
+  *Absolute beginner* to the level options, so the spec table on a course page
+  carries duration, sessions, level, mode, certificate, instructor, outcome and
+  curriculum — instead of cramming them into the description.
+- **SEO pair per course.** `seo_title` / `seo_description` are seeded per
+  course ("Microsoft Office Course in Port Harcourt | Cyber Elias Academy").
+- **Course-specific WhatsApp ask** (migration `0009`): the course template now
+  names the course, its fee and duration and asks the two questions every
+  prospective student asks first — *next available start date* and *how to
+  enrol*. Two new template variables, `{{item_type}}` and `{{item_type_lc}}`,
+  let it read as natural English ("the Data Entry course listed on CyberShop"),
+  which is also what tells the merchant which listing produced the chat.
+
+### 5.2 Store profile photos
+
+The data model always had `businesses.logo_media_id` / `cover_media_id` and the
+storefront already rendered a logo — but **no screen in the product could set
+one**, so every store showed initials. Added:
+
+- `components/BrandMedia.tsx` — a picker that uploads a new image (either
+  storage driver, through the shared `lib/uploads.ts` helper now used by the
+  media library too) or picks one already in the library, with a live preview
+  and a Remove action (`POST /vendor/business/media` now accepts
+  `media_id: null` to clear a field).
+- Dashboard → **Settings → Store photos** is the first card on the page.
+- The store's face now travels with it: `GET /public/market/listings` returns
+  `biz_logo` and `ListingCard` renders a small avatar next to the seller name
+  on every market card.
+
+### 5.3 Trust & safety — verify before you pay
+
+CyberShop is an introduction, not a shop, and it is free — which is exactly why
+the disclaimer has to be structural rather than a line in the footer. Added:
+
+- **Site-wide ribbon** (`components/SafetyRibbon*`) on every page, above the
+  header: server-rendered (present without JS), dismissible for a week, with a
+  pre-paint script that hides it for snoozing visitors so it never flashes.
+- **Pre-enquiry reminder** inside the WhatsApp card, directly above the button
+  that hands the buyer to a stranger (storefront + item page).
+- **Rewritten `/safety`**: three beats of a safe deal (talk → verify → pay),
+  *what CyberShop never does*, red flags, what to do when it goes wrong, and
+  the vendor's side.
+- **Terms** now lead with the same disclaimer and state plainly that there is
+  no buyer protection because there is no checkout.
+- **Admin-editable copy**: `platform_settings.safety` (headline, notice, tips,
+  enabled), exposed in **Admin → Settings → Trust & safety notice**, parsed
+  tolerantly by the Worker and defaulted in `web/lib/safety.ts` so a catalogue
+  outage can never strip the notice from a page.
+
+### 5.4 "Market is not available" on the first tap
+
+Symptom: from the home tab, tapping Dashboard showed an error screen
+("The market flickered" / "We could not load the market") and worked after
+pressing **Try again**. Cause: the first request of a cold serverless
+invocation races the Worker's cold start; that race fails as a network error or
+a 5xx, and every dashboard route is `force-dynamic`, so the failure surfaced as
+a route error instead of a slow load. Three fixes:
+
+1. **Retry inside the request** (`web/lib/api.ts`): 3 attempts with an 8s
+   per-attempt timeout (`WORKER_TIMEOUT_MS`), retrying network errors, 408/429
+   and 5xx. The visitor never sees the race.
+2. **The error boundary retries once by itself** (`app/error.tsx`), showing
+   "Reconnecting…" and pressing Try again for the visitor — guarded per path
+   (20s window) so a genuinely broken page cannot loop.
+3. **Instant navigation feedback** (`components/RouteProgress.tsx`): a top
+   progress bar started on the *click* (not on the pathname change, which only
+   fires after the server work is done) so a slow route never reads as a dead
+   tap.
+
+### 5.5 Responsive gaps closed
+
+| Gap | Where | Fix |
+|---|---|---|
+| 5- and 6-column inline `grid-template-columns` overflowed the phone viewport | `admin/settings` (bank rows), `admin/categories` (field rows) | `.row-grid-2/3/4` — 1 column ≤560px, 2 ≤900px |
+| `.data-table` had no scroll container: the last columns were clipped by `.card { overflow: hidden }` and unreachable | `admin/users` | `.table-scroll` wrapper + `min-width` |
+| 15 dashboard links in a one-line horizontal scroller — most of the workbench was invisible | `DashNav` | Phone nav becomes wrapping chips: the 5 primary sections always visible, "More" reveals the rest (and flags when the current page is behind it) |
+| Item spec rows squeezed long values into a right-aligned sliver | `.field-row` | Stacks to label-above-value ≤620px |
+| Long values (URLs, hashes) stretched cards | global | `overflow-wrap: break-word` on `body`, `min-width: 0` on card/panel/grid children |
+| Stray wide children dragged the page sideways | global | `html { overflow-x: clip }` (safe for `position: sticky`, unlike `overflow-x: hidden`) |
+| Anchors landed under the sticky header | global | `html { scroll-padding-top }` from the new `--header-h` token |
+| Menu close button sat under the header, where it could not be tapped | `.cine-menu-close` | Moved below the header band |
+| Data tables scrolled with no affordance | `.table-wrap` | Edge fades (local background attachment) + sticky headers |
+
+### 5.6 The design system pass (`web/app/design-system.css`)
+
+Loaded after `globals.css` + `cine.css` and organised as: tokens → base →
+header → controls → cards/grids → tables → workbench shell → trust → store
+photos → navigation feedback → sticky offsets → reduced motion. It introduces
+one ruler for the whole product — space (`--s-1…--s-20`), type (`--fs-*`),
+radius (`--r-*`), elevation (`--elev-1…3`), layout (`--maxw`, `--gutter`,
+`--header-h`, `--section-y`) and controls (`--ctl-h`) — and then rebuilds the
+surfaces that mixed ad-hoc values: button/input heights (44px targets on touch),
+card radius and shadow, section rhythm, tabular grids, and the sticky offsets
+that used magic pixel numbers.
+
+Verified with the round-1 checkers: `dead-overrides.mjs` reports no losing
+override (the one remaining hit is an identical value), and `css-cascade.mjs`
+confirms the intended winners. `tsc --noEmit` clean, `next build` clean,
+Worker suite 56/56.
+
+### 5.7 Still recommended (needs a browser to finish)
+
+- **R1** (round 1) still stands: `<button>` nested inside `<a class="card">` in
+  `ItemCard`/`ListingCard` is invalid HTML and VoiceOver on iOS often cannot
+  reach the inner control.
+- The admin tables remain horizontal scrollers below ~640px. Converting them to
+  stacked record cards (`data-label` on each cell) would beat scrolling, but it
+  touches every table in the console.
+- The workbench nav on a tablet (861–1024px) is a sidebar; the phone chip
+  treatment may be preferable there too once someone can look at it.

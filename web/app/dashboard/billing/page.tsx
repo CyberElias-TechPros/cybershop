@@ -41,6 +41,15 @@ export default function BillingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [addons, setAddons] = useState<Addon[]>([]);
   const [sub, setSub] = useState<{ plan_name: string | null; status: string | null; expires_at: string | null } | null>(null);
+  // Set when this store is on a plan it was granted rather than one it pays for.
+  // Then there is nothing to buy, nothing to renew and nothing to invoice.
+  const [entitlement, setEntitlement] = useState<{
+    plan_slug: string | null;
+    plan_name: string | null;
+    reason: string | null;
+    granted_at: string | null;
+    is_platform_owner: boolean;
+  } | null>(null);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [bankAccounts, setBankAccounts] = useState<{ bank: string; account_name: string; account_number: string }[]>([]);
   const [usage, setUsage] = useState<{
@@ -66,6 +75,7 @@ export default function BillingPage() {
         plans: Plan[];
         addons: Addon[];
         subscription: { plan_name: string | null; status: string | null; expires_at: string | null } | null;
+        entitlement: { plan_slug: string | null; plan_name: string | null; reason: string | null; granted_at: string | null; is_platform_owner: boolean } | null;
         payments: Payment[];
         bank_accounts: { bank: string; account_name: string; account_number: string }[];
         usage: {
@@ -80,6 +90,7 @@ export default function BillingPage() {
       setPlans(d.plans);
       setAddons(d.addons);
       setSub(d.subscription);
+      setEntitlement(d.entitlement ?? null);
       setPayments(d.payments);
       setBankAccounts(d.bank_accounts ?? []);
       setUsage(d.usage);
@@ -269,6 +280,27 @@ export default function BillingPage() {
         </div>
       )}
 
+      {entitlement && (
+        <div className="card panel" style={{ borderColor: 'var(--gold)' }}>
+          <h2 style={{ fontSize: '1.05rem' }}>
+            {entitlement.plan_name} — on the house
+            <span className="chip" style={{ marginLeft: 10, background: 'var(--gold)', color: '#1b1204' }}>
+              {entitlement.is_platform_owner ? 'Platform owner' : 'Complimentary'}
+            </span>
+          </h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: -4 }}>
+            {entitlement.is_platform_owner
+              ? 'CyberShop is Cyber Elias Academy’s platform, so this store always runs on the highest package. It never expires, nothing is ever charged, and there is no renewal to chase.'
+              : 'This store was placed on this plan by CyberShop. It never expires and you will never be billed for it.'}
+            {entitlement.reason ? <> <em>Reason on record:</em> {entitlement.reason}</> : null}
+          </p>
+          <div className="kv">
+            <span className="k">Status</span>
+            <span className="v">Active · no renewal date</span>
+          </div>
+        </div>
+      )}
+
       <div className="card panel">
         <h2 style={{ fontSize: '1.05rem' }}>
           Current plan — {sub?.plan_name ?? 'Free'}
@@ -293,6 +325,15 @@ export default function BillingPage() {
         ))}
       </div>
 
+      {entitlement ? (
+        <div className="card panel">
+          <h2 style={{ fontSize: '1.05rem' }}>Plans</h2>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+            You are on {entitlement.plan_name} at no cost, so there is nothing to buy here. Every limit below is
+            already unlocked. If CyberShop ever moves this store to a paid plan, you will get 30 days’ notice first.
+          </p>
+        </div>
+      ) : (
       <div className="card panel">
         <h2 style={{ fontSize: '1.05rem' }}>Plans</h2>
         <div className="billing-plan">
@@ -336,8 +377,9 @@ export default function BillingPage() {
           })}
         </div>
       </div>
+      )}
 
-      {addons.length > 0 && (
+      {!entitlement && addons.length > 0 && (
         <div className="card panel">
           <h2 style={{ fontSize: '1.05rem' }}>Add-ons</h2>
           <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: -6 }}>

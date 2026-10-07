@@ -201,6 +201,11 @@ export default function OnboardingPage() {
             <Link className="btn btn-wa" href="/dashboard/catalog/new" style={{ width: '100%' }}>
               Add your first listing
             </Link>
+            {/* A storefront with no photo reads as a stall with no sign — ask
+                for it while the vendor is still setting up. */}
+            <Link className="btn btn-ghost" href="/dashboard/settings" style={{ width: '100%' }}>
+              Add your store photo
+            </Link>
             <Link className="btn btn-ghost" href="/dashboard" style={{ width: '100%' }}>
               Go to dashboard
             </Link>

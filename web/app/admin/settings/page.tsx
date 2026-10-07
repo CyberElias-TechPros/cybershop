@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { capi, extractError } from '@/lib/client-api';
+import { DEFAULT_SAFETY } from '@/lib/safety';
 
 interface BankAccount {
   bank: string;
@@ -13,6 +14,7 @@ interface BankAccount {
 export default function AdminSettingsPage() {
   const [platform, setPlatform] = useState({ name: 'CyberShop', tagline: 'Find a business. Talk to it on WhatsApp.', currency: 'NGN', support_email: 'support@cybershop.ng', announcement: '' });
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [safety, setSafety] = useState({ enabled: true, headline: DEFAULT_SAFETY.headline, notice: DEFAULT_SAFETY.notice, tips: [...DEFAULT_SAFETY.tips] });
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -20,9 +22,18 @@ export default function AdminSettingsPage() {
 
   const load = useCallback(async () => {
     try {
-      const d = await capi<{ settings: { platform?: typeof platform; bank_accounts?: BankAccount[] } }>('/admin/settings');
+      const d = await capi<{ settings: { platform?: typeof platform; bank_accounts?: BankAccount[]; safety?: Partial<typeof safety> } }>('/admin/settings');
       if (d.settings.platform) setPlatform({ ...platform, ...d.settings.platform });
       if (Array.isArray(d.settings.bank_accounts)) setBankAccounts(d.settings.bank_accounts);
+      const s = d.settings.safety;
+      if (s && typeof s === 'object') {
+        setSafety({
+          enabled: s.enabled !== false,
+          headline: s.headline || DEFAULT_SAFETY.headline,
+          notice: s.notice || DEFAULT_SAFETY.notice,
+          tips: Array.isArray(s.tips) && s.tips.length ? s.tips : [...DEFAULT_SAFETY.tips],
+        });
+      }
       setLoaded(true);
     } catch (e) {
       setError(extractError(e));
@@ -38,7 +49,14 @@ export default function AdminSettingsPage() {
     setError('');
     setNotice('');
     try {
-      await capi('/admin/settings', { method: 'PUT', body: JSON.stringify({ platform, bank_accounts: bankAccounts }) });
+      await capi('/admin/settings', {
+        method: 'PUT',
+        body: JSON.stringify({
+          platform,
+          bank_accounts: bankAccounts,
+          safety: { ...safety, tips: safety.tips.map((t) => t.trim()).filter(Boolean).slice(0, 8) },
+        }),
+      });
       setNotice('Settings saved.');
     } catch (e) {
       setError(extractError(e));
@@ -88,19 +106,50 @@ export default function AdminSettingsPage() {
           Where vendors send their plan payments. Vendors must upload the transfer proof afterwards.
         </p>
         {bankAccounts.map((ba, i) => (
-          <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <div key={i} className="row-grid row-grid-4">
             <input className="input" placeholder="Bank (Zenith Bank)" value={ba.bank} onChange={(e) => setBankAccounts(bankAccounts.map((x, j) => (j === i ? { ...x, bank: e.target.value } : x)))} />
             <input className="input" placeholder="Account name" value={ba.account_name} onChange={(e) => setBankAccounts(bankAccounts.map((x, j) => (j === i ? { ...x, account_name: e.target.value } : x)))} />
             <input className="input" placeholder="Account number" value={ba.account_number} onChange={(e) => setBankAccounts(bankAccounts.map((x, j) => (j === i ? { ...x, account_number: e.target.value } : x)))} />
-            <input className="input" placeholder="Reference (optional)" value={ba.reference ?? ''} onChange={(e) => setBankAccounts(bankAccounts.map((x, j) => (j === i ? { ...x, reference: e.target.value } : x)))} />
-            <button className="mini-btn danger" onClick={() => setBankAccounts(bankAccounts.filter((_, j) => j !== i))}>
-              ✕
-            </button>
+            <div className="row-actions">
+              <input className="input" placeholder="Reference (optional)" value={ba.reference ?? ''} onChange={(e) => setBankAccounts(bankAccounts.map((x, j) => (j === i ? { ...x, reference: e.target.value } : x)))} />
+              <button className="mini-btn danger" onClick={() => setBankAccounts(bankAccounts.filter((_, j) => j !== i))}>
+                ✕
+              </button>
+            </div>
           </div>
         ))}
         <button className="mini-btn" onClick={() => setBankAccounts([...bankAccounts, { bank: '', account_name: '', account_number: '' }])}>
           + Add bank account
         </button>
+      </div>
+
+      <div className="card panel">
+        <h2 style={{ fontSize: '1.05rem' }}>Trust &amp; safety notice</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.85rem', marginTop: -4 }}>
+          Shown on every page, above every WhatsApp button. CyberShop never handles buyer money — say so
+          before a buyer is handed to a stranger, and tell them to verify first.
+        </p>
+        <label className="field" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="checkbox" checked={safety.enabled} onChange={(e) => setSafety({ ...safety, enabled: e.target.checked })} />
+          Show the site-wide safety notice
+        </label>
+        <div className="field">
+          <label>Headline</label>
+          <input className="input" maxLength={160} value={safety.headline} onChange={(e) => setSafety({ ...safety, headline: e.target.value })} />
+        </div>
+        <div className="field">
+          <label>Notice</label>
+          <textarea className="textarea" maxLength={600} value={safety.notice} onChange={(e) => setSafety({ ...safety, notice: e.target.value })} />
+          <div className="hint">One or two sentences. Keep it plain — this is the line that stops a scam.</div>
+        </div>
+        <div className="field">
+          <label>Safety tips (one per line)</label>
+          <textarea
+            className="textarea"
+            value={safety.tips.join('\n')}
+            onChange={(e) => setSafety({ ...safety, tips: e.target.value.split('\n') })}
+          />
+        </div>
       </div>
 
       <div className="form-actions">

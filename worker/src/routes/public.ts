@@ -131,7 +131,7 @@ async function publicItem(env: Env, listing: Record<string, unknown>): Promise<R
 }
 
 async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const b = biz as { id: number; name: string; slug: string; about: string | null; description: string | null; city: string | null; state_region: string | null; address?: string | null; phone: string | null; website: string | null; social: string | null; settings?: string | null; status: string; logo_media_id: number | null; cover_media_id: number | null; verification_status?: string; created_at?: string | null };
+  const b = biz as { id: number; name: string; slug: string; about: string | null; description: string | null; city: string | null; state_region: string | null; address?: string | null; phone: string | null; website: string | null; social: string | null; settings?: string | null; status: string; logo_media_id: number | null; cover_media_id: number | null; verification_status?: string; created_at?: string | null; is_platform_owner?: number };
   const cats = (await env.DB.prepare(
     `SELECT c.name, c.slug, c.icon FROM business_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.business_id = ?`
   ).bind(b.id).all()).results as { name: string; slug: string; icon: string }[];
@@ -163,6 +163,9 @@ async function publicBusiness(env: Env, biz: Record<string, unknown>): Promise<R
     verification_status: b.verification_status ?? 'unverified',
     paused: !!(b as { paused_at?: string | null }).paused_at,
     featured: !!(b as { is_featured?: number }).is_featured,
+    // The platform owner's own store. Shown as a quiet "official store" mark so
+    // buyers know this is Cyber Elias Academy, not a reseller trading on the name.
+    is_platform_owner: !!(b as { is_platform_owner?: number }).is_platform_owner,
     created_at: b.created_at ?? null,
     listing_count: listingCount,
     categories: cats,
@@ -189,9 +192,53 @@ app.get('/site', async (c) => {
       tagline: get('platform_tagline') || 'Find a business. Talk to it on WhatsApp.',
       support_email: get('support_email') || 'support@cybershop.ng',
       whatsapp_support: get('support_whatsapp'),
+      // Admin-editable trust & safety copy (platform_settings.safety). Every
+      // page renders it — buyers must see "verify before you pay" before they
+      // are handed to a stranger on WhatsApp, not after.
+      safety: parseSafety(rows.find((x) => x.skey === 'safety')?.svalue ?? null),
     },
   });
 });
+
+export interface SiteSafety {
+  enabled: boolean;
+  headline: string;
+  notice: string;
+  tips: string[];
+}
+
+const DEFAULT_SAFETY: SiteSafety = {
+  enabled: true,
+  headline: 'CyberShop never collects payment',
+  notice:
+    'We are a catalogue and an introduction, not a shop. Agree the details on WhatsApp, then verify the goods or service and only pay the seller when you are satisfied.',
+  tips: [
+    'Inspect or verify before you pay — a live video, a receipt, or a public meetup.',
+    'Never pay a “CyberShop fee”, a “delivery deposit” or any account we did not give you.',
+    'Keep the conversation on WhatsApp — it is your receipt if anything goes wrong.',
+    'If a deal feels rushed or too cheap, walk away and report the listing.',
+  ],
+};
+
+/** Tolerant parse: a malformed or missing setting must never blank the notice. */
+function parseSafety(raw: string | null): SiteSafety {
+  if (!raw) return DEFAULT_SAFETY;
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return DEFAULT_SAFETY;
+  }
+  if (!v || typeof v !== 'object') return DEFAULT_SAFETY;
+  const o = v as Record<string, unknown>;
+  const tips = Array.isArray(o.tips) ? o.tips.map((t) => String(t)).filter(Boolean).slice(0, 8) : DEFAULT_SAFETY.tips;
+  return {
+    enabled: o.enabled === undefined ? true : Boolean(o.enabled),
+    headline: typeof o.headline === 'string' && o.headline.trim() ? o.headline.slice(0, 160) : DEFAULT_SAFETY.headline,
+    notice: typeof o.notice === 'string' && o.notice.trim() ? o.notice.slice(0, 600) : DEFAULT_SAFETY.notice,
+    tips: tips.length ? tips : DEFAULT_SAFETY.tips,
+  };
+}
 
 app.get('/home', async (c) => {
   const env = c.env;
@@ -337,10 +384,15 @@ app.get('/item', async (c) => {
       ((await env.DB.prepare('SELECT body FROM message_templates WHERE is_active = 1 AND business_id IS NULL AND item_type_id IS NULL LIMIT 1').first()) as { body: string } | null);
     let custom: Record<string, unknown> = {};
     try { custom = JSON.parse((item as { custom_fields: string | null }).custom_fields || '{}'); } catch { custom = {}; }
+    const typeName = String((item as { type_name?: string }).type_name || '').trim();
     const message = renderTemplate(template ? template.body : 'Hello {{business_name}}, I am interested in {{item_name}}. Page: {{item_url}}', {
       business_name: (biz as { name: string }).name,
       business_url: `${env.APP_URL}/business/${(biz as { slug: string }).slug}`,
       item_name: (item as { name: string }).name,
+      // Lets a template read naturally: "the Web Development course listed on
+      // CyberShop" (lower case) or "Course: …" (title case).
+      item_type: typeName,
+      item_type_lc: typeName.toLowerCase(),
       item_url: dataUrl,
       price: (item as { price: number | null }).price !== null ? formatNaira((item as { price: number | null }).price) : 'Price on request',
       quantity: '1',
@@ -458,18 +510,25 @@ app.get('/listings', async (c) => {
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, l.featured, t.url_segment, t.slug AS type_slug,
-            b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status,
+            b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status, b.logo_media_id,
             (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
             (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
-            (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0
+            (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0,
+            (SELECT m3.storage_key FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_storage_key,
+            (SELECT m3.driver FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_driver
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
      ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
   ).bind(...params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const items = rows.map((it) => {
-    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null };
+    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null; logo_media_id: number | null; logo_storage_key: string | null; logo_driver: 'd1' | 'gateway' | null };
     return {
       id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, type_slug: i.type_slug,
       biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
+      // The store's profile photo rides along on every card: a face the buyer
+      // recognises converts better than a name alone.
+      biz_logo: i.logo_media_id && i.logo_storage_key && i.logo_driver
+        ? mediaUrl(env, { driver: i.logo_driver, storage_key: i.logo_storage_key, id: i.logo_media_id })
+        : null,
       verified: i.verification_status === 'verified',
       boosted: !!i.featured,
       published_at: i.published_at,

@@ -3,6 +3,7 @@ import Fraunces from 'next/font/local';
 import '@fontsource-variable/syne';
 import './globals.css';
 import './cine.css';
+import './design-system.css';
 import { SITE_URL } from '@/lib/config';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
@@ -11,6 +12,8 @@ import { FlipBridge } from '@/components/Fx';
 import CartChip from '@/components/CartFx';
 import Atmosphere from '@/components/Atmosphere';
 import OfflineSW from '@/components/OfflineSW';
+import SafetyRibbon from '@/components/SafetyRibbon';
+import RouteProgress from '@/components/RouteProgress';
 
 const fraunces = Fraunces({
   src: [{ path: './fonts/Fraunces.ttf', weight: '300 700', style: 'normal' }],
@@ -82,12 +85,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Atmosphere />
         <OfflineSW />
         <HeaderFx />
+        <RouteProgress />
         <TransitionFx />
         <FlipBridge />
         <CartChip />
         <a className="skip-link" href="#main">
           Skip to content
         </a>
+        {/* Trust notice on every screen: CyberShop is an introduction, not a
+            shop. Dismissible for a week — see components/SafetyRibbonClient. */}
+        <SafetyRibbon />
         <Header />
         <main id="main" tabIndex={-1}>
           {children}

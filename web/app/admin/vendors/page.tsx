@@ -16,6 +16,10 @@ interface Vendor {
   plan_name: string | null;
   items: number;
   is_featured?: number;
+  /** Set when the store is on a plan granted by CyberShop rather than a paid one. */
+  plan_override?: string | null;
+  plan_override_reason?: string | null;
+  is_platform_owner?: number;
 }
 
 const FILTERS = ['all', 'pending_payment', 'pending_approval', 'active', 'suspended', 'rejected'];
@@ -94,6 +98,58 @@ function VendorsInner() {
     }
   }
 
+  /**
+   * Put a store on a plan permanently, at no cost.
+   *
+   * The reason is mandatory on the server and asked for here: granting the top
+   * plan is a money decision, and whoever makes it has to say why on the record.
+   */
+  async function grantPlan(v: Vendor) {
+    const planSlug = prompt(
+      `Grant which plan to ${v.name}?\n\nAvailable: free, starter, business, enterprise.\nThe store gets it permanently, at no cost, with no expiry.`,
+      v.plan_override ?? 'enterprise'
+    );
+    if (planSlug === null) return;
+    const reason = prompt('Why is this plan being granted? (Recorded in the audit log and shown to the vendor.)');
+    if (reason === null || !reason.trim()) {
+      setError('A reason is required to grant a plan.');
+      return;
+    }
+    const isOwner = confirm('Is this the platform owner\u2019s own store? It will also be verified and featured permanently.');
+    setBusyId(v.id);
+    setError('');
+    setNotice('');
+    try {
+      await capi(`/admin/vendors/${v.id}/entitlement`, {
+        method: 'POST',
+        body: JSON.stringify({ plan_slug: planSlug.trim(), reason: reason.trim(), is_platform_owner: isOwner }),
+      });
+      setNotice(`${v.name} is now on ${planSlug.trim()} — permanently, at no cost.`);
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function revokePlan(v: Vendor) {
+    if (!confirm(`Return ${v.name} to a paid plan? They keep the granted plan for 30 days, then it ends.`)) return;
+    const reason = prompt('Why is the complimentary plan ending? (Recorded in the audit log.)', '') ?? '';
+    setBusyId(v.id);
+    setError('');
+    setNotice('');
+    try {
+      await capi(`/admin/vendors/${v.id}/entitlement`, { method: 'DELETE', body: JSON.stringify({ reason }) });
+      setNotice(`${v.name} has 30 days before the complimentary plan ends.`);
+      await load();
+    } catch (e) {
+      setError(extractError(e));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   return (
     <div>
       <div className="dash-head">
@@ -142,7 +198,14 @@ function VendorsInner() {
                     {v.email}
                     {v.phone && <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>{v.phone}</div>}
                   </td>
-                  <td>{v.plan_name ?? '—'}</td>
+                  <td>
+                    {v.plan_name ?? '—'}
+                    {v.plan_override ? (
+                      <div style={{ fontSize: '0.75rem', color: 'var(--gold)' }} title={v.plan_override_reason ?? ''}>
+                        {v.is_platform_owner ? 'platform owner' : 'granted'} · {v.plan_override}
+                      </div>
+                    ) : null}
+                  </td>
                   <td>{v.items}</td>
                   <td>
                     <span className={`status-pill ${v.status}`}>{v.status.replace('_', ' ')}</span>
@@ -174,6 +237,15 @@ function VendorsInner() {
                       {(v.status === 'pending_payment' || v.status === 'pending_approval') && (
                         <button className="mini-btn danger" disabled={busyId === v.id} onClick={() => act(v.id, 'reject')}>
                           Reject
+                        </button>
+                      )}
+                      {v.plan_override ? (
+                        <button className="mini-btn danger" disabled={busyId === v.id} onClick={() => revokePlan(v)}>
+                          End grant
+                        </button>
+                      ) : (
+                        <button className="mini-btn" disabled={busyId === v.id} onClick={() => grantPlan(v)}>
+                          Grant plan
                         </button>
                       )}
                     </div>

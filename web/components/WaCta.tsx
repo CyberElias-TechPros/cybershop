@@ -19,6 +19,8 @@ interface Props {
   messagePreview?: string;
   /** Selected listing variant, re-validated by the Worker. */
   variantId?: number | null;
+  /** One-line trust reminder rendered directly above the button. */
+  safetyNote?: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -37,7 +39,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * vendors' low-tech-confidence audience).
  */
 export default function WaCta(props: Props) {
-  const { businessId, listingId, waUrl, ctaLabel = 'Enquire on WhatsApp', priceDisplay, withDetails = false, messagePreview, variantId } = props;
+  const { businessId, listingId, waUrl, ctaLabel = 'Enquire on WhatsApp', priceDisplay, withDetails = false, messagePreview, variantId, safetyNote } = props;
   const [quantity, setQuantity] = useState(1);
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -134,6 +136,15 @@ export default function WaCta(props: Props) {
             />
           </div>
         </>
+      )}
+      {safetyNote && (
+        <p className="wa-safety">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="M12 3l7 3v5.5c0 4.3-2.9 7.9-7 9.5-4.1-1.6-7-5.2-7-9.5V6l7-3z" strokeLinejoin="round" />
+            <path d="M9.3 12.2l1.9 1.9 3.6-3.7" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>{safetyNote}</span>
+        </p>
       )}
       {withDetails && waUrl ? (
         <>

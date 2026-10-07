@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { siteInfo } from '@/lib/site';
 import ContactClient from './ContactClient';
 
 export const metadata: Metadata = {
@@ -11,13 +11,7 @@ export const metadata: Metadata = {
 
 /** Contact page (server): live support email from platform settings. */
 export default async function ContactPage() {
-  let supportEmail = 'support@cybershop.ng';
-  try {
-    const d = await api<{ site: { support_email: string } }>('/public/site');
-    if (d.site?.support_email) supportEmail = d.site.support_email;
-  } catch {
-    /* default */
-  }
+  const { support_email: supportEmail } = await siteInfo();
   return (
     <section className="section prose-page">
       <div className="container prose">

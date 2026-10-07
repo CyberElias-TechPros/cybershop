@@ -26,6 +26,14 @@ export default function TermsPage() {
         </h1>
         <p className="prose-updated">Last updated: September 2026</p>
 
+        <p className="notice" style={{ marginTop: 22 }}>
+          <strong>Read this first:</strong> CyberShop is free to browse and never takes a buyer’s
+          money. There is no checkout here and no escrow. Because we are not in the deal,{' '}
+          <strong>you must verify before you pay</strong> — inspect the goods or see the service
+          done, then pay the seller directly. See the{' '}
+          <Link href="/safety">safety guide</Link> for the rules we ask every visitor to follow.
+        </p>
+
         <h2>1. What CyberShop is</h2>
         <p>
           CyberShop is a directory and catalogue platform. Vendors publish storefronts and
@@ -40,6 +48,13 @@ export default function TermsPage() {
           We are not an escrow service, a marketplace of record, a delivery company, or a payment
           agent. Any money that changes hands between a buyer and a vendor happens entirely outside
           CyberShop, on terms the two of them agree on.
+        </p>
+        <p>
+          <strong>No buyer protection, by design.</strong> We cannot refund, reverse, or guarantee a
+          payment we never received, and we cannot vouch for every listing. What we do instead is
+          keep the market legible: reports are reviewed by a human, scam listings are removed, and
+          vendors who break the rules lose their stall. Until you have verified the goods or the
+          service, do not send money — nobody from CyberShop will ever ask you to.
         </p>
 
         <h2>3. Your account</h2>

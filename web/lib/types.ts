@@ -24,6 +24,8 @@ export interface BusinessOut {
   verification_status?: string;
   paused?: boolean;
   featured?: boolean;
+  /** The platform owner's own store (Cyber Elias Academy) — free, permanent top plan. */
+  is_platform_owner?: boolean;
   created_at?: string | null;
   listing_count?: number;
   whatsapp_number?: string | null;
@@ -46,6 +48,15 @@ export interface BusinessOut {
     faq: { q: string; a: string }[];
     hours: string | null;
   };
+}
+
+/** A plan granted to a store permanently, at no cost. See worker/src/lib/entitlement.ts. */
+export interface Entitlement {
+  plan_slug: string | null;
+  plan_name: string | null;
+  reason: string | null;
+  granted_at: string | null;
+  is_platform_owner: boolean;
 }
 
 export interface ItemImageOut {
@@ -139,7 +150,7 @@ export interface ItemPageOut {
   business: BusinessOut;
   wa: WaOut;
   related: ItemOut[];
-  similar?: (ItemOut & { biz_slug?: string; biz_name?: string; city?: string | null })[];
+  similar?: (ItemOut & { biz_slug?: string; biz_name?: string; biz_logo?: string | null; city?: string | null })[];
 }
 
 export interface MarketListing {
@@ -149,6 +160,8 @@ export interface MarketListing {
   url_segment: string;
   biz_slug: string;
   biz_name: string;
+  /** Store profile photo — the face of the seller on every card. */
+  biz_logo?: string | null;
   city: string | null;
   verified?: boolean;
   boosted?: boolean;

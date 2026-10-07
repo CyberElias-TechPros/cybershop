@@ -22,6 +22,7 @@ import SafetyTips from '@/components/SafetyTips';
 import ListingCard from '@/components/ListingCard';
 import PremiumBuyer from '@/components/PremiumBuyer';
 import { tenureLabel, timeAgo } from '@/lib/ui';
+import { siteInfo } from '@/lib/site';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,7 +47,6 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
   const sp = await params;
   try {
     const { item, business } = await fetchItem(sp);
-    const img = item.images[0]?.url || business.cover?.url || business.logo?.url || null;
     const title = item.seo.title || item.name;
     const desc = item.seo.description || item.description?.slice(0, 200) || `${item.name} at ${business.name}`;
     return {
@@ -57,7 +57,8 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
         title,
         description: desc,
         type: 'website',
-        images: img ? [{ url: absUrl(img), width: 1200, height: 630 }] : undefined,
+        // No explicit images: the route's opengraph-image.tsx composes a real
+        // 1200×630 card (photo + price + store) and Next injects it here.
       },
       twitter: { card: 'summary_large_image', title, description: desc },
     };
@@ -69,6 +70,7 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
 export default async function ItemPage({ params }: { params: Promise<SP> }) {
   const sp = await params;
   const { item, business, wa, related, similar } = await fetchItem(sp, await clientIp());
+  const { safety } = await siteInfo();
   const tenure = tenureLabel(business.created_at);
   const posted = timeAgo(item.published_at);
   const fields = Object.entries(item.custom_fields ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== '');
@@ -224,6 +226,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                 ctaLabel={item.cta_label || `Enquire about ${item.name}`}
                 messagePreview={wa.message ? `\n${wa.message}` : undefined}
                 variants={item.variants}
+                safetyNote={safety.notice}
               />
             </Reveal>
             {(business.premium?.chat || business.premium?.escrow) && (
@@ -302,6 +305,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
                       url_segment: it.url_segment,
                       biz_slug: it.biz_slug || business.slug,
                       biz_name: it.biz_name || business.name,
+                      biz_logo: it.biz_logo ?? (it.biz_slug === business.slug ? business.logo?.url ?? null : null),
                       city: it.city ?? business.city,
                       price_display: it.price_display,
                       image: it.images[0]?.url ?? null,
@@ -333,6 +337,9 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
             </div>
           </div>
         )}
+        {/* The mobile "Chat now" bar is fixed to the bottom of the viewport —
+            without this the last block of the page sits underneath it. */}
+        <div className="sticky-bar-space" aria-hidden="true" />
       </div>
     </div>
   );

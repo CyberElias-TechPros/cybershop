@@ -9,6 +9,8 @@ import {
   getMedia, assertMediaOwnership, markMediaAttached, detachMedia, softDeleteMedia, storageUsedBytes, IMAGE_MIME, AUDIO_MIME,
 } from '../lib/media';
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
+import { entitlementFor } from '../lib/entitlement';
+import { storeCompleteness } from '../lib/completeness';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
@@ -32,12 +34,34 @@ app.get('/business', async (c) => {
   const storage = await storageUsedBytes(c.env, business.id);
   const code = await ensureReferralCode(c.env, user.id);
   const credit = await referralCredit(c.env, user.id);
+  // Resolved branding URLs, so the dashboard can preview the store photo and
+  // cover it already uploaded instead of showing an empty frame.
+  const brandMedia = async (id: unknown) => {
+    const n = Number(id);
+    if (!Number.isInteger(n) || n < 1) return null;
+    const m = (await c.env.DB.prepare('SELECT id, driver, storage_key, mime_type, original_name FROM media WHERE id = ? AND business_id = ? AND deleted_at IS NULL').bind(n, business.id).first()) as
+      | { id: number; driver: 'd1' | 'gateway'; storage_key: string; mime_type: string; original_name: string | null }
+      | null;
+    return m ? { id: m.id, url: mediaUrl(c.env, m), alt: m.original_name || 'Store photo' } : null;
+  };
   return c.json({
     ok: true,
-    business: { ...row, categories: cats, storefront: parseStorefront(row.settings as string | null) },
+    business: {
+      ...row,
+      categories: cats,
+      storefront: parseStorefront(row.settings as string | null),
+      logo: await brandMedia(row.logo_media_id),
+      cover: await brandMedia(row.cover_media_id),
+    },
     quotas,
     storage_used_bytes: storage,
+    // Which upload path the dashboard must use (Worker-stored vs cPanel gateway).
+    driver: c.env.MEDIA_DRIVER === 'gateway' ? 'gateway' : 'd1',
     referral: { code, link: referralLink(c.env, code), credit_kobo: credit },
+    // Set when the store is on a plan it was granted rather than one it paid
+    // for. The dashboard uses it to say "no charge, never expires" instead of
+    // showing a renewal date and a Pay Now button.
+    entitlement: await entitlementFor(c.env, business.id),
   });
 });
 
@@ -235,15 +259,26 @@ app.delete('/media/:id', async (c) => {
   return c.json({ ok: true, deleted: true });
 });
 
-/** Vendor picks logo/cover from their media library. */
+/**
+ * Vendor picks logo/cover from their media library — or clears it
+ * (`media_id: null`), which stores the storefront back to its wordmark.
+ */
 app.post('/business/media', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const body = await c.req.json().catch(() => null);
-  const field = body?.field === 'cover' ? 'cover_media_id' : 'logo_media_id';
-  const mediaId = reqInt(body?.media_id, { min: 1 });
+  if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
+  const field = (body as { field?: unknown }).field === 'cover' ? 'cover_media_id' : 'logo_media_id';
+  const raw = (body as { media_id?: unknown }).media_id;
+
+  if (raw === null || raw === undefined || raw === '' || raw === 0) {
+    await c.env.DB.prepare(`UPDATE businesses SET ${field} = NULL WHERE id = ?`).bind(business.id).run();
+    return c.json({ ok: true, cleared: field });
+  }
+
+  const mediaId = reqInt(raw, { min: 1 });
   await assertMediaOwnership(c.env, mediaId, business.id);
   await c.env.DB.prepare(`UPDATE businesses SET ${field} = ? WHERE id = ?`).bind(mediaId, business.id).run();
-  return c.json({ ok: true });
+  return c.json({ ok: true, field });
 });
 
 // ---------------------------------------------------------------- catalogue
@@ -704,6 +739,7 @@ app.get('/plans', async (c) => {
   return c.json({
     ok: true,
     bank_accounts: bankAccounts,
+    entitlement: await entitlementFor(c.env, business.id),
     plans: plans.map((p) => ({ ...p, price_display: formatNaira(p.price), features: safeJson(p.features) })),
     addons: addons.map((a) => ({ ...a, price_display: formatNaira(a.price) })),
     subscription: sub,
@@ -925,6 +961,8 @@ app.get('/overview', async (c) => {
     pending_payment: pendingPayment ? { ...pendingPayment, amount_display: formatNaira(Number(pendingPayment.amount)) } : null,
     usage: { storage_used_bytes: storage, storage_limit_mb: quotas.max_storage_mb, items: counts.published, items_limit: quotas.max_listings, plan: quotas.plan_name },
     top_items: topItems,
+    // The vendor's to-do list, ordered by what actually wins enquiries.
+    completeness: await storeCompleteness(c.env, business.id),
   });
 });
 

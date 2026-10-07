@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono';
 import type { Env } from '../config';
 import { requireAdmin, requireUser } from '../lib/auth';
+import { grantEntitlement, revokeEntitlement, setPlatformOwner, entitlementFor } from '../lib/entitlement';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
 import { nowIso, clampInt } from '../lib/util';
 import { reqStr, optStr, reqInt, isHttpUrl } from '../lib/validate';
@@ -70,6 +71,7 @@ app.get('/vendors', async (c) => {
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
     `SELECT b.id, b.name, b.slug, b.status, b.is_featured, b.featured_until, b.created_at, u.email, u.phone,
+            b.plan_override, b.plan_override_reason, b.is_platform_owner,
             (SELECT p.name FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.business_id = b.id ORDER BY s.id DESC LIMIT 1) AS plan_name,
             (SELECT COUNT(*) FROM listings l WHERE l.business_id = b.id AND l.status = 'published' AND l.deleted_at IS NULL) AS items
      FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}
@@ -88,7 +90,13 @@ app.get('/vendors/:id', async (c) => {
   const payments = (await c.env.DB.prepare(`SELECT * FROM payments WHERE business_id = ? ORDER BY id DESC LIMIT 20`).bind(id).all()).results as Record<string, unknown>[];
   const numbers = (await c.env.DB.prepare(`SELECT * FROM whatsapp_numbers WHERE business_id = ? AND deleted_at IS NULL`).bind(id).all()).results as Record<string, unknown>[];
   const storage = await storageUsedBytes(c.env, id);
-  return c.json({ ok: true, business: { ...row, storage_used_bytes: storage }, payments: payments.map((p) => ({ ...p, amount_display: formatNaira(Number(p.amount)) })), numbers });
+  return c.json({
+    ok: true,
+    business: { ...row, storage_used_bytes: storage },
+    payments: payments.map((p) => ({ ...p, amount_display: formatNaira(Number(p.amount)) })),
+    numbers,
+    entitlement: await entitlementFor(c.env, id),
+  });
 });
 
 async function setBusinessStatus(env: Env, admin: { id: number; role: string }, businessId: number, status: 'active' | 'suspended' | 'rejected', action: string, ipAddr: string | null, meta?: Record<string, unknown>) {
@@ -145,6 +153,70 @@ app.post('/vendors/:id/feature', async (c) => {
   }
   await audit(c.env, { actor: admin, action: featured ? 'vendor.feature' : 'vendor.unfeature', entityType: 'business', entityId: id, ip: ip(c), meta: { days, until } });
   return c.json({ ok: true, featured, featured_until: until });
+});
+
+// ------------------------------------------------- platform entitlement
+//
+// Put a store on a plan permanently, at no cost. Built for Cyber Elias
+// Academy's own store (CyberShop is CEA's platform) but usable for any store
+// the operator wants to comp — partners, launch customers, goodwill.
+app.post('/vendors/:id/entitlement', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const planSlug = typeof body?.plan_slug === 'string' ? body.plan_slug.trim().slice(0, 60) : '';
+  if (!planSlug) throw badRequest('Choose a plan to grant.');
+  // The reason is written to the audit log and shown to the vendor, so it is
+  // required: nobody should be able to hand out Enterprise silently.
+  const reason = optStr(body?.reason, 500) || '';
+  if (!reason) throw badRequest('Say why this plan is being granted — it is recorded in the audit log.');
+  const isOwner = body?.is_platform_owner === true;
+
+  const exists = (await c.env.DB.prepare('SELECT id, name FROM businesses WHERE id = ? AND deleted_at IS NULL').bind(id).first()) as
+    | { id: number; name: string }
+    | null;
+  if (!exists) throw notFound('Business not found.');
+  const plan = (await c.env.DB.prepare('SELECT id, name FROM plans WHERE slug = ?').bind(planSlug).first()) as
+    | { id: number; name: string }
+    | null;
+  if (!plan) throw badRequest(`No plan called "${planSlug}".`);
+
+  if (isOwner) await setPlatformOwner(c.env, { businessId: id, isOwner: true, actorId: admin.id });
+  const ent = await grantEntitlement(c.env, { businessId: id, planSlug, reason, actorId: admin.id });
+  await audit(c.env, {
+    actor: admin,
+    action: 'entitlement.grant',
+    entityType: 'business',
+    entityId: id,
+    ip: ip(c),
+    meta: { plan_slug: planSlug, reason, is_platform_owner: isOwner },
+  });
+  return c.json({ ok: true, entitlement: ent });
+});
+
+app.delete('/vendors/:id/entitlement', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const reason = optStr(body?.reason, 500) || null;
+  await revokeEntitlement(c.env, { businessId: id, actorId: admin.id, reason });
+  await setPlatformOwner(c.env, { businessId: id, isOwner: false, actorId: admin.id });
+  await audit(c.env, {
+    actor: admin,
+    action: 'entitlement.revoke',
+    entityType: 'business',
+    entityId: id,
+    ip: ip(c),
+    meta: { reason },
+  });
+  return c.json({ ok: true });
+});
+
+/** Plans an admin can grant — the same catalogue the vendor sees. */
+app.get('/entitlement/plans', async (c) => {
+  await requireAdmin(c.env, c);
+  const plans = (await c.env.DB.prepare('SELECT id, name, slug, price FROM plans ORDER BY sort_order').all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, plans });
 });
 
 app.post('/vendors/:id/reject', async (c) => {
@@ -621,7 +693,7 @@ app.put('/settings', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
-  const editable = new Set(['platform', 'bank_accounts', 'seo', 'upload_limits']);
+  const editable = new Set(['platform', 'bank_accounts', 'seo', 'upload_limits', 'safety']);
   let changed = 0;
   for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
     if (!editable.has(k)) continue;

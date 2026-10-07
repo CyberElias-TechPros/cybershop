@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import StorefrontTools from '@/components/StorefrontTools';
 import { clientIp } from '@/lib/ip';
 import { requireVendor, sessionCookieHeader } from '@/lib/session';
+import StoreStrength from '@/components/StoreStrength';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,13 @@ interface Overview {
   pending_payment: { id: number; reference: string; amount: number; amount_display: string; status: string } | null;
   usage: { storage_used_bytes: number; storage_limit_mb: number; items: number; items_limit: number; plan: string };
   top_items: { name: string; slug: string; url_segment: string; views: number; clicks: number }[];
+  completeness: {
+    pct: number;
+    done: { key: string; label: string; done: boolean; href: string; weight: number }[];
+    missing: { key: string; label: string; done: boolean; href: string; weight: number }[];
+    next: { key: string; label: string; done: boolean; href: string; weight: number } | null;
+    level: 'empty' | 'starter' | 'good' | 'strong';
+  } | null;
 }
 
 function fmtBytes(b: number) {
@@ -28,7 +36,7 @@ export default async function DashboardOverviewPage() {
     ip: await clientIp(),
   });
 
-  const { business, stats, counts, subscription, pending_payment, usage, top_items } = data;
+  const { business, stats, counts, subscription, pending_payment, usage, top_items, completeness } = data;
   const status = business.status;
 
   return (
@@ -146,6 +154,8 @@ export default async function DashboardOverviewPage() {
           </Link>
         </div>
       </div>
+
+      <StoreStrength completeness={completeness} businessSlug={business.slug} />
 
       <div className="card panel">
         <h2>Top listings (30 days)</h2>

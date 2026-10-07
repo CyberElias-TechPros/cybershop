@@ -40,7 +40,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  * `storefront_view` / `item_view` on every hit — without this, each page view
  * was counted twice (and cost two Worker round-trips).
  */
-const request = cache(async <T,>(path: string, ip: string, cookie: string | null): Promise<T> => {
+
+/** How long a *public, unauthenticated* response may be reused. See `api()`. */
+export const PUBLIC_REVALIDATE = 60;
+/** Taxonomies (cities, item types, categories) change about once a year. */
+export const TAXONOMY_REVALIDATE = 300;
+
+const request = cache(
+  async <T,>(path: string, ip: string, cookie: string | null, revalidate = 0): Promise<T> => {
   const url = `${WORKER_URL}/api${path}`;
   const headers: Record<string, string> = {
     'content-type': 'application/json',
@@ -49,12 +56,26 @@ const request = cache(async <T,>(path: string, ip: string, cookie: string | null
     ...(cookie ? { cookie } : {}),
   };
 
+  /**
+   * A response fetched *with* a session cookie is shaped by that session —
+   * the public endpoints filter out any business the signed-in visitor has
+   * blocked. Such a response must never be reused for anyone else: it would
+   * both leak one visitor's block list and, worse, quietly show a blocked
+   * seller back to the person who blocked them.
+   *
+   * So the data cache is only ever used for anonymous fetches. Signed-in
+   * visitors always hit the Worker and always get their own view.
+   */
+  const ttl = cookie ? 0 : revalidate;
+  const cacheOpt: RequestInit & { next?: { revalidate: number } } =
+    ttl > 0 ? { next: { revalidate: ttl } } : { cache: 'no-store' };
+
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
     let res: Response;
     try {
       res = await fetch(url, {
-        cache: 'no-store',
+        ...cacheOpt,
         headers,
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
@@ -91,8 +112,11 @@ const request = cache(async <T,>(path: string, ip: string, cookie: string | null
   throw lastErr instanceof Error ? lastErr : new ApiError(500, 'Unexpected API failure.');
 });
 
-export async function api<T>(path: string, opts: { ip?: string; cookie?: string | null } = {}): Promise<T> {
+export async function api<T>(
+  path: string,
+  opts: { ip?: string; cookie?: string | null; revalidate?: number } = {},
+): Promise<T> {
   // Same IP for every call site in a request → same cache key → one round-trip.
   const ip = opts.ip ?? (await clientIp());
-  return request<T>(path, ip, opts.cookie ?? null);
+  return request<T>(path, ip, opts.cookie ?? null, opts.revalidate ?? 0);
 }

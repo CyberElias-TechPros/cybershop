@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { api } from '@/lib/api';
+import { api, PUBLIC_REVALIDATE, TAXONOMY_REVALIDATE } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import { sessionCookieHeader } from '@/lib/session';
 import type { BusinessesOut, CategoryOut } from '@/lib/types';
@@ -8,7 +8,11 @@ import Pager from '@/components/Pager';
 import SearchForm from '@/components/SearchForm';
 import { Reveal } from '@/components/Motion';
 
-export const dynamic = 'force-dynamic';
+/* Not `force-dynamic`: that would force every fetch in this route to
+   `no-store` and silently undo the `revalidate` passed to `api()` below.
+   This page is dynamic anyway — it reads the session cookie (the public
+   endpoints filter out businesses the visitor has blocked) — and the
+   taxonomy reads are cached for anonymous visitors only. */
 
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   const sp = await searchParams;
@@ -49,17 +53,24 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
 
   const ip = await clientIp();
   const cookie = await sessionCookieHeader();
-  const data = await api<BusinessesOut>(`/public/businesses?${query}`, { ip, cookie });
+  const data = await api<BusinessesOut>(`/public/businesses?${query}`, {
+    ip,
+    cookie,
+    revalidate: PUBLIC_REVALIDATE,
+  });
   let cats: { name: string; slug: string }[] = [];
   let cities: { city: string }[] = [];
   try {
-    const home = await api<{ categories: { name: string; slug: string }[] }>('/public/home', { ip });
+    const home = await api<{ categories: { name: string; slug: string }[] }>('/public/home', {
+      ip,
+      revalidate: TAXONOMY_REVALIDATE,
+    });
     cats = home.categories;
   } catch {
     /* filter chips are optional */
   }
   try {
-    cities = (await api<{ cities: { city: string }[] }>('/public/cities', { ip })).cities;
+    cities = (await api<{ cities: { city: string }[] }>('/public/cities', { ip, revalidate: TAXONOMY_REVALIDATE })).cities;
   } catch {
     /* optional */
   }

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { api } from '@/lib/api';
+import { api, PUBLIC_REVALIDATE, TAXONOMY_REVALIDATE } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import { sessionCookieHeader } from '@/lib/session';
 import type { CategoryOut, ListingsOut } from '@/lib/types';
@@ -8,7 +8,11 @@ import Pager from '@/components/Pager';
 import { Reveal } from '@/components/Motion';
 import SaveSearch from '@/components/SaveSearch';
 
-export const dynamic = 'force-dynamic';
+/* Not `force-dynamic`: that would force every fetch in this route to
+   `no-store` and silently undo the `revalidate` passed to `api()` below.
+   This page is dynamic anyway — it reads the session cookie (the public
+   endpoints filter out businesses the visitor has blocked) — and the
+   taxonomy reads are cached for anonymous visitors only. */
 export async function generateMetadata({ searchParams }: { searchParams: Promise<SP> }): Promise<Metadata> {
   const sp = await searchParams;
   const page = Math.max(1, parseInt(sp.page ?? '1', 10) || 1);
@@ -78,24 +82,34 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
 
   const ip = await clientIp();
   const cookie = await sessionCookieHeader();
-  const data = await api<ListingsOut>(`/public/listings?${query}`, { ip, cookie });
+  const data = await api<ListingsOut>(`/public/listings?${query}`, {
+    ip,
+    cookie,
+    revalidate: PUBLIC_REVALIDATE,
+  });
   let cats: CategoryOut[] = [];
   let cities: { city: string; n: number }[] = [];
   let types: { name: string; slug: string }[] = [];
   try {
-    const home = await api<{ categories: CategoryOut[] }>('/public/home', { ip });
+    const home = await api<{ categories: CategoryOut[] }>('/public/home', { ip, revalidate: TAXONOMY_REVALIDATE });
     cats = home.categories;
   } catch {
     /* optional */
   }
   try {
-    const c = await api<{ cities: { city: string; n: number }[] }>('/public/cities', { ip });
+    const c = await api<{ cities: { city: string; n: number }[] }>('/public/cities', {
+      ip,
+      revalidate: TAXONOMY_REVALIDATE,
+    });
     cities = c.cities;
   } catch {
     /* optional */
   }
   try {
-    types = (await api<{ types: { name: string; slug: string }[] }>('/public/item-types', { ip })).types;
+    types = (await api<{ types: { name: string; slug: string }[] }>('/public/item-types', {
+      ip,
+      revalidate: TAXONOMY_REVALIDATE,
+    })).types;
   } catch {
     /* optional */
   }

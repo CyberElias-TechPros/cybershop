@@ -109,7 +109,7 @@ export default function AdminPaymentsPage() {
     <div>
       <div className="dash-head">
         <h1>Payments queue</h1>
-        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{total} in view</span>
+        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }} role="status" aria-live="polite">{total} in view</span>
       </div>
       {error && <div className="form-msg error">{error}</div>}
       {notice && <div className="form-msg success">{notice}</div>}

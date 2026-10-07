@@ -86,7 +86,7 @@ export default function LeadsPage() {
     <div>
       <div className="dash-head">
         <h1>Leads</h1>
-        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{total} total</span>
+        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }} role="status" aria-live="polite">{total} total</span>
       </div>
       {error && <div className="form-msg error">{error}</div>}
 

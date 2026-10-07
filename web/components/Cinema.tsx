@@ -8,6 +8,13 @@ const prefersReduced = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
+ * How far the pointer must travel before a press on the reel counts as a drag
+ * rather than a tap. Below this the gesture is left entirely to the browser so
+ * that tapping a card still opens it.
+ */
+const DRAG_THRESHOLD = 6;
+
+/**
  * Drag-friendly horizontal reel of featured storefronts.
  *
  * Vertical wheel scrolling is deliberately *not* hijacked (it used to convert
@@ -37,26 +44,51 @@ export function BusinessReel({ businesses }: { businesses: BusinessOut[] }) {
     let startX = 0;
     let startScroll = 0;
     let moved = false;
+    let captured = false;
 
     const onDown = (e: PointerEvent) => {
       // only the primary button / a single finger, and never on a control
       if (e.button !== 0) return;
       down = true;
       moved = false;
+      captured = false;
       startX = e.clientX;
       startScroll = el.scrollLeft;
-      el.classList.add('is-drag');
-      el.setPointerCapture(e.pointerId);
+      // Deliberately NOT capturing here. Capturing on pointerdown retargets
+      // every later event for this gesture — including the click — to this
+      // container, so a tap that began on a card's link would never reach
+      // the link and the card would look broken. Wait until onMove is sure
+      // this is a drag, then capture.
     };
     const onMove = (e: PointerEvent) => {
       if (!down) return;
       const dx = e.clientX - startX;
-      if (Math.abs(dx) > 6) moved = true;
+      if (!captured) {
+        // Below the threshold this is still a tap, so leave the browser to
+        // it — no capture, no scroll, no interference.
+        if (Math.abs(dx) <= DRAG_THRESHOLD) return;
+        captured = true;
+        moved = true;
+        el.classList.add('is-drag');
+        try {
+          el.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already gone */
+        }
+      }
       el.scrollLeft = startScroll - dx;
     };
-    const onUp = () => {
+    const onUp = (e: PointerEvent) => {
       if (!down) return;
       down = false;
+      if (captured) {
+        try {
+          if (el.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+        } catch {
+          /* already released */
+        }
+        captured = false;
+      }
       el.classList.remove('is-drag');
       sync();
     };

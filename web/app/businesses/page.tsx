@@ -84,7 +84,7 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
                 Every stall, <em>one night market</em>
               </h1>
             </div>
-            <span className="section-count">
+            <span className="section-count" role="status" aria-live="polite">
               {data.total} business{data.total === 1 ? '' : 'es'}
               {q ? ` for “${q}”` : ''}
             </span>

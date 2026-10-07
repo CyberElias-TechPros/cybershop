@@ -146,7 +146,7 @@ export default function SecurityPage() {
     <div>
       <div className="dash-head">
         <h1>Security</h1>
-        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>{sessions.length} signed-in device(s)</span>
+        <span style={{ color: 'var(--muted)', fontSize: '0.9rem' }} role="status" aria-live="polite">{sessions.length} signed-in device(s)</span>
       </div>
       {error && <div className="form-msg error">{error}</div>}
       {notice && <div className="form-msg success">{notice}</div>}

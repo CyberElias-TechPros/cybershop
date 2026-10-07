@@ -629,6 +629,20 @@ html.hdr-scrolled .site-header {
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  /* Keeps a focused link clear of the fade below: the browser scrolls it at
+     least 28px in from the edge, which is outside the 24px faded band. */
+  scroll-padding-inline: 28px;
+}
+/* The category row scrolls sideways with its scrollbar hidden, so when it
+   overflows there is nothing to tell you more of it exists. Fade the right
+   edge. When the links fit, the last 24px of the container is empty space and
+   the fade has nothing to fade, so this costs nothing on wide screens. */
+@supports (mask-image: linear-gradient(#000, transparent)) or
+  (-webkit-mask-image: linear-gradient(#000, transparent)) {
+  .main-nav {
+    -webkit-mask-image: linear-gradient(to left, transparent 0, #000 24px);
+    mask-image: linear-gradient(to left, transparent 0, #000 24px);
+  }
 }
 .main-nav::-webkit-scrollbar {
   display: none;

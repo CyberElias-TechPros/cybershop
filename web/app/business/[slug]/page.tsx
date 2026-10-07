@@ -13,8 +13,10 @@ import SaveBusiness from '@/components/SaveBusiness';
 import ShareBar from '@/components/ShareBar';
 import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
+import SafetyTips from '@/components/SafetyTips';
 import { FlipBack } from '@/components/Fx';
 import { categoryTheme } from '@/lib/theme';
+import { siteInfo } from '@/lib/site';
 import type { CSSProperties } from 'react';
 
 export const dynamic = 'force-dynamic';
@@ -28,7 +30,6 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
   try {
     const data = await api<BusinessPageOut>(`/public/business/${slug}`, { cookie: await sessionCookieHeader() });
     const { business } = data;
-    const img = business.cover?.url || business.logo?.url || null;
     const closed = Boolean(data.unavailable) && !data.preview;
     return {
       title: business.name,
@@ -39,9 +40,10 @@ export async function generateMetadata({ params }: { params: Promise<SP> }): Pro
         title: business.name,
         description: business.about?.slice(0, 200) || `${business.name} on CyberShop`,
         url: `/business/${business.slug}`,
-        images: img ? [{ url: absUrl(img) }] : undefined,
+        // The route's opengraph-image.tsx composes the card (photo, city,
+        // categories, verified badge) at the size scrapers expect.
       },
-      twitter: { card: 'summary_large_image', images: img ? [absUrl(img)] : undefined },
+      twitter: { card: 'summary_large_image' },
     };
   } catch {
     return { title: 'Business not found' };
@@ -76,6 +78,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
   const { slug } = await params;
   const data = await api<BusinessPageOut>(`/public/business/${slug}`, { ip: await clientIp(), cookie: await sessionCookieHeader() });
   const { business, items, offers } = data;
+  const { safety } = await siteInfo();
   const closed = Boolean(data.unavailable) && !data.preview;
   const groups = groupItems(items);
   const stickyWa = closed ? null : waLink(business.whatsapp_number ?? business.phone, business.name);
@@ -149,6 +152,7 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
               )}
             </p>
             <div className="trust-row" style={{ marginTop: 10 }}>
+              {business.is_platform_owner && <span className="trust-chip official">Official CyberShop store</span>}
               {business.verification_status === 'verified' && <span className="trust-chip">Verified vendor</span>}
               {tenureLabel(business.created_at) && (
                 <span className="trust-chip faint">{tenureLabel(business.created_at)}</span>
@@ -273,10 +277,22 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
 
         <aside>
           <Reveal className="cascade">
-            {!closed && <WaCta businessId={business.id} ctaLabel={`Chat with ${business.name}`} />}
+            {!closed && (
+              <WaCta
+                businessId={business.id}
+                ctaLabel={`Chat with ${business.name}`}
+                safetyNote={safety.notice}
+              />
+            )}
+          </Reveal>
+          <Reveal i={1}>
+            <SafetyTips compact />
           </Reveal>
         </aside>
       </div>
+      {/* The mobile "Chat now" bar is fixed to the bottom of the viewport —
+          without this the last listing sits underneath it. */}
+      <div className="sticky-bar-space" aria-hidden="true" />
     </div>
   );
 }

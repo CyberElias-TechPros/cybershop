@@ -44,6 +44,10 @@ jobs:
       - name: Typecheck
         working-directory: web
         run: npx tsc --noEmit
+      - name: Audit (interactive elements must not nest)
+        run: node scripts/web-audit/jsx-nesting.mjs web
       - name: Production build
         working-directory: web
         run: npm run build
+      - name: Audit (CSS shipped to every route must stay within budget)
+        run: node scripts/web-audit/css-budget.mjs web

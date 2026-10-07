@@ -1,6 +1,12 @@
 import { Hono, type Context } from 'hono';
 import type { Env } from '../config';
 import { requireAdmin, requireUser } from '../lib/auth';
+import { grantEntitlement, revokeEntitlement, setPlatformOwner, entitlementFor } from '../lib/entitlement';
+import { resolveReport, claimReport, slaFor, REPORT_OUTCOMES, REPORT_SLA_HOURS } from '../lib/moderation';
+import { reconcilePayments, reconciliationRows } from '../lib/reconcile';
+import { healthSnapshot, ALERT_RULES } from '../lib/errorlog';
+import { likeContains } from '../lib/search';
+import { csvResponse } from '../lib/csv';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
 import { nowIso, clampInt } from '../lib/util';
 import { reqStr, optStr, reqInt, isHttpUrl } from '../lib/validate';
@@ -66,10 +72,11 @@ app.get('/vendors', async (c) => {
   let where = 'WHERE b.deleted_at IS NULL';
   const params: (string | number)[] = [];
   if (status !== 'all') { where += ' AND b.status = ?'; params.push(status); }
-  if (q) { where += ' AND (b.name LIKE ? OR b.slug LIKE ? OR u.email LIKE ?)'; params.push(`%${q}%`, `%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (b.name LIKE ? OR b.slug LIKE ? OR u.email LIKE ?)'; params.push(likeContains(q), likeContains(q), likeContains(q)); }
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
     `SELECT b.id, b.name, b.slug, b.status, b.is_featured, b.featured_until, b.created_at, u.email, u.phone,
+            b.plan_override, b.plan_override_reason, b.is_platform_owner,
             (SELECT p.name FROM subscriptions s JOIN plans p ON p.id = s.plan_id WHERE s.business_id = b.id ORDER BY s.id DESC LIMIT 1) AS plan_name,
             (SELECT COUNT(*) FROM listings l WHERE l.business_id = b.id AND l.status = 'published' AND l.deleted_at IS NULL) AS items
      FROM businesses b JOIN users u ON u.id = b.owner_user_id ${where}
@@ -88,7 +95,13 @@ app.get('/vendors/:id', async (c) => {
   const payments = (await c.env.DB.prepare(`SELECT * FROM payments WHERE business_id = ? ORDER BY id DESC LIMIT 20`).bind(id).all()).results as Record<string, unknown>[];
   const numbers = (await c.env.DB.prepare(`SELECT * FROM whatsapp_numbers WHERE business_id = ? AND deleted_at IS NULL`).bind(id).all()).results as Record<string, unknown>[];
   const storage = await storageUsedBytes(c.env, id);
-  return c.json({ ok: true, business: { ...row, storage_used_bytes: storage }, payments: payments.map((p) => ({ ...p, amount_display: formatNaira(Number(p.amount)) })), numbers });
+  return c.json({
+    ok: true,
+    business: { ...row, storage_used_bytes: storage },
+    payments: payments.map((p) => ({ ...p, amount_display: formatNaira(Number(p.amount)) })),
+    numbers,
+    entitlement: await entitlementFor(c.env, id),
+  });
 });
 
 async function setBusinessStatus(env: Env, admin: { id: number; role: string }, businessId: number, status: 'active' | 'suspended' | 'rejected', action: string, ipAddr: string | null, meta?: Record<string, unknown>) {
@@ -147,6 +160,70 @@ app.post('/vendors/:id/feature', async (c) => {
   return c.json({ ok: true, featured, featured_until: until });
 });
 
+// ------------------------------------------------- platform entitlement
+//
+// Put a store on a plan permanently, at no cost. Built for Cyber Elias
+// Academy's own store (CyberShop is CEA's platform) but usable for any store
+// the operator wants to comp — partners, launch customers, goodwill.
+app.post('/vendors/:id/entitlement', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const planSlug = typeof body?.plan_slug === 'string' ? body.plan_slug.trim().slice(0, 60) : '';
+  if (!planSlug) throw badRequest('Choose a plan to grant.');
+  // The reason is written to the audit log and shown to the vendor, so it is
+  // required: nobody should be able to hand out Enterprise silently.
+  const reason = optStr(body?.reason, 500) || '';
+  if (!reason) throw badRequest('Say why this plan is being granted — it is recorded in the audit log.');
+  const isOwner = body?.is_platform_owner === true;
+
+  const exists = (await c.env.DB.prepare('SELECT id, name FROM businesses WHERE id = ? AND deleted_at IS NULL').bind(id).first()) as
+    | { id: number; name: string }
+    | null;
+  if (!exists) throw notFound('Business not found.');
+  const plan = (await c.env.DB.prepare('SELECT id, name FROM plans WHERE slug = ?').bind(planSlug).first()) as
+    | { id: number; name: string }
+    | null;
+  if (!plan) throw badRequest(`No plan called "${planSlug}".`);
+
+  if (isOwner) await setPlatformOwner(c.env, { businessId: id, isOwner: true, actorId: admin.id });
+  const ent = await grantEntitlement(c.env, { businessId: id, planSlug, reason, actorId: admin.id });
+  await audit(c.env, {
+    actor: admin,
+    action: 'entitlement.grant',
+    entityType: 'business',
+    entityId: id,
+    ip: ip(c),
+    meta: { plan_slug: planSlug, reason, is_platform_owner: isOwner },
+  });
+  return c.json({ ok: true, entitlement: ent });
+});
+
+app.delete('/vendors/:id/entitlement', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  const body = await c.req.json().catch(() => null);
+  const reason = optStr(body?.reason, 500) || null;
+  await revokeEntitlement(c.env, { businessId: id, actorId: admin.id, reason });
+  await setPlatformOwner(c.env, { businessId: id, isOwner: false, actorId: admin.id });
+  await audit(c.env, {
+    actor: admin,
+    action: 'entitlement.revoke',
+    entityType: 'business',
+    entityId: id,
+    ip: ip(c),
+    meta: { reason },
+  });
+  return c.json({ ok: true });
+});
+
+/** Plans an admin can grant — the same catalogue the vendor sees. */
+app.get('/entitlement/plans', async (c) => {
+  await requireAdmin(c.env, c);
+  const plans = (await c.env.DB.prepare('SELECT id, name, slug, price FROM plans ORDER BY sort_order').all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, plans });
+});
+
 app.post('/vendors/:id/reject', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
@@ -184,7 +261,7 @@ app.get('/users', async (c) => {
   const perPage = 30;
   let where = 'WHERE deleted_at IS NULL';
   const params: (string | number)[] = [];
-  if (q) { where += ' AND (email LIKE ? OR name LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (email LIKE ? OR name LIKE ?)'; params.push(likeContains(q), likeContains(q)); }
   if (['admin', 'vendor', 'buyer'].includes(role)) { where += ' AND role = ?'; params.push(role); }
   const total = ((await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM users ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await c.env.DB.prepare(
@@ -547,7 +624,7 @@ app.get('/listings', async (c) => {
      FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
      WHERE l.deleted_at IS NULL AND l.status = ? AND (? = '' OR l.name LIKE ? OR b.name LIKE ?)
      ORDER BY l.updated_at DESC LIMIT ? OFFSET ?`
-  ).bind(status, q, `%${q}%`, `%${q}%`, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
+  ).bind(status, q, likeContains(q), likeContains(q), perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   return c.json({ ok: true, listings: rows });
 });
 
@@ -565,10 +642,39 @@ app.post('/listings/:id/archive', async (c) => {
 app.get('/reports', async (c) => {
   await requireAdmin(c.env, c);
   const status = c.req.query('status') || 'open';
+  // 'mine' is the queue an admin actually works: whatever is assigned to them,
+  // plus anything unassigned. Without it two admins pick up the same report.
+  const scope = c.req.query('scope') || 'all';
+  const admin = c.req.query('scope') === 'mine' ? await requireAdmin(c.env, c) : null;
+  let where = 'WHERE r.status = ?';
+  const params: (string | number)[] = [status];
+  if (scope === 'mine' && admin) {
+    where += ' AND (r.assignee_user_id = ? OR r.assignee_user_id IS NULL)';
+    params.push(admin.id);
+  }
   const rows = (await c.env.DB.prepare(
-    `SELECT r.*, u.email AS reporter_email FROM reports r LEFT JOIN users u ON u.id = r.reporter_user_id WHERE r.status = ? ORDER BY r.created_at DESC LIMIT 100`
-  ).bind(status).all()).results as Record<string, unknown>[];
-  return c.json({ ok: true, reports: rows });
+    `SELECT r.*, u.email AS reporter_email, a.email AS assignee_email,
+            b.name AS business_name, l.name AS listing_name
+     FROM reports r
+       LEFT JOIN users u ON u.id = r.reporter_user_id
+       LEFT JOIN users a ON a.id = r.assignee_user_id
+       -- A report on a listing is really a report on the store that owns it,
+       -- so both names resolve whatever was reported.
+       LEFT JOIN listings l ON l.id = CASE WHEN r.entity_type = 'listing' THEN r.entity_id END
+       LEFT JOIN businesses b ON b.id = COALESCE(l.business_id, CASE WHEN r.entity_type = 'business' THEN r.entity_id END)
+     ${where} ORDER BY COALESCE(r.sla_due_at, r.created_at) ASC LIMIT 100`
+  ).bind(...params).all()).results as Record<string, unknown>[];
+
+  // The SLA clock is computed here rather than in SQL so the UI never has to
+  // re-derive "how overdue is this" in three different places.
+  const reports = rows.map((r) => ({
+    ...r,
+    sla: slaFor(String(r.created_at ?? ''), (r.sla_due_at as string | null) ?? null),
+  }));
+  const counts = (await c.env.DB.prepare(
+    `SELECT status, COUNT(*) AS n FROM reports GROUP BY status`
+  ).all()).results as { status: string; n: number }[];
+  return c.json({ ok: true, reports, counts, sla_hours: REPORT_SLA_HOURS });
 });
 
 app.post('/reports', async (c) => {
@@ -584,16 +690,73 @@ app.post('/reports', async (c) => {
   return c.json({ ok: true, message: 'Thanks. Our team will review this.' });
 });
 
+app.post('/reports/:id/claim', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  await claimReport(c.env, id, admin.id);
+  await audit(c.env, { actor: admin, action: 'report.claim', entityType: 'report', entityId: id, ip: ip(c) });
+  return c.json({ ok: true });
+});
+
 app.post('/reports/:id/resolve', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
   const body = await c.req.json().catch(() => null);
   const status = body?.status;
   if (!['resolved', 'dismissed', 'investigating'].includes(String(status))) throw badRequest('Invalid status.');
-  const res = await c.env.DB.prepare('UPDATE reports SET status = ?, resolved_by = ?, resolution_note = ? WHERE id = ?').bind(status, admin.id, optStr(body?.note, 500), id).run();
-  if (res.meta.changes === 0) throw notFound('Report not found.');
-  await audit(c.env, { actor: admin, action: 'report.resolve', entityType: 'report', entityId: id, ip: ip(c), meta: { status } });
-  return c.json({ ok: true });
+  const outcome = String(body?.outcome || (status === 'dismissed' ? 'unfounded' : 'no_action'));
+  if (!REPORT_OUTCOMES.includes(outcome as (typeof REPORT_OUTCOMES)[number])) throw badRequest('Invalid outcome.');
+
+  if (status === 'investigating') {
+    await claimReport(c.env, id, admin.id);
+    await audit(c.env, { actor: admin, action: 'report.triage', entityType: 'report', entityId: id, ip: ip(c) });
+    return c.json({ ok: true });
+  }
+
+  const { acted } = await resolveReport(c.env, {
+    reportId: id,
+    adminId: admin.id,
+    status: status as 'resolved' | 'dismissed',
+    outcome: outcome as (typeof REPORT_OUTCOMES)[number],
+    note: optStr(body?.note, 500) || null,
+    // Default on: closing a report without doing the thing is worse than
+    // leaving it open, because it looks handled.
+    act: body?.act !== false,
+  });
+  return c.json({ ok: true, acted });
+});
+
+// ------------------------------------------------------------- reconciliation
+
+/**
+ * Admin → Reconciliation: compare what we recorded against what Paystack
+ * actually settled. `?format=csv` returns the same thing as a spreadsheet.
+ */
+app.get('/reconciliation', async (c) => {
+  await requireAdmin(c.env, c);
+  const to = c.req.query('to')?.slice(0, 10) || undefined;
+  const from = c.req.query('from')?.slice(0, 10) || undefined;
+  const r = await reconcilePayments(c.env, { from, to });
+  if (c.req.query('format') === 'csv') {
+    return csvResponse(`cybershop-reconciliation-${r.from}_${r.to}.csv`, reconciliationRows(r));
+  }
+  return c.json({ ok: true, reconciliation: r });
+});
+
+/**
+ * Admin → Health: what has been going wrong, and where.
+ *
+ * Every 5xx is recorded (see lib/errorlog.ts). This is the screen that turns
+ * "a buyer said it was broken" into "this route, this many times, since then".
+ */
+app.get('/health', async (c) => {
+  await requireAdmin(c.env, c);
+  const hours = Math.min(720, Math.max(1, Number(c.req.query('hours') || 24) || 24));
+  const health = await healthSnapshot(c.env, hours);
+  const recent = (await c.env.DB.prepare(
+    `SELECT id, scope, route, status, code, message, created_at FROM error_log ORDER BY id DESC LIMIT 50`
+  ).all()).results as Record<string, unknown>[];
+  return c.json({ ok: true, health, recent, alert_rules: ALERT_RULES.map((r) => ({ key: r.key, threshold: r.threshold, window_minutes: r.windowMinutes })) });
 });
 
 // ---------------------------------------------------------------- audit & settings
@@ -621,7 +784,7 @@ app.put('/settings', async (c) => {
   const admin = await requireAdmin(c.env, c);
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
-  const editable = new Set(['platform', 'bank_accounts', 'seo', 'upload_limits']);
+  const editable = new Set(['platform', 'bank_accounts', 'seo', 'upload_limits', 'safety']);
   let changed = 0;
   for (const [k, v] of Object.entries(body as Record<string, unknown>)) {
     if (!editable.has(k)) continue;

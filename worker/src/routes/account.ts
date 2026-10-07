@@ -12,6 +12,7 @@ import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
 import { rateLimit } from '../lib/ratelimit';
 import { clientIp } from '../lib/ip';
 import { ensureReferralCode, referralLink, referralCredit } from '../lib/referral';
+import { getPrefs, setPrefs } from '../lib/notifyprefs';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -306,6 +307,31 @@ app.get('/notifications', async (c) => {
     'SELECT id, type, title, body, data, read_at, created_at FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 60'
   ).bind(user.id).all()).results;
   return c.json({ ok: true, notifications: rows });
+});
+
+/**
+ * Notification preferences.
+ *
+ * Per category, email channel only — in-app is the record of what happened and
+ * cannot be muted. Defaults are set in lib/notifyprefs.ts; money, access and
+ * leads are on, everything else is opt-in.
+ */
+app.get('/notification-prefs', async (c) => {
+  const user = await requireUser(c.env, c);
+  return c.json({ ok: true, ...(await getPrefs(c.env, user.id)) });
+});
+
+app.put('/notification-prefs', async (c) => {
+  const user = await requireUser(c.env, c);
+  const body = (await c.req.json().catch(() => null)) as { prefs?: { category: string; email?: boolean }[] } | null;
+  const prefs = Array.isArray(body?.prefs) ? body!.prefs : [];
+  if (prefs.length === 0) throw badRequest('Nothing to save.');
+  await setPrefs(
+    c.env,
+    user.id,
+    prefs.slice(0, 50).map((p) => ({ category: String(p.category || '').slice(0, 40), email: Boolean(p.email) }))
+  );
+  return c.json({ ok: true, ...(await getPrefs(c.env, user.id)) });
 });
 
 app.post('/notifications/read', async (c) => {

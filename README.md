@@ -30,6 +30,19 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 | [`docs/decisions.md`](docs/decisions.md) | Decision ledger (D-001…D-018) |
 | [`docs/schema.sql`](docs/schema.sql) | Canonical relational design (D1 migrations in `worker/migrations/` are the runtime source of truth) |
 | [`docs/usability-audit.md`](docs/usability-audit.md) | Front-end usability/accessibility audit: what blocked visitors, what was fixed, what is still recommended |
+| [`docs/gap-analysis.md`](docs/gap-analysis.md) | What the product still needed, what was fixed, and the ranked backlog |
+| [`docs/production.md`](docs/production.md) | **Going live**: every key, host and command, in order |
+
+## Going live
+
+The app runs today with demo keys. [`docs/production.md`](docs/production.md) is
+the ordered checklist — create the remote D1, set six Worker secrets, point the
+hosts at your domains, deploy, configure Paystack, deploy Vercel. No code
+changes are involved. Gate a deploy with:
+
+```bash
+node scripts/check-env.mjs     # prints the exact `wrangler secret put` commands still owed
+```
 
 ## Key decisions (summary — full text in `docs/decisions.md`)
 

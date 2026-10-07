@@ -1,4 +1,5 @@
 import type { MarketListing } from '@/lib/types';
+import { initials } from '@/lib/ui';
 
 export default function ListingCard({ it }: { it: MarketListing }) {
   const href = `/business/${it.biz_slug}/${it.url_segment}/${it.slug}`;
@@ -21,8 +22,18 @@ export default function ListingCard({ it }: { it: MarketListing }) {
         <div className="item-price">{it.price_display}</div>
         <p className="item-name">{it.name}</p>
         <p className="listing-meta">
-          {it.biz_name}
-          {it.city ? ` · ${it.city}` : ''}
+          <span className="listing-avatar" aria-hidden="true">
+            {it.biz_logo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={it.biz_logo} alt="" loading="lazy" />
+            ) : (
+              <span className="listing-avatar-fallback">{initials(it.biz_name)}</span>
+            )}
+          </span>
+          <span className="listing-seller">
+            {it.biz_name}
+            {it.city ? ` · ${it.city}` : ''}
+          </span>
         </p>
       </div>
     </a>

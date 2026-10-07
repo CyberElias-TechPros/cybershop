@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { api } from '@/lib/api';
+import { api, PUBLIC_REVALIDATE } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import { sessionCookieHeader } from '@/lib/session';
 import type { HomeOut } from '@/lib/types';
@@ -7,7 +7,11 @@ import SearchForm from '@/components/SearchForm';
 import { CountUp, HeroWords, Reveal } from '@/components/Motion';
 import { Act, BusinessReel, CategoryBento, ChatStage } from '@/components/Cinema';
 
-export const dynamic = 'force-dynamic';
+/* Not `force-dynamic`: that would force every fetch in this route to
+   `no-store` and silently undo the `revalidate` passed to `api()` below.
+   This page is dynamic anyway — it reads the session cookie (the public
+   endpoints filter out businesses the visitor has blocked) — and the
+   taxonomy reads are cached for anonymous visitors only. */
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
@@ -25,7 +29,11 @@ export default async function HomePage() {
   let data: HomeOut = EMPTY;
   let live = true;
   try {
-    data = await api<HomeOut>('/public/home', { ip: await clientIp(), cookie: await sessionCookieHeader() });
+    data = await api<HomeOut>('/public/home', {
+      ip: await clientIp(),
+      cookie: await sessionCookieHeader(),
+      revalidate: PUBLIC_REVALIDATE,
+    });
   } catch {
     /* The front door must never crash — but an outage must not be dressed up
        as an empty market ("0 businesses", "categories arrive with the first

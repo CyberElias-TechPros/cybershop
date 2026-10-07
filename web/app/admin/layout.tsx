@@ -1,5 +1,6 @@
 import { requireAdmin } from '@/lib/session';
 import DashNav from '@/components/DashNav';
+import ResponsiveTables from '@/components/ResponsiveTables';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </p>
         {children}
       </div>
+      <ResponsiveTables />
     </div>
   );
 }

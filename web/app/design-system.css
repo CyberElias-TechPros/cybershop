@@ -1,0 +1,1743 @@
+/* ============================================================
+   CyberShop — design system refresh ("industry standard" pass)
+   ------------------------------------------------------------
+   Loaded after globals.css + cine.css. Everything here is either
+   a new token, a new component, or a deliberate override of an
+   earlier value. Three jobs:
+
+   1. TOKENS      — one scale for space, type, radius, elevation and
+                    layout width, so every screen is built from the
+                    same ruler (the old sheets mixed ad-hoc values).
+   2. RESPONSIVE  — phone / tablet / desktop must show everything.
+                    Horizontal scrollers, data tables and the vendor
+                    workbench nav are the places content used to hide.
+   3. TRUST       — the safety ribbon, the pre-enquiry reminder and the
+                    store profile photo are product features, not trim.
+   ============================================================ */
+
+:root {
+  /* ---------- space (4px base) ---------- */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-7: 28px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-20: 80px;
+
+  /* ---------- type ---------- */
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.84rem;
+  --fs-base: 0.95rem;
+  --fs-md: 1.05rem;
+  --fs-lg: clamp(1.35rem, 2.4vw, 1.7rem);
+  --fs-xl: clamp(1.75rem, 3.4vw, 2.3rem);
+
+  /* ---------- shape ---------- */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-xl: 28px;
+  --r-pill: 999px;
+
+  /* ---------- elevation ---------- */
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.32), 0 6px 20px rgba(0, 0, 0, 0.28);
+  --elev-2: 0 2px 4px rgba(0, 0, 0, 0.34), 0 14px 40px rgba(0, 0, 0, 0.4);
+  --elev-3: 0 24px 70px rgba(0, 0, 0, 0.55);
+
+  /* ---------- layout ---------- */
+  --maxw: 1200px;
+  --gutter: clamp(16px, 4vw, 32px);
+  --header-h: 64px;
+  --section-y: clamp(44px, 6.5vw, 88px);
+
+  /* ---------- controls ---------- */
+  --ctl-h: 46px;
+  --ring: 0 0 0 3px rgba(44, 229, 142, 0.28);
+  --ring-gold: 0 0 0 3px rgba(242, 200, 121, 0.28);
+}
+
+/* ============================================================
+   1. Base — rhythm, wrapping, scroll discipline
+   ============================================================ */
+
+html {
+  /* Anchors and in-page jumps must not land under the sticky header. */
+  scroll-padding-top: calc(var(--header-h) + var(--s-5));
+  /* A stray wide child (an un-wrapped table, a long URL) can no longer drag
+     the whole page sideways — clip is safe for `position: sticky` children,
+     unlike `overflow-x: hidden`, which creates a scroll container. */
+  overflow-x: clip;
+}
+
+body {
+  font-size: 16px;
+  /* Long links, hashes and emails must never stretch a card. */
+  overflow-wrap: break-word;
+}
+/* Declared under `no-preference` on purpose: a top-level `smooth` would beat
+   the `prefers-reduced-motion: reduce` reset in globals.css (same specificity,
+   later file) and take smooth scrolling away from nobody's control. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Every grid/flex child may shrink below its content width by default — the
+   single most common cause of a card bursting out of the viewport. */
+.dash-main > *,
+.panel,
+.card,
+.kv,
+.field-table,
+.field-row,
+.toolbar,
+.banner {
+  min-width: 0;
+}
+
+.container {
+  max-width: var(--maxw);
+  padding: 0 var(--gutter);
+}
+
+/* Section rhythm: one value for the whole site. */
+.section {
+  padding: var(--section-y) 0;
+}
+
+/* Headings: the display face carries the brand, sizes come from one scale. */
+h1 {
+  font-size: var(--fs-xl);
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.02em;
+}
+h2 {
+  font-size: var(--fs-lg);
+  font-family: var(--font-display);
+  font-weight: 560;
+  letter-spacing: -0.018em;
+}
+h3 {
+  font-size: var(--fs-md);
+  font-weight: 650;
+}
+
+a:hover {
+  color: var(--em);
+}
+
+:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.skip-link {
+  top: -100px;
+  left: var(--s-4);
+  z-index: 200;
+  padding: 10px 18px;
+  border-radius: var(--r-pill);
+}
+
+/* ============================================================
+   2. Header — one bar, everything reachable at every width
+   ============================================================ */
+
+.site-header {
+  /* The header height is a token now: sticky offsets all over the app
+     (wa-card, flip-back, dash shell) derive from it instead of magic px.
+     z-index sits above the mobile menu (48) so the burger that opened it stays
+     pressable, and below the shared-element flip (80/81) and the cart drawer
+     (120) so those still pass over it. */
+  z-index: 70;
+  background: rgba(6, 11, 9, 0.72);
+  border-bottom: 1px solid transparent;
+}
+.site-header .inner {
+  gap: var(--s-3);
+  padding: 10px var(--gutter);
+  max-width: var(--maxw);
+  min-height: var(--header-h);
+}
+.brand {
+  font-size: clamp(1.25rem, 2.6vw, 1.45rem);
+}
+.main-nav {
+  gap: 2px;
+}
+.main-nav a {
+  padding: 8px 12px;
+  font-size: 0.9rem;
+  border-radius: var(--r-pill);
+}
+.header-search {
+  /* Search earns its inline field earlier than 1280px now that the nav is
+     shorter (Listings · Jobs · Businesses · 3 categories). */
+  min-width: 0;
+}
+@media (min-width: 1180px) {
+  .header-search {
+    display: block;
+    width: clamp(180px, 18vw, 260px);
+  }
+}
+@media (min-width: 1180px) and (max-width: 1279px) {
+  .hdr-search-btn {
+    display: none;
+  }
+}
+
+/* The menu overlay sits *below* the header on purpose — that is what keeps the
+   burger pressable while the menu is open. Its own close button therefore has
+   to clear the header band, or it is decoration you cannot tap. */
+.cine-menu-close {
+  top: calc(var(--header-h) + 12px + env(safe-area-inset-top));
+}
+
+/* ============================================================
+   3. Buttons & controls — one height, one radius, 44px targets
+   ============================================================ */
+
+.btn {
+  min-height: var(--ctl-h);
+  padding: 11px 22px;
+  font-size: 0.95rem;
+  border-radius: var(--r-pill);
+  letter-spacing: -0.005em;
+}
+.btn.big {
+  min-height: 54px;
+  padding: 15px 30px;
+  font-size: 1.04rem;
+}
+.btn.sm {
+  min-height: 38px;
+  padding: 8px 14px;
+  font-size: 0.86rem;
+}
+.btn.block {
+  width: 100%;
+}
+@media (pointer: coarse) {
+  /* Thumb-sized, everywhere, including the compact variants. */
+  .btn.sm,
+  .mini-btn {
+    min-height: 40px;
+  }
+}
+
+.input,
+.select,
+.textarea {
+  min-height: var(--ctl-h);
+  padding: 11px 14px;
+  border-radius: var(--r-md);
+  font-size: 0.95rem;
+}
+.textarea {
+  min-height: 120px;
+}
+.input:focus,
+.select:focus,
+.textarea:focus {
+  box-shadow: var(--ring);
+  border-color: rgba(44, 229, 142, 0.55);
+}
+.field label {
+  font-size: 0.85rem;
+  letter-spacing: 0.005em;
+}
+.field .hint,
+.hint {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.form-row {
+  gap: var(--gutter);
+}
+
+/* Responsive multi-column editor rows (replaces the fixed inline grids that
+   used to overflow the phone viewport in admin → Settings / Categories). */
+.row-grid {
+  display: grid;
+  gap: var(--s-2);
+  margin-bottom: var(--s-2);
+  align-items: center;
+}
+.row-grid-2 { grid-template-columns: 1fr 1fr; }
+.row-grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+.row-grid-4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+@media (max-width: 900px) {
+  .row-grid-3,
+  .row-grid-4 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 560px) {
+  .row-grid,
+  .row-grid-2,
+  .row-grid-3,
+  .row-grid-4 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ============================================================
+   4. Cards & grids — calmer shadow, more air, consistent radius
+   ============================================================ */
+
+.card {
+  border-radius: var(--r-md);
+  box-shadow: var(--elev-1);
+  border-color: var(--line);
+}
+.grid {
+  gap: clamp(12px, 1.6vw, 20px);
+}
+.grid-cats {
+  grid-template-columns: repeat(auto-fill, minmax(146px, 1fr));
+}
+.grid-biz {
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+}
+.grid-items {
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+/* Phones: never fewer than two columns for catalogue cards — a single
+   full-bleed card wastes the screen and makes the market feel empty. */
+@media (max-width: 430px) {
+  .grid-items {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .grid-biz,
+  .grid-cats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .card {
+    border-radius: var(--r-sm);
+  }
+}
+
+.section-head {
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  margin-bottom: var(--s-5);
+}
+.section-head a {
+  font-size: 0.88rem;
+}
+
+.pager {
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-8);
+}
+
+/* Two-up spec rows (key/value) must wrap, not push the card wider. */
+.kv {
+  flex-wrap: wrap;
+  gap: var(--s-2) var(--s-4);
+}
+.kv .v {
+  text-align: right;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* ============================================================
+   5. Tables — scrollable, with a visible affordance
+   ============================================================ */
+
+.table-wrap {
+  overflow-x: auto;
+  background-color: var(--bg-1);
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+  /* Right-edge fade: tells the finger there is more table to the side. */
+  background:
+    linear-gradient(90deg, var(--bg-1) 30%, rgba(10, 18, 15, 0)) left center,
+    linear-gradient(90deg, rgba(10, 18, 15, 0), var(--bg-1) 70%) right center,
+    radial-gradient(farthest-side at 0 50%, rgba(0, 0, 0, 0.5), transparent) left center,
+    radial-gradient(farthest-side at 100% 50%, rgba(0, 0, 0, 0.5), transparent) right center;
+  background-repeat: no-repeat;
+  background-size: 40px 100%, 40px 100%, 14px 100%, 14px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
+table.tbl {
+  min-width: 560px;
+  font-size: 0.88rem;
+}
+table.tbl th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  white-space: nowrap;
+}
+table.tbl td {
+  padding: 12px 14px;
+}
+.tbl .row-actions,
+.row-actions {
+  gap: var(--s-2);
+}
+/* .data-table (admin → Users) had no scroll container at all: on a phone the
+   last columns were clipped by the card and simply unreachable. */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.table-scroll > .data-table {
+  min-width: 640px;
+}
+.data-table td {
+  vertical-align: middle;
+}
+
+/* ============================================================
+   6. Vendor workbench & admin shell
+   ============================================================ */
+
+.dash {
+  grid-template-columns: 1fr;
+  min-height: calc(100svh - var(--header-h));
+}
+@media (min-width: 861px) {
+  .dash {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .dash-nav {
+    padding: var(--s-5) var(--s-3);
+    position: sticky;
+    top: var(--header-h);
+    align-self: start;
+    max-height: calc(100svh - var(--header-h));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+.dash-nav .nav-brand {
+  padding: 0 var(--s-3) var(--s-4);
+  font-size: 1.1rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.dash-nav a {
+  padding: 10px var(--s-3);
+  border-radius: var(--r-sm);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+.dash-main {
+  padding: clamp(var(--s-5), 3vw, var(--s-8)) var(--gutter) var(--s-20);
+  max-width: 1100px;
+  /* The table rules below are container queries, not media queries. At a
+     900px viewport the 248px sidebar leaves the content only ~590px wide, so
+     a viewport breakpoint would leave a seven-column table with no treatment
+     at all while it overflowed. This makes the tables respond to the space
+     they actually have, whatever the sidebar is doing. */
+  container-type: inline-size;
+  container-name: dash;
+}
+.dash-head {
+  gap: var(--s-3);
+  margin-bottom: var(--s-6);
+}
+.dash-head h1 {
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+}
+.panel {
+  padding: clamp(var(--s-4), 2.4vw, var(--s-6));
+  border-radius: var(--r-md);
+  margin-bottom: var(--s-4);
+}
+
+.dash-nav .nav-toggle {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: var(--glass);
+  color: var(--ink-dim);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+@media (max-width: 860px) {
+  .dash-nav .nav-toggle {
+    display: inline-flex;
+  }
+}
+
+/* --- workbench nav on phones & tablets -------------------------------
+   Fifteen destinations in a one-line horizontal scroller meant most of the
+   dashboard was invisible: you had to know it was there and swipe. Below the
+   shell breakpoint the links become chips that wrap — the whole workbench is
+   on screen — with a "More" toggle for the collapsed default. */
+@media (max-width: 860px) {
+  .dash {
+    grid-template-columns: 1fr;
+  }
+  .dash-nav {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: var(--s-3) var(--gutter);
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    background: rgba(10, 18, 15, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .dash-nav .nav-brand {
+    width: 100%;
+    padding: 0 0 var(--s-2);
+    font-size: 1rem;
+  }
+  .dash-nav a {
+    padding: 9px 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--glass);
+    font-size: 0.85rem;
+  }
+  .dash-nav a.active {
+    border-color: rgba(44, 229, 142, 0.5);
+  }
+  .dash-nav a.active::before {
+    display: none;
+  }
+  /* Collapsed by default to ~2 rows of the sections vendors use daily;
+     "More" reveals the rest without leaving the page. */
+  .dash-nav:not(.is-expanded) a.nav-more-item {
+    display: none;
+  }
+  .dash-main {
+    padding-bottom: var(--s-16);
+  }
+}
+
+/* ============================================================
+   7. Trust: the site-wide safety ribbon & pre-enquiry reminder
+   ============================================================ */
+
+.safety-ribbon {
+  position: relative;
+  z-index: 80;
+  background: linear-gradient(90deg, rgba(242, 200, 121, 0.16), rgba(242, 200, 121, 0.06));
+  border-bottom: 1px solid rgba(242, 200, 121, 0.28);
+}
+.safety-ribbon-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 8px var(--gutter);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.safety-ribbon-icon {
+  display: inline-flex;
+  color: var(--gold);
+  flex-shrink: 0;
+}
+.safety-ribbon-text {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--gold-soft);
+  min-width: 0;
+}
+.safety-ribbon-text strong {
+  color: var(--gold);
+}
+.safety-ribbon-more {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gold-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.safety-ribbon-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--gold-soft);
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+.safety-ribbon-close:hover {
+  background: rgba(242, 200, 121, 0.16);
+  color: var(--ink);
+}
+/* Pre-paint snooze (see components/SafetyRibbonClient.tsx). */
+html.safety-snoozed .safety-ribbon {
+  display: none;
+}
+.safety-ribbon-tips {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 0 var(--gutter) 12px;
+}
+.safety-ribbon-tips ul {
+  margin: 0 0 8px;
+  padding-left: 22px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--gold-soft);
+}
+.safety-ribbon-tips a {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--gold);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 640px) {
+  .safety-ribbon-inner {
+    padding: 7px var(--s-4);
+    gap: var(--s-2);
+  }
+  .safety-ribbon-text {
+    font-size: 0.76rem;
+    /* Keep the headline, drop to one line on the smallest screens so the bar
+       never eats the fold. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .safety-ribbon-more {
+    font-size: 0.76rem;
+  }
+}
+
+/* The three beats of a safe deal (safety hub) */
+.safety-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s-3);
+  margin-bottom: var(--s-6);
+}
+.safety-rule {
+  margin-bottom: 0;
+  padding: var(--s-5);
+}
+.safety-rule-n {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 640;
+  color: var(--gold);
+  line-height: 1;
+  margin-bottom: var(--s-2);
+}
+.safety-rule h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+.safety-rule p {
+  margin: 0;
+  font-size: 0.87rem;
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+ol.safety-list {
+  padding-left: 20px;
+}
+
+/* Block version, next to / inside the WhatsApp card. */
+.safety-tips {
+  border-radius: var(--r-md);
+  border: 1px solid rgba(242, 200, 121, 0.24);
+  background: linear-gradient(180deg, rgba(242, 200, 121, 0.07), rgba(242, 200, 121, 0.02));
+  padding: var(--s-4) var(--s-5);
+  margin: var(--s-4) 0 0;
+}
+.safety-tips h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--gold);
+}
+.safety-tips-mark {
+  display: inline-flex;
+  color: var(--gold);
+}
+.safety-tips-lede {
+  margin: 0 0 var(--s-3);
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--ink-dim);
+}
+.safety-tips ol {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--ink-dim);
+}
+.safety-tips.compact ol {
+  font-size: 0.82rem;
+}
+.safety-tips-foot {
+  margin: var(--s-3) 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+.safety-tips a {
+  color: var(--gold-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* One line, directly above the button that hands the buyer to a stranger. */
+.wa-safety {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 var(--s-3);
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: rgba(242, 200, 121, 0.08);
+  border: 1px solid rgba(242, 200, 121, 0.22);
+  color: var(--gold-soft);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.wa-safety svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.footer-trust {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--s-4) var(--gutter) 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--ink-faint);
+}
+.footer-trust svg {
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--gold);
+}
+.footer-trust a {
+  color: var(--gold-soft);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   8. Store profile photo / cover picker
+   ============================================================ */
+
+.brand-media {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s-4);
+  align-items: center;
+  padding: var(--s-4) 0;
+  border-bottom: 1px solid var(--line);
+}
+.brand-media:last-of-type {
+  border-bottom: 0;
+}
+.brand-media.wide {
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+}
+.brand-media-preview {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed var(--line-2);
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.brand-media.wide .brand-media-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 6;
+  border-radius: var(--r-md);
+}
+.brand-media-preview.is-drag {
+  border-color: var(--em);
+  background: rgba(44, 229, 142, 0.08);
+}
+.brand-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.brand-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.brand-logo-fallback,
+.brand-cover-empty {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 640;
+  color: var(--em);
+}
+.brand-media-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 11, 9, 0.72);
+  color: var(--gold-soft);
+  font-size: 0.74rem;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px;
+}
+.brand-media-body h3 {
+  margin: 0 0 4px;
+  font-size: 0.98rem;
+}
+.brand-media-body .hint {
+  margin: 0 0 var(--s-3);
+}
+.brand-media-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  align-items: center;
+}
+.brand-media-picker {
+  grid-column: 1 / -1;
+  margin-top: var(--s-2);
+  padding: var(--s-3);
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--line);
+}
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: var(--s-2);
+  max-height: 260px;
+  overflow-y: auto;
+}
+.picker-tile {
+  position: relative;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--glass);
+  cursor: pointer;
+  aspect-ratio: 1;
+  transition: border-color 0.2s var(--ease), transform 0.2s var(--ease);
+}
+.picker-tile:hover {
+  border-color: var(--em);
+  transform: translateY(-2px);
+}
+.picker-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.picker-tile.is-current {
+  border-color: var(--gold);
+}
+.picker-flag {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 2px 6px;
+  border-radius: var(--r-pill);
+  background: var(--gold);
+  color: #241a06;
+  font-size: 0.62rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+@media (max-width: 560px) {
+  .brand-media {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: start;
+  }
+}
+
+/* Store avatar on market cards */
+.listing-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.listing-avatar {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: inline-grid;
+  place-items: center;
+  background: rgba(44, 229, 142, 0.12);
+  border: 1px solid rgba(44, 229, 142, 0.3);
+}
+.listing-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.listing-avatar-fallback {
+  font-size: 0.6rem;
+  font-weight: 800;
+  color: var(--em-soft);
+  letter-spacing: 0.02em;
+}
+.listing-seller {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   9. Navigation feedback (see components/RouteProgress.tsx)
+   ============================================================ */
+
+.route-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  z-index: 300;
+  pointer-events: none;
+  background: rgba(44, 229, 142, 0.12);
+}
+.route-progress > span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--em-deep), var(--em) 55%, var(--gold));
+  box-shadow: 0 0 12px rgba(44, 229, 142, 0.6);
+  animation: route-progress 1.4s cubic-bezier(0.16, 0.84, 0.44, 1) forwards;
+}
+.route-progress.is-done > span {
+  width: 100%;
+  transition: width 0.28s var(--ease);
+  animation: none;
+}
+@keyframes route-progress {
+  0% { width: 0; }
+  55% { width: 72%; }
+  100% { width: 92%; }
+}
+
+/* ============================================================
+   10. Sticky offsets derived from the header token
+   ============================================================ */
+
+.wa-card {
+  top: calc(var(--header-h) + var(--s-3));
+  padding: var(--s-5);
+  border-radius: var(--r-md);
+}
+/* Scoped like their base rules: an unscoped `top` here would beat the
+   small-screen overrides in globals.css (same specificity, later file). */
+@media (min-width: 900px) {
+  .item-media.reveal {
+    top: calc(var(--header-h) + var(--s-3));
+  }
+}
+@media (min-width: 641px) {
+  .flip-back {
+    top: calc(var(--header-h) + var(--s-5));
+  }
+}
+
+/* ============================================================
+   11. Reduced motion — the new pieces obey it too
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  .route-progress > span {
+    animation: none;
+    width: 92%;
+  }
+  .table-wrap {
+    background: none;
+  }
+}
+
+/* ============================================================
+   12. Item spec table — readable at every width
+   ============================================================ */
+
+/* Two columns of label/value only while there is room for both. Long values
+   (a course syllabus, "what you will produce") used to be squeezed into a
+   right-aligned sliver on a phone. */
+.field-table {
+  border-top: 1px solid var(--line);
+  margin: var(--s-5) 0;
+}
+.field-row {
+  gap: var(--s-3);
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+.field-row dt {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.field-row dd {
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 620px) {
+  .field-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .field-row dd {
+    text-align: left;
+    font-weight: 500;
+    color: var(--ink);
+  }
+}
+
+/* ============================================================
+   13. Storefront & marketplace polish
+   ============================================================ */
+
+.store-hero .inner {
+  padding: clamp(var(--s-8), 5vw, 56px) var(--gutter) var(--s-8);
+  gap: var(--s-4);
+  flex-wrap: wrap;
+}
+@media (max-width: 560px) {
+  .store-hero .inner {
+    padding-top: var(--s-8);
+  }
+  .store-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--r-md);
+  }
+}
+.item-layout {
+  gap: clamp(var(--s-5), 3vw, 30px);
+}
+.price-big {
+  font-size: clamp(1.6rem, 4vw, 1.9rem);
+}
+.empty {
+  padding: clamp(var(--s-12), 10vw, 72px) var(--s-5);
+}
+.notice,
+.form-msg {
+  border-radius: var(--r-md);
+}
+
+/* Reserve the strip the fixed mobile WhatsApp bar occupies, so it never covers
+   the last thing on the page (rendered by the storefront and item pages). */
+.sticky-bar-space {
+  height: 0;
+}
+@media (max-width: 899px) {
+  .sticky-bar-space {
+    height: calc(84px + env(safe-area-inset-bottom));
+  }
+}
+
+/* The platform owner's own store carries a gold mark so buyers can tell it
+   apart from a reseller trading on the Cyber Elias Academy name. */
+.trust-chip.official {
+  background: linear-gradient(135deg, var(--gold), #ffe9b8);
+  color: #1b1204;
+  font-weight: 800;
+  border-color: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   §14 · Store strength
+   The vendor's activation checklist. It sits above their numbers because it is
+   the only widget on the dashboard that tells them what to *do*.
+   --------------------------------------------------------------------------- */
+.strength h2 {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.strength-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--ink-dim);
+}
+.strength-pill.empty { color: var(--ink-dim); }
+.strength-pill.starter { border-color: rgba(242, 200, 121, 0.5); background: rgba(242, 200, 121, 0.12); color: var(--gold); }
+.strength-pill.good { border-color: rgba(44, 229, 142, 0.4); background: rgba(44, 229, 142, 0.12); color: var(--em-soft); }
+.strength-pill.strong { border-color: transparent; background: var(--em); color: #04150d; }
+
+.strength-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin: 14px 0 4px;
+}
+.strength-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--em), var(--gold));
+  transition: width 420ms var(--ease);
+}
+
+.strength-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.strength-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg-1);
+}
+.strength-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 999px;
+  background: var(--gold);
+}
+.strength-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.9rem;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.strength-list .mini-btn {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 560px) {
+  .strength-list li {
+    flex-wrap: wrap;
+  }
+  .strength-label {
+    flex-basis: calc(100% - 18px);
+  }
+  .strength-list .mini-btn {
+    margin-left: 18px;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   §15 · Analytics
+   A tiny bar chart in pure CSS: no chart library, no client JS, and it still
+   says something useful when the numbers are all zero.
+   --------------------------------------------------------------------------- */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 132px;
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 10px);
+  background: var(--bg-1);
+  overflow-x: auto;
+}
+.spark-col {
+  flex: 1 1 0;
+  min-width: 5px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.spark-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  width: 100%;
+  height: 100%;
+}
+.spark-bar > span {
+  flex: 1 1 0;
+  min-height: 0;
+  border-radius: 2px 2px 0 0;
+  transition: height 300ms var(--ease);
+}
+.spark-bar > .views { background: rgba(44, 229, 142, 0.35); }
+.spark-bar > .clicks { background: var(--em); }
+
+.spark-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 10px;
+  font-size: 0.82rem;
+  color: var(--ink-dim);
+}
+.spark-key i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+.spark-key i.views { background: rgba(44, 229, 142, 0.35); }
+.spark-key i.clicks { background: var(--em); }
+.spark-key .faint { color: var(--muted); }
+
+.delta {
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.delta.up { color: var(--em-soft); }
+.delta.down { color: var(--gold); }
+.delta.flat { color: var(--muted); font-weight: 500; }
+
+/* Range switcher on the analytics heading */
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip-row .chip.on {
+  background: var(--em);
+  border-color: transparent;
+  color: #04150d;
+}
+
+/* ---------------------------------------------------------------------------
+   §16 · Moderation queue + shared dialog
+   --------------------------------------------------------------------------- */
+.sla-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--glass);
+  color: var(--ink-dim);
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sla-pill.ok { color: var(--ink-dim); }
+.sla-pill.warn { border-color: rgba(242, 200, 121, 0.5); background: rgba(242, 200, 121, 0.12); color: var(--gold); }
+.sla-pill.danger { border-color: transparent; background: #b3261e; color: #fff; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(2, 6, 5, 0.72);
+  backdrop-filter: blur(3px);
+}
+.modal {
+  width: min(560px, 100%);
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
+}
+.field {
+  display: block;
+  margin: 12px 0;
+}
+.field .label {
+  display: block;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+/* §17 · Security page (2FA enrolment, recovery codes, devices) */
+.qr-box {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--glass);
+}
+.qr-box img {
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+}
+.totp-secret {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px dashed var(--line);
+  font-size: 0.95rem;
+  letter-spacing: 0.06em;
+  word-break: break-all;
+}
+.backup-codes {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.backup-codes code {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.device-list {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  gap: 10px;
+}
+.device-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--glass);
+}
+@media (max-width: 500px) {
+  .backup-codes { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .device-list li { flex-direction: column; align-items: flex-start; }
+}
+
+.totp-input {
+  font-size: 1.6rem;
+  letter-spacing: 0.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  padding-inline: 0.5em;
+}
+
+/* ---------------------------------------------------------------------------
+   §18 · Admin tables when the space gets tight
+   ---------------------------------------------------------------------------
+   Eighteen admin and vendor screens are tables. On a 360 px screen a
+   seven-column table scrolls sideways — which is fine — but you lose the leftmost column, i.e.
+   the store, listing or user you are looking at, and every row becomes
+   anonymous. Pinning the first column keeps the subject of the row on screen
+   while the rest scrolls under it. The container keeps the right-edge fade so
+   it stays obvious that there is more table to the side.
+
+   This is a *container* query, keyed to the width .dash-main actually has,
+   not to the viewport. At a 900px viewport the 248px sidebar leaves the
+   content around 590px, so a viewport breakpoint would sit still while the
+   table overflowed.
+   --------------------------------------------------------------------------- */
+@container dash (max-width: 700px) {
+  .table-wrap > .tbl,
+  .table-wrap > .data-table,
+  .table-scroll > .data-table {
+    min-width: 520px;
+  }
+  .table-wrap > .tbl td,
+  .table-wrap > .tbl th,
+  .table-wrap > .data-table td,
+  .table-wrap > .data-table th,
+  .table-scroll > .data-table td,
+  .table-scroll > .data-table th {
+    padding: 10px 12px;
+  }
+  /* The subject of the row: name / store / listing. Never scrolls away. */
+  .table-wrap > .tbl tbody td:first-child,
+  .table-wrap > .data-table tbody td:first-child,
+  .table-scroll > .data-table tbody td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--bg-1);
+    max-width: 52vw;
+    overflow-wrap: anywhere;
+  }
+  .table-wrap > .tbl thead th:first-child,
+  .table-wrap > .data-table thead th:first-child,
+  .table-scroll > .data-table thead th:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    background: var(--bg-1);
+  }
+  /* A hairline so the pinned column reads as a separate layer. */
+  .table-wrap > .tbl tbody td:first-child::after,
+  .table-wrap > .data-table tbody td:first-child::after,
+  .table-scroll > .data-table tbody td:first-child::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+  }
+  .table-wrap > .tbl tbody td:first-child,
+  .table-wrap > .data-table tbody td:first-child,
+  .table-scroll > .data-table tbody td:first-child {
+    position: sticky;
+  }
+  /* Full-width cells (empty states, skeletons) must not be pinned. */
+  .table-wrap > .tbl tbody td[colspan]:not([colspan='1']),
+  .table-wrap > .data-table tbody td[colspan]:not([colspan='1']),
+  .table-scroll > .data-table tbody td[colspan]:not([colspan='1']) {
+    position: static;
+    max-width: none;
+    background: transparent;
+  }
+}
+
+.ok-banner { border-color: rgba(0, 214, 143, 0.35); background: rgba(0, 214, 143, 0.06); }
+.warn-banner { border-color: rgba(255, 138, 128, 0.4); background: rgba(255, 138, 128, 0.07); }
+/* Row of filters at the top of a panel: date from, date to, export. */
+.filter-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.filter-row .field .input { min-width: 150px; }
+@media (max-width: 520px) {
+  .filter-row { align-items: stretch; }
+  .filter-row .field { flex: 1 1 140px; }
+  .filter-row > .btn,
+  .filter-row > a.btn { flex: 1 1 100%; text-align: center; }
+}
+
+/* §19 · Stat tiles used by Admin → Reconciliation and Admin → Health.
+        (The vendor Analytics tiles use .num / .lbl / .sub instead.) */
+.stat-label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-sub { display: block; font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+.stat-grid .stat > strong {
+  display: block;
+  font-size: clamp(1.3rem, 3vw, 1.6rem);
+  line-height: 1.2;
+  margin: 4px 0 2px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* §20 · Notification preferences (Settings → Notifications) */
+.pref-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+  display: grid;
+  gap: 2px;
+}
+.pref-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.pref-list li:last-child { border-bottom: 0; }
+.pref-copy { display: grid; gap: 2px; min-width: 0; flex: 1 1 240px; }
+.pref-copy span { font-size: 0.83rem; color: var(--muted); }
+
+/* A real switch, not a bare checkbox: the tap target is the whole row. */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 6px;
+  border-radius: 999px;
+}
+.switch input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+.switch-track {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--line);
+  border: 1px solid var(--line);
+  transition: background 0.18s var(--ease);
+}
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  transition: transform 0.18s var(--ease), background 0.18s var(--ease);
+}
+.switch input:checked + .switch-track { background: var(--em); border-color: var(--em); }
+.switch input:checked + .switch-track::after { transform: translateX(18px); background: #04150d; }
+.switch input:focus-visible + .switch-track { outline: 2px solid var(--em); outline-offset: 3px; }
+.switch-label { font-size: 0.82rem; color: var(--muted); }
+.switch input:checked ~ .switch-label { color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  .switch-track, .switch-track::after { transition: none; }
+}
+
+/* §21 · Admin tables on a phone, part two: stacked record cards
+   ---------------------------------------------------------------------------
+   When the content column drops below 700px, §18 pins the first column.
+   Below 560px there is no width left to scroll through, so
+   `ResponsiveTables` copies each column heading onto the cells (data-label)
+   and the row becomes a card: heading on the left, value on the right, one
+   field per line. A container query too — see §18 for why.
+
+   Gated on `.is-stacked`, which only lands once the labels have been written.
+   Without JavaScript the table keeps §18's sticky first column instead of
+   degrading into an unlabelled pile of values.
+
+   Everything below also has to undo §18 explicitly, since 560px is inside
+   that block's 700px range.
+   --------------------------------------------------------------------------- */
+@container dash (max-width: 560px) {
+  table.tbl.is-stacked,
+  table.data-table.is-stacked {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .is-stacked thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .is-stacked tbody { display: block; }
+
+  .is-stacked tbody tr {
+    display: block;
+    padding: 10px 12px;
+    margin: 0 0 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: rgba(255, 255, 255, 0.015);
+  }
+  .is-stacked tbody tr:last-child { margin-bottom: 0; }
+
+  .is-stacked tbody td {
+    display: grid;
+    grid-template-columns: minmax(84px, 32%) 1fr;
+    gap: 10px;
+    align-items: start;
+    padding: 7px 0;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    /* Undo §18's pinned-column styling. */
+    position: static;
+    max-width: none;
+    background: transparent;
+    overflow-wrap: anywhere;
+  }
+  .is-stacked tbody tr td:last-child { border-bottom: 0; }
+
+  .is-stacked tbody td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: var(--fs-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    line-height: 1.5;
+    padding-top: 2px;
+  }
+  /* Remove the hairline §18 draws on the pinned column. */
+  .is-stacked tbody td::after { content: none; }
+
+  /* Skeletons and "no rows" messages span the whole card. */
+  .is-stacked tbody td[colspan]:not([colspan='1']) {
+    display: block;
+    grid-template-columns: none;
+    border-bottom: 0;
+    text-align: center;
+  }
+  .is-stacked tbody td[colspan]:not([colspan='1'])::before { content: none; }
+
+  /* A heading-less cell would leave a gap where the label should be. */
+  .is-stacked tbody td:not([data-label]) { display: block; }
+  .is-stacked tbody td:not([data-label])::before { content: none; }
+}
+
+/* §22 · Contents list for the long legal pages (terms, privacy, safety)
+   ---------------------------------------------------------------------------
+   Those pages are six to ten sections of dense text with no way around them
+   but scrolling. This is a plain list of anchor links above the document — no
+   JavaScript, so it is there for crawlers and slow connections alike.
+
+   Anchors land correctly because `h2[id]` already carries
+   `scroll-margin-top: 84px` (cine.css), clearing the sticky header.
+   --------------------------------------------------------------------------- */
+.page-nav {
+  margin: 0 0 26px;
+  padding: 14px 16px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--glass);
+}
+.page-nav-title {
+  margin: 0 0 4px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.page-nav-intro {
+  margin: 0 0 10px;
+  font-size: 0.86rem;
+  color: var(--ink-faint);
+}
+.page-nav ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 700px) {
+  .page-nav ol {
+    grid-template-columns: 1fr 1fr;
+    gap: 1px 14px;
+  }
+}
+.page-nav a {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-height: 40px;
+  padding: 8px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  color: var(--ink-dim);
+  text-decoration: none;
+}
+.page-nav a:hover {
+  background: var(--glass-2);
+  color: var(--ink);
+  text-decoration: none;
+}
+.page-nav a:focus-visible {
+  outline: 2px solid var(--em);
+  outline-offset: 1px;
+}
+/* Section number, purely decorative — the link text already reads in order. */
+.page-nav a > span {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--em);
+  opacity: 0.75;
+}

@@ -230,7 +230,7 @@ export default function AdminCategoriesPage() {
             Shown on the vendor’s listing form and on public item pages. New industries need no code changes.
           </p>
           {editing.fields.map((f, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 2fr auto auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <div key={i} className="row-grid row-grid-4">
               <input className="input" placeholder="key (duration)" value={f.key} onChange={(e) => setField(i, { key: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') })} />
               <input className="input" placeholder="Label (Duration)" value={f.label} onChange={(e) => setField(i, { label: e.target.value })} />
               <select className="select" value={f.type} onChange={(e) => setField(i, { type: e.target.value, options: OPTION_TYPES.has(e.target.value) ? f.options ?? [] : undefined })}>
@@ -245,13 +245,15 @@ export default function AdminCategoriesPage() {
               ) : (
                 <input className="input" placeholder="Placeholder (optional)" value={f.placeholder ?? ''} onChange={(e) => setField(i, { placeholder: e.target.value })} />
               )}
-              <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
-                <input type="checkbox" checked={!!f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
-                req
-              </label>
-              <button className="mini-btn danger" onClick={() => setEditing({ ...editing, fields: editing.fields.filter((_, j) => j !== i) })}>
-                ✕
-              </button>
+              <div className="row-actions">
+                <label style={{ display: 'flex', gap: 5, alignItems: 'center', fontSize: '0.85rem', whiteSpace: 'nowrap' }}>
+                  <input type="checkbox" checked={!!f.required} onChange={(e) => setField(i, { required: e.target.checked })} />
+                  Required
+                </label>
+                <button className="mini-btn danger" onClick={() => setEditing({ ...editing, fields: editing.fields.filter((_, j) => j !== i) })}>
+                  ✕ Remove
+                </button>
+              </div>
             </div>
           ))}
           <button className="mini-btn" onClick={() => setEditing({ ...editing, fields: [...editing.fields, { key: '', label: '', type: 'text', required: false }] })}>

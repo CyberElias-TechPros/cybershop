@@ -19,6 +19,7 @@ export default function EnquiryBox({
   ctaLabel,
   messagePreview,
   variants,
+  safetyNote,
 }: {
   businessId: number;
   listingId: number;
@@ -26,6 +27,7 @@ export default function EnquiryBox({
   ctaLabel?: string;
   messagePreview?: string;
   variants?: Variant[];
+  safetyNote?: string;
 }) {
   const [variantId, setVariantId] = useState<number | null>(variants?.[0]?.id ?? null);
   const picked = variants?.find((v) => v.id === variantId);
@@ -52,6 +54,7 @@ export default function EnquiryBox({
         withDetails
         messagePreview={messagePreview}
         variantId={picked?.id ?? null}
+        safetyNote={safetyNote}
       />
     </div>
   );

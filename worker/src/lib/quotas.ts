@@ -27,8 +27,21 @@ function parseQuota(json: string | null): Partial<Omit<Quotas, 'plan_slug' | 'pl
   }
 }
 
-/** Effective quotas = plan quota + active add-ons. -1 means unlimited. */
+/**
+ * Effective quotas = plan quota + active add-ons. -1 means unlimited.
+ *
+ * A granted plan (see lib/entitlement) wins outright: it is the plan the store
+ * is entitled to, so it applies whether or not a paid subscription row happens
+ * to be current. That makes the entitlement impossible to break by accident.
+ */
 export async function effectiveQuotas(env: Env, businessId: number): Promise<Quotas> {
+  const override = (await env.DB.prepare(
+    `SELECT p.id AS plan_id, p.name, p.slug, p.quota FROM businesses b
+     JOIN plans p ON p.slug = b.plan_override
+     WHERE b.id = ? AND b.plan_override IS NOT NULL`
+  ).bind(businessId).first()) as { plan_id: number; name: string; slug: string; quota: string } | null;
+  if (override) return quotasFrom(override, await addonBoosts(env, businessId));
+
   const sub = (await env.DB.prepare(
     `SELECT p.id AS plan_id, p.name, p.slug, p.quota FROM subscriptions s
      JOIN plans p ON p.id = s.plan_id
@@ -36,18 +49,18 @@ export async function effectiveQuotas(env: Env, businessId: number): Promise<Quo
      ORDER BY s.id DESC LIMIT 1`
   ).bind(businessId).first()) as { plan_id: number; name: string; slug: string; quota: string } | null;
 
-  const base = sub ? parseQuota(sub.quota) : parseQuota(null);
-  const q: Quotas = {
-    max_whatsapp_numbers: base.max_whatsapp_numbers ?? 1,
-    max_storage_mb: base.max_storage_mb ?? 500,
-    max_listings: base.max_listings ?? 10,
-    max_categories: base.max_categories ?? 1,
-    max_staff: base.max_staff ?? 0,
-    featured_listings: base.featured_listings ?? 0,
-    plan_slug: sub?.slug || 'none',
-    plan_name: sub?.name || 'No plan',
-  };
+  return quotasFrom(sub, await addonBoosts(env, businessId));
+}
 
+interface QuotaPlanRow {
+  plan_id: number;
+  name: string;
+  slug: string;
+  quota: string;
+}
+
+/** Boosts purchased on top of a plan, keyed by add-on type. */
+async function addonBoosts(env: Env, businessId: number): Promise<Record<string, number>> {
   const addons = (await env.DB.prepare(
     `SELECT a.type, COALESCE(SUM(va.quantity), 0) AS qty FROM vendor_addons va
      JOIN addons a ON a.id = va.addon_id
@@ -55,13 +68,37 @@ export async function effectiveQuotas(env: Env, businessId: number): Promise<Quo
        AND (va.expires_at IS NULL OR va.expires_at > datetime('now'))
      GROUP BY a.type`
   ).bind(businessId).all()).results as { type: string; qty: number }[];
+  const out: Record<string, number> = {};
+  for (const a of addons) out[a.type] = a.qty;
+  return out;
+}
 
-  for (const a of addons) {
-    if (a.type === 'extra_whatsapp_number') q.max_whatsapp_numbers += a.qty;
-    if (a.type === 'extra_storage') q.max_storage_mb += a.qty * 10; // each add-on = 10GB
-    if (a.type === 'extra_category') q.max_categories += a.qty;
-    if (a.type === 'featured_listing') q.featured_listings += a.qty;
-    if (a.type === 'staff_account') q.max_staff += a.qty;
+/** Plan quota + add-on boosts, resolved once. `plan` is null when unsubscribed. */
+function quotasFrom(plan: QuotaPlanRow | null, addons: Record<string, number>): Quotas {
+  const base = plan ? parseQuota(plan.quota) : parseQuota(null);
+  const q: Quotas = {
+    max_whatsapp_numbers: base.max_whatsapp_numbers ?? 1,
+    max_storage_mb: base.max_storage_mb ?? 500,
+    max_listings: base.max_listings ?? 10,
+    max_categories: base.max_categories ?? 1,
+    max_staff: base.max_staff ?? 0,
+    featured_listings: base.featured_listings ?? 0,
+    plan_slug: plan?.slug || 'none',
+    plan_name: plan?.name || 'No plan',
+  };
+
+  // A granted Enterprise plan is genuinely unlimited on the axes that gate a
+  // catalogue, so short-circuit the arithmetic rather than relying on -1
+  // surviving a `+=` somewhere downstream.
+  const unlimited = q.max_listings < 0 && q.max_storage_mb < 0 && q.featured_listings < 0;
+  if (unlimited) return { ...q, max_whatsapp_numbers: Math.max(q.max_whatsapp_numbers, 10), max_staff: Math.max(q.max_staff, 10) };
+
+  for (const [type, qty] of Object.entries(addons)) {
+    if (type === 'extra_whatsapp_number') q.max_whatsapp_numbers += qty;
+    if (type === 'extra_storage') q.max_storage_mb += qty * 10; // each add-on = 10GB
+    if (type === 'extra_category') q.max_categories += qty;
+    if (type === 'featured_listing') q.featured_listings += qty;
+    if (type === 'staff_account') q.max_staff += qty;
   }
   return q;
 }

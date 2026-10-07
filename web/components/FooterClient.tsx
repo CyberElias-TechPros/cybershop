@@ -6,7 +6,7 @@ import { useState } from 'react';
  * Footer (client) — brand, nav, legal links, live support email.
  * The email button copies the address (mobile-friendly: no app-switch surprise).
  */
-export default function FooterClient({ supportEmail }: { supportEmail: string }) {
+export default function FooterClient({ supportEmail, safety }: { supportEmail: string; safety: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copyEmail() {
@@ -61,6 +61,13 @@ export default function FooterClient({ supportEmail }: { supportEmail: string })
           <span className="footer-hours">Always open · GMT+1</span>
         </nav>
       </div>
+      <p className="footer-trust">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M12 3l7 3v5.5c0 4.3-2.9 7.9-7 9.5-4.1-1.6-7-5.2-7-9.5V6l7-3z" strokeLinejoin="round" />
+          <path d="M9.3 12.2l1.9 1.9 3.6-3.7" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span>{safety} <a href="/safety">Read the safety guide →</a></span>
+      </p>
       <div className="footer-bar">
         <span>© {new Date().getFullYear()} CyberShop. Made for conversations.</span>
         <span className="footer-sig">Lagos · the continent · the chat</span>

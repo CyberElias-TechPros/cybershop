@@ -9,6 +9,11 @@ import {
   getMedia, assertMediaOwnership, markMediaAttached, detachMedia, softDeleteMedia, storageUsedBytes, IMAGE_MIME, AUDIO_MIME,
 } from '../lib/media';
 import { effectiveQuotas, assertListingQuota, assertNumberQuota, assertStorageQuota, assertBusinessWritable } from '../lib/quotas';
+import { entitlementFor } from '../lib/entitlement';
+import { storeCompleteness } from '../lib/completeness';
+import { vendorAnalytics, analyticsRows } from '../lib/vendor-analytics';
+import { likeContains } from '../lib/search';
+import { csvResponse as sharedCsvResponse } from '../lib/csv';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
@@ -32,12 +37,34 @@ app.get('/business', async (c) => {
   const storage = await storageUsedBytes(c.env, business.id);
   const code = await ensureReferralCode(c.env, user.id);
   const credit = await referralCredit(c.env, user.id);
+  // Resolved branding URLs, so the dashboard can preview the store photo and
+  // cover it already uploaded instead of showing an empty frame.
+  const brandMedia = async (id: unknown) => {
+    const n = Number(id);
+    if (!Number.isInteger(n) || n < 1) return null;
+    const m = (await c.env.DB.prepare('SELECT id, driver, storage_key, mime_type, original_name FROM media WHERE id = ? AND business_id = ? AND deleted_at IS NULL').bind(n, business.id).first()) as
+      | { id: number; driver: 'd1' | 'gateway'; storage_key: string; mime_type: string; original_name: string | null }
+      | null;
+    return m ? { id: m.id, url: mediaUrl(c.env, m), alt: m.original_name || 'Store photo' } : null;
+  };
   return c.json({
     ok: true,
-    business: { ...row, categories: cats, storefront: parseStorefront(row.settings as string | null) },
+    business: {
+      ...row,
+      categories: cats,
+      storefront: parseStorefront(row.settings as string | null),
+      logo: await brandMedia(row.logo_media_id),
+      cover: await brandMedia(row.cover_media_id),
+    },
     quotas,
     storage_used_bytes: storage,
+    // Which upload path the dashboard must use (Worker-stored vs cPanel gateway).
+    driver: c.env.MEDIA_DRIVER === 'gateway' ? 'gateway' : 'd1',
     referral: { code, link: referralLink(c.env, code), credit_kobo: credit },
+    // Set when the store is on a plan it was granted rather than one it paid
+    // for. The dashboard uses it to say "no charge, never expires" instead of
+    // showing a renewal date and a Pay Now button.
+    entitlement: await entitlementFor(c.env, business.id),
   });
 });
 
@@ -235,15 +262,26 @@ app.delete('/media/:id', async (c) => {
   return c.json({ ok: true, deleted: true });
 });
 
-/** Vendor picks logo/cover from their media library. */
+/**
+ * Vendor picks logo/cover from their media library — or clears it
+ * (`media_id: null`), which stores the storefront back to its wordmark.
+ */
 app.post('/business/media', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const body = await c.req.json().catch(() => null);
-  const field = body?.field === 'cover' ? 'cover_media_id' : 'logo_media_id';
-  const mediaId = reqInt(body?.media_id, { min: 1 });
+  if (!body || typeof body !== 'object') throw badRequest('Invalid request.');
+  const field = (body as { field?: unknown }).field === 'cover' ? 'cover_media_id' : 'logo_media_id';
+  const raw = (body as { media_id?: unknown }).media_id;
+
+  if (raw === null || raw === undefined || raw === '' || raw === 0) {
+    await c.env.DB.prepare(`UPDATE businesses SET ${field} = NULL WHERE id = ?`).bind(business.id).run();
+    return c.json({ ok: true, cleared: field });
+  }
+
+  const mediaId = reqInt(raw, { min: 1 });
   await assertMediaOwnership(c.env, mediaId, business.id);
   await c.env.DB.prepare(`UPDATE businesses SET ${field} = ? WHERE id = ?`).bind(mediaId, business.id).run();
-  return c.json({ ok: true });
+  return c.json({ ok: true, field });
 });
 
 // ---------------------------------------------------------------- catalogue
@@ -271,7 +309,7 @@ app.get('/items', async (c) => {
   let where = `WHERE l.business_id = ? AND l.deleted_at IS NULL`;
   const params: (string | number)[] = [business.id];
   if (['draft', 'published', 'archived'].includes(status)) { where += ' AND l.status = ?'; params.push(status); }
-  if (q) { where += ' AND (l.name LIKE ? OR l.description LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (q) { where += ' AND (l.name LIKE ? OR l.description LIKE ?)'; params.push(likeContains(q), likeContains(q)); }
   const total = ((await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await c.env.DB.prepare(
     `SELECT l.id, l.name, l.slug, l.status, l.price, l.price_type, l.item_type_id, l.category_id, l.featured, l.stock_status, l.published_at, l.whatsapp_number_id,
@@ -678,6 +716,27 @@ app.delete('/whatsapp/:id', async (c) => {
 
 // ---------------------------------------------------------------- plans & payments
 
+// ------------------------------------------------------------------ analytics
+/**
+ * Dashboard → Analytics.
+ *
+ * Everything the overview shows as a single number, but sliced by day and by
+ * listing, with the change against the previous equal window. Vendors cannot
+ * act on "312 views" — they can act on "Web Development is getting the views
+ * and Graphic Design is getting the clicks, and both are down 20% on last
+ * month".
+ */
+app.get('/analytics', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const days = clampInt(c.req.query('days'), 1, 365, 30);
+  const analytics = await vendorAnalytics(c.env, business.id, days);
+  // `?format=csv` is the export the dashboard's "Download CSV" button points at.
+  if (c.req.query('format') === 'csv') {
+    return csvResponse(c, analyticsRows(analytics), `cybershop-analytics-${new Date().toISOString().slice(0, 10)}.csv`);
+  }
+  return c.json({ ok: true, analytics });
+});
+
 app.get('/plans', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const plans = (await c.env.DB.prepare('SELECT * FROM plans WHERE is_active = 1 ORDER BY sort_order').all()).results as unknown as (PlanRow & { description: string | null; features: string | null })[];
@@ -704,6 +763,7 @@ app.get('/plans', async (c) => {
   return c.json({
     ok: true,
     bank_accounts: bankAccounts,
+    entitlement: await entitlementFor(c.env, business.id),
     plans: plans.map((p) => ({ ...p, price_display: formatNaira(p.price), features: safeJson(p.features) })),
     addons: addons.map((a) => ({ ...a, price_display: formatNaira(a.price) })),
     subscription: sub,
@@ -925,6 +985,8 @@ app.get('/overview', async (c) => {
     pending_payment: pendingPayment ? { ...pendingPayment, amount_display: formatNaira(Number(pendingPayment.amount)) } : null,
     usage: { storage_used_bytes: storage, storage_limit_mb: quotas.max_storage_mb, items: counts.published, items_limit: quotas.max_listings, plan: quotas.plan_name },
     top_items: topItems,
+    // The vendor's to-do list, ordered by what actually wins enquiries.
+    completeness: await storeCompleteness(c.env, business.id),
   });
 });
 
@@ -944,19 +1006,11 @@ function safeJson(v: string | null): unknown {
   try { return v ? JSON.parse(v) : null; } catch { return null; }
 }
 
-function csvResponse(c: Context, rows: (string | number)[][], filename: string): Response {
-  const esc = (v: string | number) => {
-    const s = String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const body = '\ufeff' + rows.map((r) => r.map(esc).join(',')).join('\r\n');
-  return new Response(body, {
-    headers: {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="${filename}"`,
-      'cache-control': 'no-store',
-    },
-  });
+function csvResponse(_c: Context, rows: unknown[][], filename: string): Response {
+  // Delegates to the shared writer, which escapes every cell and defuses
+  // leading `=`/`+`/`-`/`@` — item names here are vendor-supplied and these
+  // files get opened in Excel.
+  return sharedCsvResponse(filename, rows);
 }
 
 export default app;

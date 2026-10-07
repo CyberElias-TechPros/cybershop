@@ -4,16 +4,30 @@ import { notify } from '../lib/notify';
 import { pruneRateLimits } from '../lib/ratelimit';
 import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from '../lib/premium';
 import { restoreCredit } from '../lib/referral';
+import { entitledBusinessIds, syncEntitlement } from '../lib/entitlement';
+import { reportSlaSweep } from '../lib/moderation';
+import { reconcilePayments } from '../lib/reconcile';
+import { ALERT_RULES, shouldAlert, markAlertSent, pruneErrorLog } from '../lib/errorlog';
 
 /** Hourly maintenance job (Cloudflare Cron Trigger). Idempotent. */
 export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string, number> }> {
   const summary: Record<string, number> = {};
   const now = nowIso();
 
+  // 0. Stores on a granted plan (the platform owner's own store) are re-asserted
+  //    before anything else runs, so nothing below can expire, suspend or
+  //    downgrade them. A granted plan's subscription has expires_at = NULL,
+  //    which every sweep in this job already skips — this is the belt to that
+  //    braces: it also repairs the store if an admin suspended it by hand.
+  const entitled = await entitledBusinessIds(env);
+  for (const id of entitled) await syncEntitlement(env, id);
+  summary.entitlements_synced = entitled.length;
+
   // 1. Subscription expiry: active → expired (+7 day grace) → business 'expired'
   const expiring = (await env.DB.prepare(
     `SELECT s.id AS sub_id, s.business_id, s.expires_at FROM subscriptions s
-     WHERE s.status IN ('active','trialing') AND s.expires_at IS NOT NULL AND s.expires_at <= ?`
+     WHERE s.status IN ('active','trialing') AND s.expires_at IS NOT NULL AND s.expires_at <= ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(now).all()).results as { sub_id: number; business_id: number }[];
   for (const s of expiring) {
     const graceUntil = new Date(Date.now() + 7 * 86400_000).toISOString();
@@ -30,7 +44,8 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   const soonCutoff = new Date(Date.now() + 7 * 86400_000).toISOString();
   const soon = (await env.DB.prepare(
     `SELECT s.id AS sub_id, s.business_id FROM subscriptions s
-     WHERE s.status = 'active' AND s.expires_at IS NOT NULL AND s.expires_at <= ? AND s.expires_at > ?`
+     WHERE s.status = 'active' AND s.expires_at IS NOT NULL AND s.expires_at <= ? AND s.expires_at > ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(soonCutoff, now).all()).results as { sub_id: number; business_id: number }[];
   for (const s of soon) {
     await env.DB.prepare(`UPDATE subscriptions SET status = 'expiring' WHERE id = ? AND status = 'active'`).bind(s.sub_id).run();
@@ -45,7 +60,8 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   // 3. Grace period over → business suspended
   const graceOver = (await env.DB.prepare(
     `SELECT s.business_id, s.id AS sub_id FROM subscriptions s
-     WHERE s.status IN ('expired') AND s.grace_until IS NOT NULL AND s.grace_until <= ?`
+     WHERE s.status IN ('expired') AND s.grace_until IS NOT NULL AND s.grace_until <= ?
+       AND NOT EXISTS (SELECT 1 FROM businesses b WHERE b.id = s.business_id AND b.plan_override IS NOT NULL)`
   ).bind(now).all()).results as { business_id: number; sub_id: number }[];
   for (const s of graceOver) {
     await env.DB.prepare(`UPDATE subscriptions SET status = 'grace' WHERE id = ?`).bind(s.sub_id).run();
@@ -140,8 +156,56 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
     summary.abandoned_payments = (summary.abandoned_payments || 0) + 1;
   }
 
-  // 12. Housekeeping
+  // 12. Trust & safety: warn on reports nearing their 48-hour SLA and flag the
+  //     ones that have missed it. A marketplace is judged by how fast it answers
+  //     a report, not by how many it receives.
+  const sla = await reportSlaSweep(env);
+  summary.report_sla_warned = sla.warned;
+  summary.report_sla_breached = sla.breached;
+
+  // 13. Yesterday's money, checked against Paystack. Silent when it agrees;
+  //     a notification per discrepancy when it does not.
+  try {
+    const recon = await reconcilePayments(env, { from: todayStr(), to: todayStr() });
+    if (recon.available && recon.discrepancies.length > 0) {
+      const admins = (await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`).all()).results as { id: number }[];
+      const money = recon.discrepancies.filter((d) => d.kind !== 'missing_on_paystack');
+      for (const a of admins) {
+        await notify(env, {
+          userId: a.id,
+          type: 'reconciliation.mismatch',
+          title: `${recon.discrepancies.length} payment mismatch(es) found`,
+          body: money.length
+            ? `${money.length} involve real money. Open Admin → Reconciliation.`
+            : 'Abandoned checkouts only — no money is missing.',
+          data: { date: todayStr() },
+        });
+      }
+      summary.reconciliation_mismatches = recon.discrepancies.length;
+    }
+  } catch (e) {
+    // Reconciliation must never take the hourly job down with it.
+    console.error('[cron] reconciliation failed', e);
+  }
+
+  // 14. Alert on error rates. One notification per bad hour, not one per error.
+  try {
+    for (const rule of ALERT_RULES) {
+      if (!(await shouldAlert(env, rule))) continue;
+      const admins = (await env.DB.prepare(`SELECT id FROM users WHERE role = 'admin' AND status = 'active'`).all()).results as { id: number }[];
+      for (const a of admins) {
+        await notify(env, { userId: a.id, type: 'health.alert', title: rule.title, body: rule.body, data: { alert_key: rule.key } });
+      }
+      await markAlertSent(env, rule.key);
+      summary[`alert_${rule.key}`] = 1;
+    }
+  } catch (e) {
+    console.error('[cron] alerting failed', e);
+  }
+
+  // 15. Housekeeping
   await pruneRateLimits(env);
+  summary.error_log_pruned = await pruneErrorLog(env);
   await env.DB.prepare(`DELETE FROM upload_tokens WHERE expires_at < ? AND used_at IS NOT NULL`).bind(Math.floor(Date.now() / 1000) - 86400).run();
   await env.DB.prepare(`DELETE FROM sessions WHERE last_activity < ?`).bind(Math.floor(Date.now() / 1000) - 30 * 86400).run();
 

@@ -88,6 +88,12 @@ export function daysFromNow(days: number): string {
   return new Date(Date.now() + days * 86400_000).toISOString();
 }
 
+/** An absolute ISO timestamp `hours` after `from` (default: now). */
+export function hoursFromNow(hours: number, from?: number | string): string {
+  const base = from === undefined ? Date.now() : typeof from === 'string' ? new Date(from).getTime() : from;
+  return new Date(base + hours * 3600_000).toISOString();
+}
+
 export function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }

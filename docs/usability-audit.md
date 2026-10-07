@@ -285,25 +285,63 @@ but it stayed in the tab order — keyboard users tabbed into an off-screen "Cha
   the first HTML, menu with 13 links + close button + `role="dialog"`,
   `main[tabindex="-1"]`, no skeleton on public pages.
 
-## 3. Not changed — recommended next (with reasons)
+## 3. Recommended next — status
 
-These are real gaps; each needs either a visual pass or a product decision, and this
-sandbox has no browser to verify appearance in.
+Originally a list of gaps with reasons for deferring each one. Most are now
+closed, so this is a status table; the ones that are not explain why.
 
-| # | Gap | Recommendation | Why it wasn't done here |
+| # | Gap | Recommendation | Status |
 |---|---|---|---|
-| R1 | `<button>` (add to cart) nested inside `<a class="card">` in `ItemCard`/`ListingCard` — invalid HTML; screen readers expose one or the other, and VoiceOver on iOS often cannot activate the inner control | Stretched-link pattern: card becomes a `div`, the anchor covers it via `::after`, the button is a sibling | Restructures three card components and their CSS; needs eyes on the result |
-| R2 | `Fraunces.ttf` is 352KB and preloaded on every page; `icon-512.png` is 217KB | Convert to woff2 + latin-subset (≈ −60%), compress the icon, add a `maskable` icon for Android | Needs a font toolchain and a visual check of the display face |
-| R3 | `globals.css` (80KB) + `cine.css` (44KB) ship to every route, including the dashboard | Split workbench-only CSS (dash/admin tables, onboarding, auth) into segment stylesheets | Large mechanical refactor; worth doing with a bundle budget in CI |
-| R4 | Every public page is `force-dynamic` + `no-store`: one Worker round-trip per view, zero CDN cache | `unstable_cache`/ISR 30–60s for home, categories, businesses; SWR for listings — the single biggest TTFB win available | Product decision: how stale may the market be? |
-| R5 | Search has no typeahead, no recent searches, no "did you mean"; a 1-character query silently asks for more | Suggestion endpoint + recent-search chips (localStorage) | New API surface |
-| R6 | No visible affordance when `.main-nav` overflows | Edge fade/mask, or a "More categories" entry point | Cosmetic; the packing fix removed the overflow at common widths |
-| R7 | `manifest.ts` exists but there is no service worker — a failed navigation on a flaky network shows the browser's own error page | Minimal offline shell + retry | PWA was scoped to P3 in `docs/feature-matrix.md` |
-| R8 | The custom cursor removes native affordances (grab/pointer/text) and doubles pointer work | Consider dropping it; the hover ring already communicates state | Taste call for the art direction |
-| R9 | The 404 page has no search field — a dead end for a mistyped URL | Add `SearchForm` + popular categories | Trivial, but changes a designed page |
-| R10 | No `aria-live` feedback when filters/pagination replace a result list | Announce "N results" on change | Needs a decision on verbosity |
-| R11 | Long legal pages (terms/privacy) have no in-page navigation | Sticky section index | Content/design work |
-| R12 | Reel drag captures the pointer on `pointerdown` even when it starts on a card link | Capture after a small drag threshold | Behavioural tweak; current click-suppression already prevents accidental navigation |
+| R1 | `<button>` nested inside `<a class="card">` in `ItemCard`/`ListingCard` — invalid HTML, and VoiceOver on iOS often cannot reach the inner control | Stretched-link pattern | **Done.** Cards are no longer nested. `scripts/web-audit/jsx-nesting.mjs` scans every page and component and fails CI on any interactive element inside another; 158 files clean |
+| R2 | `Fraunces.ttf` is 352KB and preloaded on every page; `icon-512.png` is 217KB | woff2 + subset; compress the icon; add a maskable icon | **Done.** Font 352KB → 104KB by keeping the `wght` and `opsz` axes and pinning `SOFT`/`WONK` to the values they already sat at — no visual change. Glyph coverage was left whole (subsetting saved 1.4KB and dropped the minus sign). Icons 240KB → 95KB at PSNR 44dB. A maskable icon was already declared in `app/manifest.ts` |
+| R3 | CSS (125KB raw, 27KB gzip) ships to every route including the dashboard | Split workbench-only CSS into segment stylesheets | **Budget only — the split is not safe here.** See the note below |
+| R4 | Every public page is `force-dynamic`: one Worker round-trip per view, no reuse | Cache the browse surfaces | **Done.** Home, the market feed, the directory and category pages reuse an upstream response for 60s (300s for taxonomies) — but only for anonymous visitors. See the note below |
+| R5 | Search has no typeahead, no recent searches, no "did you mean" | Suggestion endpoint + recent-search chips | **Was already done.** `components/SearchForm.tsx` has debounced typeahead against `/api/public/suggest` and recent searches in `localStorage` |
+| R6 | No visible affordance when `.main-nav` overflows | Edge fade, or a "More categories" entry point | **Done.** A mask fades the right edge, with `scroll-padding-inline: 28px` so a keyboard-focused link never lands inside the faded band |
+| R7 | `manifest.ts` exists but there is no service worker, so a failed navigation shows the browser's error page | Minimal offline shell | **Was already done.** `public/sw.js` serves `public/offline.html` on a failed navigation; registered in production only by `components/OfflineSW.tsx` |
+| R8 | The custom cursor removes native affordances (grab/pointer/text) | Drop it, or restore the native cursors | **Done.** The ring stays as atmosphere; links, buttons, switches and selects get `pointer`, the reel gets `grab`/`grabbing`, disabled controls get `not-allowed` |
+| R9 | The 404 page has no search field — a dead end for a mistyped URL | Add a search field | **Was already done.** `app/not-found.tsx` renders `<SearchForm big />` |
+| R10 | No `aria-live` feedback when filters or pagination replace a result list | Announce "N results" on change | **Done.** `components/ResponsiveTables.tsx` watches each workbench table's row count and announces it politely; the visible counts that change under the user's fingers carry `role="status"` |
+| R11 | Long legal pages have no in-page navigation | Sticky section index | **Done.** `components/PageNav.tsx` — a server-rendered contents list on terms, privacy and safety, labels read from the `<h2>` elements they link to |
+| R12 | Reel drag captures the pointer on `pointerdown`, even when it starts on a card link | Capture after a small drag threshold | **Done.** Capture is deferred until the pointer has moved 6px, so a tap is left to the browser and opens the card |
+
+### R3 — why the CSS is not split
+
+The budget is in place (`scripts/web-audit/css-budget.mjs`, wired into CI, 32KB
+gzip per route against 26.9KB today), but the split itself is not, because the
+mechanism does not work in this app.
+
+Importing a stylesheet from a nested layout or page does not drop it into that
+route — Next builds the chunk, lists it in `app-build-manifest.json`, and then
+never emits the `<link>`. The styles are silently absent. Verified on a static
+route (`/safety`) and a dynamic one (`/admin`), with a probe rule that ended up
+in its own 31-byte file, referenced by the manifest, and loaded by nothing.
+
+So moving the workbench rules out of `design-system.css` would have shipped a
+dashboard with no styles and no error anywhere. The finding is recorded here so
+nobody tries it again without re-testing.
+
+What that leaves: the dashboard really does load 27KB of CSS it barely uses,
+and the only safe lever on that number today is deleting or tightening rules
+rather than moving them. The CI budget stops it growing.
+
+### R4 — why only anonymous visitors are cached
+
+The public endpoints run a block filter that reads the session and removes any
+business the signed-in visitor has blocked. Caching a page built from that
+response is not merely a leak of one visitor's block list — it shows a blocked
+seller back to the person who blocked them. On a marketplace where people block
+for harassment, that is the one failure this platform cannot have.
+
+So `api()` refuses to cache any request carrying a session cookie. Signed-in
+visitors always hit the Worker and always get their own view; anonymous
+visitors, who are most of the traffic on a public market, stop waiting on the
+upstream entirely. Measured: three signed-in views of `/` write zero cache
+entries, five anonymous views write one and reuse it four times.
+
+Search is untouched and stays live, as do the storefront and item pages — those
+two record `storefront_view` and `item_view`, and caching them would quietly
+deflate every vendor's analytics.
 
 ## 4. Suggested verification pass (needs a browser)
 
@@ -321,3 +359,172 @@ HTML. Before shipping, run one visual pass at 360×640, 390×844, 768×1024,
    the blackout lifts on return.
 6. Lighthouse mobile on `/` and on one item page (expect the biggest deltas from the
    particle field, the reveal blur and the hero stagger).
+
+---
+
+## 5. Round 2 — October 2026 (responsive gaps, store photos, trust, navigation)
+
+Date: 2026-10-06 · Scope: `web/` + `worker/` · Trigger: four reports from the
+operator — *"courses from the old flyer are stale"*, *"stores have no profile
+photo"*, *"tapping Dashboard shows 'the market is not available' until you press
+Try again"*, and *"check the mobile/tablet/desktop layout — I want everything
+reachable and a smoother UI/UX"*, plus a request for site-wide anti-scam
+disclaimers.
+
+**Method.** Same as round 1 (no Chromium in the sandbox): the stack was run
+locally, every route was rendered and inspected, and the CSS was verified with
+`scripts/web-audit/dead-overrides.mjs` (overrides that can never win) and
+`css-cascade.mjs` (which declaration actually wins). The Worker suite
+(`npm test`, 56 tests) and `next build` were run before and after.
+
+### 5.1 The catalogue — 13 current Cyber Elias Academy courses
+
+`scripts/seed-demo.sh` carried ten courses transcribed from an older CEA flyer
+(₦15k–₦30k, including WordPress and Python). The academy now publishes **13
+core short courses** with different fees and durations, so the seed was
+rewritten against the current course list and made convergent:
+
+| # | Course | Fee | Duration | Sessions | Level |
+|---|---|---|---|---|---|
+| 1 | Microsoft Office | ₦30,000 | 3 weeks | 6 · 2/week | Absolute beginner |
+| 2 | Typing & Computer Basics | ₦20,000 | 2 weeks | 4 · 2/week | Absolute beginner |
+| 3 | Graphic Design | ₦40,000 | 4 weeks | 8 · 2/week | Beginner |
+| 4 | Web Design | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 5 | Digital Marketing | ₦40,000 | 4 weeks | 8 · 2/week | Beginner |
+| 6 | Social Media Management | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 7 | Data Entry | ₦20,000 | 2 weeks | 4 · 2/week | Beginner |
+| 8 | Computer Repairs | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 9 | Web Development | ₦60,000 | 6 weeks | 12 · 2/week | Beginner |
+| 10 | Cybersecurity | ₦50,000 | 4 weeks | 8 · 2/week | Beginner |
+| 11 | Business & Freelancing | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 12 | Content Creation | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+| 13 | Online Teaching | ₦30,000 | 3 weeks | 6 · 2/week | Beginner |
+
+- **Idempotent upsert.** The script now lists the vendor's existing items and
+  `PUT`s a course that already exists (matching on slug) instead of `POST`ing
+  it, and `DELETE`s anything the academy no longer runs (WordPress, Python). A
+  store seeded from the old flyer therefore converges on the current 13 instead
+  of failing on duplicate slugs — and re-running is a no-op.
+- **Plan headroom.** The free plan caps a catalogue at 10 items, so the demo
+  store is moved to Starter the honest way (intent → bank proof → admin
+  approval) rather than by lowering the quota. Skipped when the store already
+  has room (`GET /vendor/business` → `quotas.max_listings`).
+- **Richer course fields.** Migration `0009` adds `sessions` and
+  *What you will produce* (`outcome`) to the academy field schema and
+  *Absolute beginner* to the level options, so the spec table on a course page
+  carries duration, sessions, level, mode, certificate, instructor, outcome and
+  curriculum — instead of cramming them into the description.
+- **SEO pair per course.** `seo_title` / `seo_description` are seeded per
+  course ("Microsoft Office Course in Port Harcourt | Cyber Elias Academy").
+- **Course-specific WhatsApp ask** (migration `0009`): the course template now
+  names the course, its fee and duration and asks the two questions every
+  prospective student asks first — *next available start date* and *how to
+  enrol*. Two new template variables, `{{item_type}}` and `{{item_type_lc}}`,
+  let it read as natural English ("the Data Entry course listed on CyberShop"),
+  which is also what tells the merchant which listing produced the chat.
+
+### 5.2 Store profile photos
+
+The data model always had `businesses.logo_media_id` / `cover_media_id` and the
+storefront already rendered a logo — but **no screen in the product could set
+one**, so every store showed initials. Added:
+
+- `components/BrandMedia.tsx` — a picker that uploads a new image (either
+  storage driver, through the shared `lib/uploads.ts` helper now used by the
+  media library too) or picks one already in the library, with a live preview
+  and a Remove action (`POST /vendor/business/media` now accepts
+  `media_id: null` to clear a field).
+- Dashboard → **Settings → Store photos** is the first card on the page.
+- The store's face now travels with it: `GET /public/market/listings` returns
+  `biz_logo` and `ListingCard` renders a small avatar next to the seller name
+  on every market card.
+
+### 5.3 Trust & safety — verify before you pay
+
+CyberShop is an introduction, not a shop, and it is free — which is exactly why
+the disclaimer has to be structural rather than a line in the footer. Added:
+
+- **Site-wide ribbon** (`components/SafetyRibbon*`) on every page, above the
+  header: server-rendered (present without JS), dismissible for a week, with a
+  pre-paint script that hides it for snoozing visitors so it never flashes.
+- **Pre-enquiry reminder** inside the WhatsApp card, directly above the button
+  that hands the buyer to a stranger (storefront + item page).
+- **Rewritten `/safety`**: three beats of a safe deal (talk → verify → pay),
+  *what CyberShop never does*, red flags, what to do when it goes wrong, and
+  the vendor's side.
+- **Terms** now lead with the same disclaimer and state plainly that there is
+  no buyer protection because there is no checkout.
+- **Admin-editable copy**: `platform_settings.safety` (headline, notice, tips,
+  enabled), exposed in **Admin → Settings → Trust & safety notice**, parsed
+  tolerantly by the Worker and defaulted in `web/lib/safety.ts` so a catalogue
+  outage can never strip the notice from a page.
+
+### 5.4 "Market is not available" on the first tap
+
+Symptom: from the home tab, tapping Dashboard showed an error screen
+("The market flickered" / "We could not load the market") and worked after
+pressing **Try again**. Cause: the first request of a cold serverless
+invocation races the Worker's cold start; that race fails as a network error or
+a 5xx, and every dashboard route is `force-dynamic`, so the failure surfaced as
+a route error instead of a slow load. Three fixes:
+
+1. **Retry inside the request** (`web/lib/api.ts`): 3 attempts with an 8s
+   per-attempt timeout (`WORKER_TIMEOUT_MS`), retrying network errors, 408/429
+   and 5xx. The visitor never sees the race.
+2. **The error boundary retries once by itself** (`app/error.tsx`), showing
+   "Reconnecting…" and pressing Try again for the visitor — guarded per path
+   (20s window) so a genuinely broken page cannot loop.
+3. **Instant navigation feedback** (`components/RouteProgress.tsx`): a top
+   progress bar started on the *click* (not on the pathname change, which only
+   fires after the server work is done) so a slow route never reads as a dead
+   tap.
+
+### 5.5 Responsive gaps closed
+
+| Gap | Where | Fix |
+|---|---|---|
+| 5- and 6-column inline `grid-template-columns` overflowed the phone viewport | `admin/settings` (bank rows), `admin/categories` (field rows) | `.row-grid-2/3/4` — 1 column ≤560px, 2 ≤900px |
+| `.data-table` had no scroll container: the last columns were clipped by `.card { overflow: hidden }` and unreachable | `admin/users` | `.table-scroll` wrapper + `min-width` |
+| 15 dashboard links in a one-line horizontal scroller — most of the workbench was invisible | `DashNav` | Phone nav becomes wrapping chips: the 5 primary sections always visible, "More" reveals the rest (and flags when the current page is behind it) |
+| Item spec rows squeezed long values into a right-aligned sliver | `.field-row` | Stacks to label-above-value ≤620px |
+| Long values (URLs, hashes) stretched cards | global | `overflow-wrap: break-word` on `body`, `min-width: 0` on card/panel/grid children |
+| Stray wide children dragged the page sideways | global | `html { overflow-x: clip }` (safe for `position: sticky`, unlike `overflow-x: hidden`) |
+| Anchors landed under the sticky header | global | `html { scroll-padding-top }` from the new `--header-h` token |
+| Menu close button sat under the header, where it could not be tapped | `.cine-menu-close` | Moved below the header band |
+| Data tables scrolled with no affordance | `.table-wrap` | Edge fades (local background attachment) + sticky headers |
+
+### 5.6 The design system pass (`web/app/design-system.css`)
+
+Loaded after `globals.css` + `cine.css` and organised as: tokens → base →
+header → controls → cards/grids → tables → workbench shell → trust → store
+photos → navigation feedback → sticky offsets → reduced motion. It introduces
+one ruler for the whole product — space (`--s-1…--s-20`), type (`--fs-*`),
+radius (`--r-*`), elevation (`--elev-1…3`), layout (`--maxw`, `--gutter`,
+`--header-h`, `--section-y`) and controls (`--ctl-h`) — and then rebuilds the
+surfaces that mixed ad-hoc values: button/input heights (44px targets on touch),
+card radius and shadow, section rhythm, tabular grids, and the sticky offsets
+that used magic pixel numbers.
+
+Verified with the round-1 checkers: `dead-overrides.mjs` reports no losing
+override (the one remaining hit is an identical value), and `css-cascade.mjs`
+confirms the intended winners. `tsc --noEmit` clean, `next build` clean,
+Worker suite 56/56.
+
+### 5.7 — closed
+
+- **R1 nesting** — closed, and guarded against coming back by
+  `scripts/web-audit/jsx-nesting.mjs` in CI.
+- **Admin tables below ~640px** — closed. Below 560px of content width a row
+  becomes a stacked record card with its column heading beside each value; the
+  headings are copied off the table's own `<th>` elements at runtime by
+  `components/ResponsiveTables.tsx`, so adding a column cannot desynchronise
+  them. Between 560px and 700px the first column is pinned instead. Both are
+  *container* queries keyed to `.dash-main`, because at a 900px viewport the
+  248px sidebar leaves the content only ~590px wide and a viewport breakpoint
+  would have sat still while the table overflowed.
+- **The workbench nav on a tablet (861–1024px)** — kept as a sidebar. At 1024px
+  the sidebar still leaves ~712px of content, which is fine; the problem band
+  was 861–950px, and that is what the container queries above fix. Switching to
+  the chip treatment at that width would have spent a lot of vertical space on
+  fifteen destinations to solve a problem that was really about table width.
+

@@ -106,6 +106,52 @@ html.cine-cursor textarea * {
   cursor: text !important;
 }
 
+/* ---- native cursor affordances ------------------------------------------
+   `cursor: none` above hides the system cursor so the ring can stand in for
+   it, but the system cursor was also carrying information: this is a link you
+   can follow, this is a button you can press, this reel can be dragged, this
+   control is disabled. Hiding it left every one of those things looking like
+   plain text.
+
+   These bring the signals back while the ring stays as atmosphere. They are
+   placed after the `cursor: none` rule deliberately — same specificity, so
+   source order decides — and each is more specific than the `input` rule
+   above where the two overlap.
+   -------------------------------------------------------------------------- */
+html.cine-cursor a,
+html.cine-cursor a *,
+html.cine-cursor button,
+html.cine-cursor button *,
+html.cine-cursor summary,
+html.cine-cursor [role='button'],
+html.cine-cursor [role='link'],
+html.cine-cursor [role='tab'],
+html.cine-cursor [role='menuitem'],
+html.cine-cursor select,
+html.cine-cursor input[type='button'],
+html.cine-cursor input[type='submit'],
+html.cine-cursor input[type='reset'],
+html.cine-cursor input[type='checkbox'],
+html.cine-cursor input[type='radio'],
+html.cine-cursor .switch {
+  cursor: pointer !important;
+}
+/* The featured reel drags sideways. */
+html.cine-cursor .cine-reel {
+  cursor: grab !important;
+}
+html.cine-cursor .cine-reel.is-drag {
+  cursor: grabbing !important;
+}
+/* A disabled control must not advertise itself as pressable. */
+html.cine-cursor button:disabled,
+html.cine-cursor input:disabled,
+html.cine-cursor select:disabled,
+html.cine-cursor textarea:disabled,
+html.cine-cursor [aria-disabled='true'] {
+  cursor: not-allowed !important;
+}
+
 .cine-progress {
   position: fixed;
   top: 0;

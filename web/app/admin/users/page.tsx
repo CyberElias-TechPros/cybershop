@@ -113,7 +113,7 @@ export default function AdminUsersPage() {
           <option value="admin">Admins</option>
         </select>
       </div>
-      <div className="card panel">
+      <div className="card panel table-scroll">
         <table className="data-table">
           <thead>
             <tr>

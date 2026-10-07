@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { capi, extractError } from '@/lib/client-api';
 import ReferralCard from '@/components/ReferralCard';
+import BrandMedia from '@/components/BrandMedia';
 
 interface Business {
   name: string;
@@ -20,6 +21,8 @@ interface Business {
   paused_at?: string | null;
   categories: { name: string; slug: string }[];
   storefront?: { style: string; accent: string; hours: string | null; sections: Record<string, boolean>; faq: { q: string; a: string }[] };
+  logo?: { id: number; url: string; alt?: string } | null;
+  cover?: { id: number; url: string; alt?: string } | null;
 }
 
 const SOCIAL_KEYS = [
@@ -54,10 +57,12 @@ export default function SettingsPage() {
   const [faq, setFaq] = useState('');
   const [sections, setSections] = useState<Record<string, boolean>>({ hero: true, featured: true, offers: true, about: true, faq: false, location: true });
   const [paused, setPaused] = useState(false);
+  const [driver, setDriver] = useState<'d1' | 'gateway'>('d1');
 
   const load = useCallback(async () => {
     try {
-      const d = await capi<{ business: Business }>('/vendor/business');
+      const d = await capi<{ business: Business; driver?: 'd1' | 'gateway' }>('/vendor/business');
+      if (d.driver) setDriver(d.driver);
       setBiz(d.business);
       let social: Record<string, string> = {};
       try {
@@ -144,6 +149,28 @@ export default function SettingsPage() {
       <ReferralCard />
       {error && <div className="form-msg error">{error}</div>}
       {notice && <div className="form-msg success">{notice}</div>}
+
+      <div className="card panel">
+        <h2 style={{ fontSize: '1.05rem' }}>Store photos</h2>
+        <p style={{ color: 'var(--muted)', fontSize: '0.9rem', marginTop: -4 }}>
+          Your profile photo is the face of your store everywhere it appears. Stores with a photo get
+          noticed first.
+        </p>
+        <BrandMedia
+          field="logo"
+          businessName={biz.name}
+          value={biz.logo ?? null}
+          driver={driver}
+          onSaved={load}
+        />
+        <BrandMedia
+          field="cover"
+          businessName={biz.name}
+          value={biz.cover ?? null}
+          driver={driver}
+          onSaved={load}
+        />
+      </div>
 
       <div className="card panel">
         <h2 style={{ fontSize: '1.05rem' }}>{paused ? 'Store is paused' : 'Store is visible'}</h2>

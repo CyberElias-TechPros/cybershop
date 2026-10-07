@@ -1,0 +1,18 @@
+# Local runtime state
+.wrangler/
+.vitest-state/
+.manual-state/
+.next/
+node_modules/
+dist/
+coverage/
+*.log
+
+# Secrets — never commit
+.dev.vars
+.env.local
+.env.production
+.env*.local
+
+# Database dumps (scripts/backup-d1.sh)
+backups/

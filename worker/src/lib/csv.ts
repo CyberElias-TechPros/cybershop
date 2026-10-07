@@ -35,3 +35,33 @@ export function csvObjects(text: string): Record<string, string>[] {
     return o;
   });
 }
+
+/**
+ * Escape one CSV cell.
+ *
+ * The leading-character guard is not paranoia: Excel, Sheets and LibreOffice
+ * all treat a cell starting with `=`, `+`, `-` or `@` as a formula, and this
+ * file gets opened in Excel by real shop owners. Vendor-supplied item names are
+ * untrusted input, so "=HYPERLINK(...)" in an item name would execute on open.
+ */
+export function csvCell(value: unknown): string {
+  const s = value === null || value === undefined ? '' : String(value);
+  const guarded = /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+  return `"${guarded.replace(/"/g, '""')}"`;
+}
+
+/** Build an RFC 4180 CSV body. CRLF, and a UTF-8 BOM is added by the caller. */
+export function toCsv(rows: unknown[][]): string {
+  return rows.map((r) => (r as unknown[]).map(csvCell).join(',')).join('\r\n');
+}
+
+/** A download response: UTF-8 BOM so Excel reads "₦" and accented names right. */
+export function csvResponse(filename: string, rows: unknown[][]): Response {
+  return new Response(`﻿${toCsv(rows)}`, {
+    headers: {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="${filename}"`,
+      'cache-control': 'no-store',
+    },
+  });
+}

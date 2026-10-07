@@ -3,6 +3,7 @@ import { api } from '@/lib/api';
 import { categoryTheme } from '@/lib/theme';
 import type { BusinessPageOut } from '@/lib/types';
 import DashNav from '@/components/DashNav';
+import ResponsiveTables from '@/components/ResponsiveTables';
 import type { CSSProperties } from 'react';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     <div className="dash" style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
       <DashNav businessName={me.business?.name ?? ''} unread={me.unread_notifications} />
       <div className="dash-main">{children}</div>
+      <ResponsiveTables />
     </div>
   );
 }

@@ -80,7 +80,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
           <option value="archived">Archived</option>
         </select>
         <span className="spacer" />
-        <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }}>{data.total} listings</span>
+        <span style={{ color: 'var(--muted)', fontSize: '0.88rem' }} role="status" aria-live="polite">{data.total} listings</span>
       </form>
 
       {me.business && ['pending_payment', 'pending_approval'].includes(me.business.status) && (

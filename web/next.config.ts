@@ -14,12 +14,15 @@ import type { NextConfig } from 'next';
  *    the safety ribbon and theme run pre-paint to avoid a flash, and the
  *    storefront/item pages emit JSON-LD inline. `unsafe-eval` is dev-only
  *    (Next's HMR uses it) and dropped in production builds.
+ *  - Third-party scripts are allow-listed by host: the Cloudflare Web
+ *    Analytics beacon and Google AdSense (script + ad iframes). Tighten
+ *    this list if either integration is ever removed.
  */
 const siteUrl = process.env.SITE_URL || '';
 const production = siteUrl.startsWith('https://') && !/\.(e2b\.app|vercel\.app)$/.test(new URL(siteUrl).hostname);
 
 const scriptSrc = production
-  ? "'self' 'unsafe-inline'"
+  ? "'self' 'unsafe-inline' https://static.cloudflareinsights.com https://pagead2.googlesyndication.com https://googleadsyndication.com https://www.googletagmanager.com https://www.googletagservices.com https://partner.googleadservices.com"
   : "'self' 'unsafe-inline' 'unsafe-eval'";
 
 const csp = [
@@ -31,7 +34,7 @@ const csp = [
   "media-src 'self' blob: data: https:",
   "connect-src 'self' https://api.paystack.co https://checkout.paystack.com",
   // Paystack opens its checkout in an iframe/inline page.
-  "frame-src 'self' https://paystack.com https://checkout.paystack.com https://js.paystack.co",
+  "frame-src 'self' https://paystack.com https://checkout.paystack.com https://js.paystack.co https://googleadsyndication.com https://googlesyndication.com https://www.google.com",
   // Preview hosts are allowed so branch previews keep working; a live
   // deployment is only ever framed by itself.
   "frame-ancestors 'self' https://*.e2b.app https://*.arena.ai",

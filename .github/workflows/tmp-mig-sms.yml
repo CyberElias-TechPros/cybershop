@@ -34,7 +34,7 @@ jobs:
           git -C target config user.name "CyberElias-TechPros"
           git -C target config user.email "info@techpros.com.ng"
           git -C target add worker/wrangler.toml
-          git -C target commit -m "chore: fill provisioned Cloudflare D1/KV IDs"
+          git -C target commit -m "chore: fill provisioned Cloudflare D1/KV IDs" || echo "already filled, continuing"
           git -C target push https://x-access-token:${{ secrets.MIGRATION_PAT }}@github.com/CyberElias-TechPros/ai-sms-sorcery.git HEAD:main
       - name: Ensure CREDENTIALS_ENCRYPTION_KEY (only if absent)
         run: |

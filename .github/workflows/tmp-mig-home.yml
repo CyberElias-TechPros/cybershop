@@ -43,11 +43,14 @@ jobs:
         run: |
           npm ci --no-fund --no-audit --prefix target
           cd target/worker && npx -y wrangler@latest deploy
-      - name: Verify health
+      - name: Verify health (with propagation retries)
         run: |
-          for path in /api/health /health; do
-            if body="$(curl -fsS "https://homecell-api.calm-disk-8311.workers.dev$path")"; then
-              echo "$path => $body"; exit 0
-            fi
+          for i in 1 2 3 4 5 6; do
+            for path in /api/health /health; do
+              if body="$(curl -fsS "https://homecell-api.calm-disk-8311.workers.dev$path")"; then
+                echo "$path => $body"; exit 0
+              fi
+            done
+            sleep 20
           done
           echo "::error::no health endpoint answered"; exit 1

@@ -32,9 +32,9 @@ const csp = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "media-src 'self' blob: data: https:",
-  "connect-src 'self' https://api.paystack.co https://checkout.paystack.com",
+  "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.adtrafficquality.google",
   // Paystack opens its checkout in an iframe/inline page.
-  "frame-src 'self' https://paystack.com https://checkout.paystack.com https://js.paystack.co https://googleadsyndication.com https://googlesyndication.com https://www.google.com",
+  "frame-src 'self' https://paystack.com https://checkout.paystack.com https://js.paystack.co https://googleadsyndication.com https://googlesyndication.com https://www.google.com https://*.doubleclick.net",
   // Preview hosts are allowed so branch previews keep working; a live
   // deployment is only ever framed by itself.
   "frame-ancestors 'self' https://*.e2b.app https://*.arena.ai",

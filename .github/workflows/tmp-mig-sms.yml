@@ -9,14 +9,23 @@ jobs:
     steps:
       - name: Clone target repo
         run: git clone --depth 1 https://x-access-token:${{ secrets.MIGRATION_PAT }}@github.com/CyberElias-TechPros/ai-sms-sorcery.git target
-      - name: Provision D1 + KV + queues
+      - name: Provision D1 + KV + queues (idempotent)
         run: |
-          DBID=$(npx -y wrangler@latest d1 create ai_sms_sorcery | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          DBID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" | jq -r '.result[] | select(.name=="ai_sms_sorcery") | .uuid' | head -1)
+          if [ -z "$DBID" ]; then
+            npx -y wrangler@latest d1 create ai_sms_sorcery
+            DBID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" | jq -r '.result[] | select(.name=="ai_sms_sorcery") | .uuid' | head -1)
+          fi
           echo "DBID=$DBID"; test -n "$DBID"; echo "DBID=$DBID" >> $GITHUB_ENV
-          KVID=$(npx -y wrangler@latest kv namespace create ai-sms-sorcery-kv | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          KVID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" | jq -r '.result[] | select(.title=="ai-sms-sorcery-kv") | .id' | head -1)
+          if [ -z "$KVID" ]; then
+            npx -y wrangler@latest kv namespace create ai-sms-sorcery-kv
+            KVID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" | jq -r '.result[] | select(.title=="ai-sms-sorcery-kv") | .id' | head -1)
+          fi
           echo "KVID=$KVID"; test -n "$KVID"; echo "KVID=$KVID" >> $GITHUB_ENV
-          npx -y wrangler@latest queues create sms-dispatch
-          npx -y wrangler@latest queues create sms-dispatch-dlq
+          for q in sms-dispatch sms-dispatch-dlq; do
+            npx -y wrangler@latest queues list | grep -q "$q" || npx -y wrangler@latest queues create "$q"
+          done
       - name: Fill real IDs into worker/wrangler.toml and push back
         run: |
           sed -i "s/REPLACE_WITH_D1_DATABASE_ID/$DBID/" target/worker/wrangler.toml

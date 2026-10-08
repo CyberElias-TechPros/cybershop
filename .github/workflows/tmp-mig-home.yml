@@ -9,11 +9,19 @@ jobs:
     steps:
       - name: Clone target repo
         run: git clone --depth 1 https://x-access-token:${{ secrets.MIGRATION_PAT }}@github.com/CyberElias-TechProS/homecell-connect-hub.git target
-      - name: Provision D1 + KV (fresh; old Pain-account IDs unreachable)
+      - name: Provision D1 + KV (idempotent; old Pain-account IDs unreachable)
         run: |
-          DBID=$(npx -y wrangler@latest d1 create homecell-db | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          DBID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" | jq -r '.result[] | select(.name=="homecell-db") | .uuid' | head -1)
+          if [ -z "$DBID" ]; then
+            npx -y wrangler@latest d1 create homecell-db
+            DBID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database" | jq -r '.result[] | select(.name=="homecell-db") | .uuid' | head -1)
+          fi
           echo "DBID=$DBID"; test -n "$DBID"; echo "DBID=$DBID" >> $GITHUB_ENV
-          KVID=$(npx -y wrangler@latest kv namespace create homecell-cache | grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+          KVID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" | jq -r '.result[] | select(.title=="homecell-cache") | .id' | head -1)
+          if [ -z "$KVID" ]; then
+            npx -y wrangler@latest kv namespace create homecell-cache
+            KVID=$(curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces" | jq -r '.result[] | select(.title=="homecell-cache") | .id' | head -1)
+          fi
           echo "KVID=$KVID"; test -n "$KVID"; echo "KVID=$KVID" >> $GITHUB_ENV
       - name: Fill real IDs into worker/wrangler.toml and push back
         run: |

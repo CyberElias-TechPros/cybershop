@@ -23,8 +23,8 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
   const filtered = Boolean(q || city || sp.category || sp.min || sp.max);
   const canonical = filtered ? '/listings' : page > 1 ? `/listings?page=${page}` : '/listings';
   return {
-    title: parts ? `${parts} — listings` : page > 1 ? `Listings — page ${page}` : 'Listings',
-    description: 'Browse ads from real Nigerian businesses. Pick one, talk on WhatsApp, inspect, pay the seller directly — CyberShop never takes your money.',
+    title: parts ? `${parts} — shop` : page > 1 ? `Shop — page ${page}` : 'Shop',
+    description: 'Shop products, courses and services from real Nigerian businesses. See the price, talk on WhatsApp, inspect, pay the seller directly — CyberShop never takes your money.',
     alternates: { canonical },
     openGraph: { title: 'Listings', url: canonical },
   };
@@ -138,9 +138,9 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
         <Reveal>
           <div className="section-head">
             <div>
-              <span className="eyebrow">Classifieds</span>
+              <span className="eyebrow">The shop</span>
               <h1>
-                Ads, not a <em>checkout</em>
+                Shop, then chat on <em>WhatsApp</em>
               </h1>
             </div>
             <span className="section-count" aria-live="polite">
@@ -148,9 +148,11 @@ async function Inner({ searchParams }: { searchParams: Promise<SP> }) {
             </span>
           </div>
         </Reveal>
-        <p style={{ color: 'var(--ink-dim)', maxWidth: '52ch', marginTop: 0 }}>
-          Like Jiji: pick an ad, talk to the seller on WhatsApp, inspect, then pay them directly.
-          CyberShop never takes your money.
+        <p style={{ color: 'var(--ink-dim)', maxWidth: '62ch', marginTop: 0 }}>
+          Pick a listing, talk to the seller on WhatsApp, inspect, then pay them directly —
+          CyberShop never takes your money. Badges mean something:{' '}
+          <strong>✓ Verified ID</strong> = we checked who the seller is; <strong>Featured</strong> = the
+          seller paid to highlight it. <a href="/safety">How to buy safely</a>
         </p>
 
         <form className="market-filters" method="get" action="/listings">

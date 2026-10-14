@@ -64,7 +64,7 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
           setRecent(next);
           try { localStorage.setItem('cs-recent-search', JSON.stringify(next)); } catch { /* private mode */ }
         }
-        router.push(query ? `/search?q=${encodeURIComponent(query)}` : '/search');
+        router.push(query ? `/listings?q=${encodeURIComponent(query)}` : '/listings');
       }}
     >
       <input
@@ -88,7 +88,7 @@ export default function SearchForm({ initial = '', big = false }: { initial?: st
       {open && !hasHits && q.trim().length < 2 && recent.length > 0 && (
         <ul className="suggest-pop" role="listbox">
           {recent.map((r) => (
-            <li key={r}><button type="button" onClick={() => { setQ(r); setOpen(false); router.push(`/search?q=${encodeURIComponent(r)}`); }}>{r}</button></li>
+            <li key={r}><button type="button" onClick={() => { setQ(r); setOpen(false); router.push(`/listings?q=${encodeURIComponent(r)}`); }}>{r}</button></li>
           ))}
         </ul>
       )}

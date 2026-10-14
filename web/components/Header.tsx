@@ -32,9 +32,9 @@ export default async function Header() {
         <nav className="main-nav" aria-label="Primary">
           <NavLinks
             links={[
-              { href: '/listings', label: 'Listings' },
-              { href: '/jobs', label: 'Jobs' },
+              { href: '/listings', label: 'Shop' },
               { href: '/businesses', label: 'Businesses' },
+              { href: '/sell', label: 'Sell' },
               // Only the top categories inline — the rest stay in the menu and
               // the homepage bento, so nav links never hide behind a scroll.
               ...extra.slice(0, 3),

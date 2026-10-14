@@ -7,6 +7,7 @@ const LINKS = [
   { href: '/account', label: 'Overview' },
   { href: '/account/saved', label: 'Saved' },
   { href: '/account/enquiries', label: 'Enquiries' },
+  { href: '/account/support', label: 'Support tickets' },
   { href: '/account/messages', label: 'Messages' },
   { href: '/account/alerts', label: 'Alerts' },
   { href: '/account/settings', label: 'Settings' },

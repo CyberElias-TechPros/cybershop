@@ -4,6 +4,7 @@ import { clientIp } from '@/lib/ip';
 import { requireVendor, sessionCookieHeader } from '@/lib/session';
 import Pager from '@/components/Pager';
 import CatalogImport from './CatalogImport';
+import BulkBar from './BulkBar';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,6 +71,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       </div>
 
       <CatalogImport />
+      <BulkBar ids={data.items.map((it) => it.id)} />
       <form className="toolbar" method="GET" action="/dashboard/catalog">
         {status !== 'all' && <input type="hidden" name="status" value={status} />}
         <input className="input" style={{ maxWidth: 260 }} type="search" name="q" placeholder="Search listings…" defaultValue={q} />
@@ -86,7 +88,7 @@ export default async function CatalogPage({ searchParams }: { searchParams: Prom
       {me.business && ['pending_payment', 'pending_approval'].includes(me.business.status) && (
         <div className="banner warn" style={{ marginBottom: 16 }}>
           <div>
-            <strong>Your store isn’t live yet</strong> — listings are saved but hidden from buyers until your plan is active.
+            <strong>Your store isn’t live yet</strong> — keep building! Everything you add now is saved and goes on sale the moment your plan is active.
           </div>
           <Link className="btn btn-primary" href="/onboarding">
             Finish setup

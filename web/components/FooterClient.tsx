@@ -6,7 +6,15 @@ import { useState } from 'react';
  * Footer (client) — brand, nav, legal links, live support email.
  * The email button copies the address (mobile-friendly: no app-switch surprise).
  */
-export default function FooterClient({ supportEmail, safety }: { supportEmail: string; safety: string }) {
+export default function FooterClient({
+  supportEmail,
+  safety,
+  categories = [],
+}: {
+  supportEmail: string;
+  safety: string;
+  categories?: { name: string; slug: string; icon: string | null }[];
+}) {
   const [copied, setCopied] = useState(false);
 
   async function copyEmail() {
@@ -41,10 +49,22 @@ export default function FooterClient({ supportEmail, safety }: { supportEmail: s
           <a href="/cart">WhatsApp cart</a>
           <a href="/safety">Safety</a>
         </nav>
+        {categories.length > 0 && (
+          <nav aria-label="Categories">
+            <strong>Categories</strong>
+            {categories.map((c) => (
+              <a key={c.slug} href={`/categories/${c.slug}`}>
+                {c.icon ? `${c.icon} ` : ''}{c.name}
+              </a>
+            ))}
+            <a href="/listings">Shop all →</a>
+          </nav>
+        )}
         <nav aria-label="Vendors">
           <strong>Vendors</strong>
           <a href="/sell">Sell on CyberShop — plans &amp; pricing</a>
           <a href="/register">Open a storefront</a>
+          <a href="/help#selling">Seller guides</a>
           <a href="/login">Sign in</a>
           <a href="/contact">Contact us</a>
         </nav>
@@ -53,6 +73,8 @@ export default function FooterClient({ supportEmail, safety }: { supportEmail: s
           <button type="button" className="footer-mail" onClick={copyEmail} title="Copy our support email">
             {copied ? 'Copied ✓' : supportEmail}
           </button>
+          <a href="/help">Help Centre</a>
+          <a href="/help/getting-started">Getting started</a>
           <a href="/contact">Support</a>
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>

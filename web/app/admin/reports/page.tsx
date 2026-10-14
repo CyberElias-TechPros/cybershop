@@ -15,6 +15,7 @@ interface Report {
   entity_type: string;
   entity_id: number;
   business_name: string | null;
+  deposit_flag?: boolean;
   listing_name: string | null;
   reason: string;
   details: string | null;
@@ -161,6 +162,7 @@ export default function AdminReportsPage() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}>
                     <span className="status-pill new">{r.reason.replace('_', ' ')}</span>{' '}
+                    {r.deposit_flag && <span className="status-pill" style={{ background: 'rgba(242,200,121,.18)' }} title="This store records buyer deposits — check the money trail">💰 records deposits</span>}{" "}
                     <strong>
                       {r.entity_type} #{r.entity_id}
                     </strong>

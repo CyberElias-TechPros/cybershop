@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { capi, extractError } from '@/lib/client-api';
 import ReferralCard from '@/components/ReferralCard';
+import ThemePicker from '@/components/ThemePicker';
+import { themeForCategories } from '@/lib/theme';
 import BrandMedia from '@/components/BrandMedia';
 
 interface Business {
@@ -51,8 +53,7 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [style, setStyle] = useState('classic');
-  const [accent, setAccent] = useState('');
+  const [style, setStyle] = useState('auto');
   const [hours, setHours] = useState('');
   const [faq, setFaq] = useState('');
   const [sections, setSections] = useState<Record<string, boolean>>({ hero: true, featured: true, offers: true, about: true, faq: false, location: true });
@@ -85,8 +86,9 @@ export default function SettingsPage() {
       setPaused(!!d.business.paused_at);
       const sf = d.business.storefront;
       if (sf) {
-        setStyle(sf.style || 'classic');
-        setAccent(sf.accent || '');
+        // Legacy style names (classic/editorial/minimal/bold) and anything
+        // unknown read as 'auto' — the category's trade theme.
+        setStyle(sf.style || 'auto');
         setHours(sf.hours || '');
         setSections({ ...sections, ...sf.sections });
         setFaq((sf.faq || []).map((row) => `${row.q} | ${row.a}`).join('\n'));
@@ -111,7 +113,7 @@ export default function SettingsPage() {
       await capi('/vendor/business', { method: 'PUT', body: JSON.stringify({
         ...form,
         storefront: {
-          style, accent, hours, sections,
+          style, accent: '', hours, sections,
           faq: faq.split('\n').map((line) => {
             const [q, ...rest] = line.split('|');
             return { q: (q || '').trim(), a: rest.join('|').trim() };
@@ -284,17 +286,14 @@ export default function SettingsPage() {
 
         <div className="card panel">
           <h2 style={{ fontSize: '1.05rem' }}>Storefront</h2>
-          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>Choose what buyers see. WhatsApp stays on — that is how they reach you.</p>
+          <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>
+            Choose how your store looks. Pick the theme that matches your trade — buyers
+            recognise a Boutique, a Kitchen or an Academy at a glance. WhatsApp stays on —
+            that is how they reach you.
+          </p>
+          <ThemePicker value={style} autoTheme={themeForCategories(biz.categories)} onChange={setStyle} />
           <div className="form-row">
-            <label className="field">Style
-              <select className="select" value={style} onChange={(e) => setStyle(e.target.value)}>
-                {['classic', 'editorial', 'minimal', 'bold'].map((s) => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </label>
-            <label className="field">Accent
-              <input className="input" value={accent} onChange={(e) => setAccent(e.target.value)} placeholder="#1f8a5b" />
-            </label>
-            <label className="field">Hours
+            <label className="field">Opening hours
               <input className="input" value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Mon–Sat, 9am–6pm" />
             </label>
           </div>

@@ -15,7 +15,7 @@ import ItemCard from '@/components/ItemCard';
 import { AddToCart } from '@/components/CartFx';
 import { Reveal } from '@/components/Motion';
 import { FlipBack } from '@/components/Fx';
-import { categoryTheme } from '@/lib/theme';
+import { resolveStoreTheme } from '@/lib/theme';
 import type { CSSProperties } from 'react';
 import MarketActions from '@/components/MarketActions';
 import SafetyTips from '@/components/SafetyTips';
@@ -117,7 +117,7 @@ export default async function ItemPage({ params }: { params: Promise<SP> }) {
   }
 
   const flipId = `item:${item.id}`;
-  const th = categoryTheme(business.categories);
+  const th = resolveStoreTheme(business.storefront?.style, business.categories).theme;
 
   return (
     <div style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>

@@ -3,6 +3,7 @@ import type { HomeOut } from '@/lib/types';
 import { sessionCookieHeader, type Me } from '@/lib/session';
 import SearchForm from './SearchForm';
 import NavLinks from './NavLinks';
+import CategoriesMenu from './CategoriesMenu';
 import HeaderCta from './HeaderCta';
 
 export const dynamic = 'force-dynamic';
@@ -12,11 +13,11 @@ export default async function Header() {
   let categories: { name: string; slug: string; icon: string | null }[] = [];
   try {
     const home = await api<HomeOut>('/public/home');
-    categories = home.categories.slice(0, 5);
+    categories = home.categories;
   } catch {
     /* Worker unreachable — render header without category links */
   }
-  const extra = categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name }));
+  const extra = categories.map((c) => ({ href: `/categories/${c.slug}`, label: c.name, icon: c.icon }));
   let me: Me | null = null;
   try {
     me = await api<Me>('/auth/me', { cookie: await sessionCookieHeader() });
@@ -30,16 +31,16 @@ export default async function Header() {
           Cyber<span className="dot">Shop</span>
         </a>
         <nav className="main-nav" aria-label="Primary">
+          {/* Two navigation levels, kept apart: the market itself, then
+              its categories grouped under one button. "Sell" is not here —
+              the gold CTA on the right already carries it. */}
           <NavLinks
             links={[
               { href: '/listings', label: 'Shop' },
               { href: '/businesses', label: 'Businesses' },
-              { href: '/sell', label: 'Sell' },
-              // Only the top categories inline — the rest stay in the menu and
-              // the homepage bento, so nav links never hide behind a scroll.
-              ...extra.slice(0, 3),
             ]}
           />
+          <CategoriesMenu cats={extra} />
         </nav>
         <div className="header-search">
           <SearchForm />

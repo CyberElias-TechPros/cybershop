@@ -68,7 +68,7 @@ export const CATEGORIES: Category[] = [
     label: 'Saved search alerts',
     help: 'New listings matching a search you saved.',
     defaultEmail: false,
-    types: ['saved_search.match'],
+    types: ['saved_search.match', 'saved.price_drop', 'saved.back_in_stock', 'store.new_listing'],
   },
   {
     key: 'security',

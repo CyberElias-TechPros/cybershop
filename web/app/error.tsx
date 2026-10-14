@@ -32,6 +32,13 @@ export default function Error({
   const started = useRef(false);
 
   useEffect(() => {
+    try {
+      const payload = JSON.stringify({ message: String(error?.message ?? 'page error'), route: window.location.pathname, digest: error?.digest });
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/public/client-error', new Blob([payload], { type: 'application/json' }));
+    } catch { /* reporting must never break the error page */ }
+  }, [error]);
+
+  useEffect(() => {
     // Surfaced in the server log by Next; kept here so the digest is traceable.
     console.error(error);
   }, [error]);

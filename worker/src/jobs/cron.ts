@@ -6,6 +6,7 @@ import { expireVerifiedBadges, notifySavedSearches, trimFeaturedOverflow } from 
 import { restoreCredit } from '../lib/referral';
 import { entitledBusinessIds, syncEntitlement } from '../lib/entitlement';
 import { reportSlaSweep } from '../lib/moderation';
+import { notifySavedItemChanges, sellerWeeklyDigests } from '../lib/growth';
 import { reconcilePayments } from '../lib/reconcile';
 import { ALERT_RULES, shouldAlert, markAlertSent, pruneErrorLog } from '../lib/errorlog';
 
@@ -114,6 +115,8 @@ export async function runHourlyJobs(env: Env): Promise<{ summary: Record<string,
   summary.featured_trimmed = await trimFeaturedOverflow(env);
   summary.verified_expired = await expireVerifiedBadges(env);
   summary.saved_search_alerts = await notifySavedSearches(env);
+  summary.saved_item_alerts = await notifySavedItemChanges(env).catch(() => 0);
+  summary.seller_digests = await sellerWeeklyDigests(env).catch(() => 0);
 
   // 9. Lead follow-ups the vendor scheduled
   const due = (await env.DB.prepare(

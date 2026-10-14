@@ -52,8 +52,15 @@ app.get('/overview', async (c) => {
   const recentPayments = (await env.DB.prepare(
     `SELECT p.id, p.reference, p.amount, p.method, p.status, p.created_at, b.name AS business_name FROM payments p JOIN businesses b ON b.id = p.business_id ORDER BY p.id DESC LIMIT 8`
   ).all()).results as Record<string, unknown>[];
+  const funnel = (await c.env.DB.prepare(
+    `SELECT COALESCE(SUM(storefront_views),0) AS views, COALESCE(SUM(item_views),0) AS item_views,
+            COALESCE(SUM(wa_clicks),0) AS taps
+     FROM analytics_daily WHERE day >= date('now','-7 days')`,
+  ).first()) as { views: number; item_views: number; taps: number };
+  const leads7 = (await c.env.DB.prepare(`SELECT COUNT(*) AS n FROM inquiries WHERE created_at >= datetime('now','-7 days')`).first()) as { n: number };
   return c.json({
     ok: true,
+    funnel_7d: { ...funnel, leads: leads7.n, tap_rate: funnel.views + funnel.item_views > 0 ? Math.round((funnel.taps / (funnel.views + funnel.item_views)) * 1000) / 10 : 0 },
     stats: { ...vendors, buyers: buyers.n, items: items.n, wa_clicks: clicks.n, revenue_kobo: revenue.n, revenue_display: formatNaira(revenue.n) },
     queues,
     recent_payments: recentPayments.map((p) => ({ ...p, amount_display: formatNaira(Number(p.amount)) })),
@@ -667,10 +674,21 @@ app.get('/reports', async (c) => {
 
   // The SLA clock is computed here rather than in SQL so the UI never has to
   // re-derive "how overdue is this" in three different places.
-  const reports = rows.map((r) => ({
-    ...r,
-    sla: slaFor(String(r.created_at ?? ''), (r.sla_due_at as string | null) ?? null),
-  }));
+  // Deposit cross-flag: a reported store that also records buyer deposits
+  // gets a visible money-risk marker so moderators look there first.
+  const reports = [];
+  for (const r of rows) {
+    let deposit_flag = false;
+    if (r.business_name) {
+      const dep = (await c.env.DB.prepare(
+        `SELECT COUNT(*) AS n FROM deposits WHERE business_id = COALESCE(
+           (SELECT business_id FROM listings WHERE id = CASE WHEN ? = 'listing' THEN ? END),
+           CASE WHEN ? = 'business' THEN ? END) AND status IN ('pending','paid')`,
+      ).bind(r.entity_type, r.entity_id, r.entity_type, r.entity_id).first()) as { n: number } | null;
+      deposit_flag = (dep?.n ?? 0) > 0;
+    }
+    reports.push({ ...r, deposit_flag, sla: slaFor(String(r.created_at ?? ''), (r.sla_due_at as string | null) ?? null) });
+  }
   const counts = (await c.env.DB.prepare(
     `SELECT status, COUNT(*) AS n FROM reports GROUP BY status`
   ).all()).results as { status: string; n: number }[];

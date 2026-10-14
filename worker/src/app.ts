@@ -16,6 +16,8 @@ import webhookRoutes from './routes/webhook';
 import mediaFileRoutes from './routes/mediafile';
 import sitemapRoutes from './routes/sitemap';
 import qrRoutes from './routes/qr';
+import catalogApiRoutes from './routes/catalog-api';
+import { supportPublic, supportAccount, supportAdmin } from './routes/support';
 import { runHourlyJobs } from './jobs/cron';
 import { reportEnv } from './lib/envcheck';
 import { logError } from './lib/errorlog';
@@ -76,6 +78,10 @@ export function buildApp(): Hono<{ Bindings: Env }> {
   app.route('/api/media', mediaFileRoutes);
   app.route('/api', qrRoutes);
   app.route('/api/sitemap.xml', sitemapRoutes);
+  app.route('/api/public', catalogApiRoutes);
+  app.route('/api/public', supportPublic);
+  app.route('/api/account', supportAccount);
+  app.route('/api/admin', supportAdmin);
 
   // cron trigger entrypoint (wrangler.jsonc crons)
   app.post('/api/cron/hourly', async (c) => {

@@ -176,3 +176,64 @@ export function suggestionStem(q: string): string {
   const term = searchTerms(q)[0] ?? String(q || '').trim().toLowerCase();
   return likeLiteral(term.slice(0, 4));
 }
+
+/**
+ * Synonyms buyers actually use interchangeably in this market. Expanded
+ * symmetrically at query time (searching either side matches both).
+ */
+const SYNONYMS: Record<string, string[]> = {
+  sneakers: ['trainers', 'canvas'],
+  trainers: ['sneakers'],
+  phone: ['mobile', 'smartphone'],
+  mobile: ['phone', 'smartphone'],
+  smartphone: ['phone', 'mobile'],
+  tv: ['television'],
+  television: ['tv'],
+  laptop: ['notebook'],
+  fridge: ['refrigerator'],
+  refrigerator: ['fridge'],
+  gown: ['dress'],
+  dress: ['gown'],
+  generator: ['gen'],
+  gen: ['generator'],
+  wig: ['hair'],
+  hair: ['wig'],
+  course: ['training', 'class'],
+  training: ['course'],
+  apartment: ['flat'],
+  flat: ['apartment'],
+  shop: ['store'],
+  store: ['shop'],
+};
+
+/** Expand terms with synonyms (originals first, deduped, capped). */
+export function expandSynonyms(terms: string[]): string[] {
+  const out: string[] = [];
+  for (const t of terms) {
+    if (!out.includes(t)) out.push(t);
+    for (const s of SYNONYMS[t] ?? []) if (!out.includes(s)) out.push(s);
+  }
+  return out.slice(0, 12);
+}
+
+/**
+ * Build an FTS5 MATCH expression: every term (or a synonym of it) must
+ * match somewhere; prefix matching on the last characters gives light
+ * typo/plural tolerance ("gown" matches "gowns"). Returns null when
+ * there is nothing safe to query. FTS5 failures are callers' cue to
+ * fall back to the LIKE matcher — never surface them to buyers.
+ */
+export function ftsMatchExpr(terms: string[]): string | null {
+  const expanded = expandSynonyms(terms);
+  if (!expanded.length) return null;
+  const group = (t: string) => `"${t.replace(/"/g, '')}"*`;
+  // Group variants + synonyms per original term so ANY form satisfies it:
+  // "gowns" must find "Gown" (prefix matching alone goes the wrong way).
+  const parts: string[] = [];
+  for (const t of terms) {
+    const alts = [...new Set([...termVariants(t), ...(SYNONYMS[t] ?? [])])];
+    parts.push(alts.length > 1 ? `(${alts.map(group).join(' OR ')})` : group(t));
+  }
+  void expanded;
+  return parts.join(' ');
+}

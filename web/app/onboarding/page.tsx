@@ -187,6 +187,9 @@ export default function OnboardingPage() {
           )}
         </h1>
         <p className="onb-sub">
+          New to selling here? <a href="/help/open-storefront">Read the 5-minute storefront guide</a> first — then this takes a minute.
+        </p>
+        <p className="onb-sub">
           {stage === 'done'
             ? `${me.business!.name} is now on CyberShop. Add your catalogue and start receiving WhatsApp enquiries.`
             : stage === 'waiting'

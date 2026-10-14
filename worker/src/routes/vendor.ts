@@ -2,7 +2,7 @@ import { Hono, type Context } from 'hono';
 import type { Env } from '../config';
 import { requireVendor } from '../lib/auth';
 import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
-import { slugify, assertSlugAvailable, uuid, nowIso, clampInt, parseMoneySafe } from '../lib/util';
+import { slugify, assertSlugAvailable, uuid, nowIso, clampInt, parseMoneySafe, randomToken, sha256Hex } from '../lib/util';
 import { reqStr, optStr, reqInt, validateCustomFields, isHttpUrl } from '../lib/validate';
 import {
   issueUploadToken, finalizeGatewayUpload, storeD1Media, magicMime, mediaUrl,
@@ -14,6 +14,7 @@ import { storeCompleteness } from '../lib/completeness';
 import { vendorAnalytics, analyticsRows } from '../lib/vendor-analytics';
 import { likeContains } from '../lib/search';
 import { csvResponse as sharedCsvResponse } from '../lib/csv';
+import { notifyStoreFollowers } from '../lib/growth';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
 import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
@@ -484,6 +485,9 @@ app.post('/items', async (c) => {
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(business.id, input.category_id, input.item_type_id, input.name, slug, input.description, input.price, input.price_type, input.custom_fields, status, input.featured ? 1 : 0, input.stock_status, input.whatsapp_number_id, input.seo_title, input.seo_description, input.publish ? nowIso() : null, input.inspection_json, input.scheduled_publish_at).run();
   const id = Number(res.meta.last_row_id);
+  if (status === 'published') {
+    await notifyStoreFollowers(c.env, business.id, business.name, id, input.name).catch(() => undefined);
+  }
   await attachMedia(c.env, id, (body as Record<string, unknown> | null)?.media_ids, business.id);
   await attachAudio(c.env, id, (body as Record<string, unknown> | null)?.audio_media_id, business.id);
   return c.json({ ok: true, id, slug, status });
@@ -594,6 +598,93 @@ app.post('/items/:id/status', async (c) => {
     `UPDATE listings SET status = ?, published_at = CASE WHEN ? = 'published' AND published_at IS NULL THEN ? ELSE published_at END WHERE id = ? AND business_id = ? AND deleted_at IS NULL`
   ).bind(status, status, nowIso(), id, business.id).run();
   if (res.meta.changes === 0) throw notFound('Item not found.');
+  if (status === 'published') {
+    const item = (await c.env.DB.prepare('SELECT name FROM listings WHERE id = ?').bind(id).first()) as { name: string } | null;
+    if (item) await notifyStoreFollowers(c.env, business.id, business.name, id, item.name).catch(() => undefined);
+  }
+  return c.json({ ok: true });
+});
+
+
+/** Bulk edit: one tap for "all gowns -10%" or end-of-season stock flips. */
+app.post('/items/bulk', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  assertBusinessWritable(business.status);
+  const body = (await c.req.json().catch(() => null)) as { ids?: unknown; stock_status?: unknown; price_percent?: unknown; status?: unknown } | null;
+  const ids = Array.isArray(body?.ids) ? body!.ids.map(Number).filter((n) => Number.isInteger(n) && n > 0).slice(0, 200) : [];
+  if (!ids.length) throw badRequest('Select at least one item.');
+  const marks = ids.map(() => '?').join(',');
+  let changed = 0;
+  if (typeof body?.stock_status === 'string' && ['in_stock', 'out_of_stock', 'made_to_order', 'n_a'].includes(body.stock_status)) {
+    const r = await c.env.DB.prepare(`UPDATE listings SET stock_status = ? WHERE business_id = ? AND id IN (${marks}) AND deleted_at IS NULL`).bind(body.stock_status, business.id, ...ids).run();
+    changed += Number(r.meta.changes || 0);
+  }
+  if (typeof body?.price_percent === 'number' && Number.isFinite(body.price_percent) && body.price_percent >= -90 && body.price_percent <= 500) {
+    const factor = 1 + body.price_percent / 100;
+    const r = await c.env.DB.prepare(`UPDATE listings SET price = CAST(ROUND(price * ?) AS INTEGER) WHERE business_id = ? AND id IN (${marks}) AND price IS NOT NULL AND deleted_at IS NULL`).bind(factor, business.id, ...ids).run();
+    changed += Number(r.meta.changes || 0);
+  }
+  if (typeof body?.status === 'string' && ['draft', 'published', 'archived'].includes(body.status)) {
+    const r = await c.env.DB.prepare(`UPDATE listings SET status = ?, published_at = CASE WHEN ? = 'published' AND published_at IS NULL THEN ? ELSE published_at END WHERE business_id = ? AND id IN (${marks}) AND deleted_at IS NULL`).bind(body.status, body.status, nowIso(), business.id, ...ids).run();
+    changed += Number(r.meta.changes || 0);
+  }
+  if (!changed) throw badRequest('Choose what to change (stock, price %, or status).');
+  return c.json({ ok: true, changed });
+});
+
+/** Businesses this user can act on (owned + staff seats), for the switcher. */
+app.get('/businesses', async (c) => {
+  const { user } = await requireVendor(c.env, c);
+  const owned = (await c.env.DB.prepare('SELECT id, name, slug, status FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL').bind(user.id).all()).results as { id: number }[];
+  const seats = (await c.env.DB.prepare(
+    `SELECT b.id, b.name, b.slug, b.status, m.role FROM business_members m JOIN businesses b ON b.id = m.business_id
+     WHERE m.user_id = ? AND m.status = 'active' AND b.deleted_at IS NULL`,
+  ).bind(user.id).all()).results as { id: number; role?: string }[];
+  const byId = new Map<number, unknown>();
+  for (const b of owned) byId.set(b.id, { ...b, role: 'owner' });
+  for (const s of seats) if (!byId.has(s.id)) byId.set(s.id, s);
+  return c.json({ ok: true, businesses: [...byId.values()] });
+});
+
+/** Switch the active business (staff with seats in more than one store). */
+app.post('/business/switch', async (c) => {
+  const { user } = await requireVendor(c.env, c);
+  const body = (await c.req.json().catch(() => null)) as { business_id?: unknown } | null;
+  const businessId = Number(body?.business_id);
+  if (!Number.isInteger(businessId) || businessId < 1) throw badRequest('Choose a business.');
+  const owned = await c.env.DB.prepare('SELECT id FROM businesses WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL').bind(businessId, user.id).first();
+  const seat = owned ? null : await c.env.DB.prepare("SELECT business_id FROM business_members WHERE business_id = ? AND user_id = ? AND status = 'active'").bind(businessId, user.id).first();
+  if (!owned && !seat) throw forbidden('You do not belong to that business.');
+  await c.env.DB.prepare(
+    `INSERT INTO user_active_business (user_id, business_id, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET business_id = excluded.business_id, updated_at = excluded.updated_at`,
+  ).bind(user.id, businessId, nowIso()).run();
+  return c.json({ ok: true, business_id: businessId });
+});
+
+/** Read-only API keys: list (prefixes only), create (secret shown once), revoke. */
+app.get('/api-keys', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const rows = (await c.env.DB.prepare(
+    'SELECT id, name, key_prefix, last_used_at, created_at, revoked_at FROM api_keys WHERE business_id = ? ORDER BY id DESC LIMIT 20',
+  ).bind(business.id).all()).results;
+  return c.json({ ok: true, keys: rows });
+});
+
+app.post('/api-keys', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const body = (await c.req.json().catch(() => null)) as { name?: unknown } | null;
+  const name = typeof body?.name === 'string' && body.name.trim() ? body.name.trim().slice(0, 60) : 'API key';
+  const secret = `csk_${randomToken(24)}`;
+  const keyHash = await sha256Hex(secret);
+  await c.env.DB.prepare('INSERT INTO api_keys (business_id, name, key_hash, key_prefix) VALUES (?, ?, ?, ?)').bind(business.id, name, keyHash, secret.slice(0, 12)).run();
+  return c.json({ ok: true, key: secret, note: 'Copy this now — it is shown once and never stored in plain text.' });
+});
+
+app.delete('/api-keys/:id', async (c) => {
+  const { business } = await requireVendor(c.env, c);
+  const id = reqInt(c.req.param('id'), { min: 1 });
+  await c.env.DB.prepare('UPDATE api_keys SET revoked_at = ? WHERE id = ? AND business_id = ? AND revoked_at IS NULL').bind(nowIso(), id, business.id).run();
   return c.json({ ok: true });
 });
 

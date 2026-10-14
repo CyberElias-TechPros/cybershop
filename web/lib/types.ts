@@ -22,6 +22,8 @@ export interface BusinessOut {
   social: Record<string, string>;
   status: string;
   verification_status?: string;
+  /** Median first-reply time from real enquiries (null until 5+ samples). */
+  response_time?: { hours: number; sample: number } | null;
   paused?: boolean;
   featured?: boolean;
   /** The platform owner's own store (Cyber Elias Academy) — free, permanent top plan. */
@@ -42,7 +44,11 @@ export interface BusinessOut {
   reviews?: { count: number; average: number | null };
   address?: string | null;
   storefront?: {
+    /** Store theme key: 'auto' (follow category) or a trade theme key
+     *  (boutique | kitchen | gadget | academy | property | general).
+     *  See web/lib/theme.ts. Legacy style names resolve to 'auto'. */
     style: string;
+    /** @deprecated free-form accent — no longer rendered; themes are curated. */
     accent: string;
     sections: Record<string, boolean>;
     faq: { q: string; a: string }[];

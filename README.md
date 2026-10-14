@@ -32,6 +32,7 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 | [`docs/usability-audit.md`](docs/usability-audit.md) | Front-end usability/accessibility audit: what blocked visitors, what was fixed, what is still recommended |
 | [`docs/ux-critique.md`](docs/ux-critique.md) | All-roles UI/UX critique: shop-first homepage, `/sell`, unified search, card trust signals — what was wrong, what changed, what remains |
 | [`docs/responsive-audit.md`](docs/responsive-audit.md) | Breakpoint scale 280px→ultrawide, grouped navbar/menu/dashboard navigation — what was checked, what changed, what to verify on real devices |
+| [`docs/expert-critique.md`](docs/expert-critique.md) | Every-seat expert critique (buyers, sellers, staff, admin, trust, growth, market fit) with a prioritised Now/Next/Later roadmap |
 | [`docs/galaxy-store.md`](docs/galaxy-store.md) | Samsung Galaxy Store rejection fix kit: 8-screenshot storyboard, sharp-capture rules, resubmission checklist (paste-ready copy in [`store-listing/`](store-listing/galaxy-store-listing.md)) |
 | [`docs/gap-analysis.md`](docs/gap-analysis.md) | What the product still needed, what was fixed, and the ranked backlog |
 | [`docs/production.md`](docs/production.md) | **Going live**: every key, host and command, in order |

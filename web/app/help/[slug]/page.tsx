@@ -1,3 +1,4 @@
+import '../help.css';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { AUDIENCE_LABEL, GUIDES, guideBySlug, guidesByAudience } from '@/lib/guides';

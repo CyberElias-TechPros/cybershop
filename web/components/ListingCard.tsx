@@ -23,7 +23,7 @@ export default function ListingCard({ it }: { it: MarketListing }) {
           <span className="skel" aria-hidden="true" />
           {it.image ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={it.image} alt="" loading="lazy" decoding="async" />
+            <img src={it.image} alt={it.name} width={640} height={480} loading="lazy" decoding="async" />
           ) : (
             <div className="no-img" aria-hidden>🏷️</div>
           )}
@@ -58,7 +58,7 @@ export default function ListingCard({ it }: { it: MarketListing }) {
             <span className="listing-avatar" aria-hidden="true">
               {it.biz_logo ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={it.biz_logo} alt="" loading="lazy" decoding="async" />
+                <img src={it.biz_logo} alt="" width={32} height={32} loading="lazy" decoding="async" />
               ) : (
                 <span className="listing-avatar-fallback">{initials(it.biz_name)}</span>
               )}

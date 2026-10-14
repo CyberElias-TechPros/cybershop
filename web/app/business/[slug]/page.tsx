@@ -160,6 +160,11 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
             <div className="trust-row" style={{ marginTop: 10 }}>
               {business.is_platform_owner && <span className="trust-chip official">Official CyberShop store</span>}
               {business.verification_status === 'verified' && <span className="trust-chip">Verified vendor</span>}
+              {business.response_time && (
+                <span className="trust-chip" title={`Median first reply across ${business.response_time.sample} recent enquiries`}>
+                  ⚡ Usually replies within {business.response_time.hours < 1 ? 'the hour' : business.response_time.hours < 24 ? `~${Math.round(business.response_time.hours)}h` : `~${Math.round(business.response_time.hours / 24)}d`}
+                </span>
+              )}
               {tenureLabel(business.created_at) && (
                 <span className="trust-chip faint">{tenureLabel(business.created_at)}</span>
               )}

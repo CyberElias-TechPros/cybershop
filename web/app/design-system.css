@@ -1781,3 +1781,9 @@ ol.safety-list {
 @media (max-width: 560px) {
   .section-head { flex-direction: column; align-items: flex-start; }
 }
+
+/* Business switcher (staff with seats in several stores) */
+.biz-switch { display: grid; gap: 4px; margin-bottom: var(--s-3); }
+.biz-switch-label { font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
+.biz-switch .select { width: 100%; }
+@media (max-width: 860px) { .biz-switch { width: 100%; } }

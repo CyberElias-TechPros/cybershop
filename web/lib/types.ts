@@ -22,6 +22,8 @@ export interface BusinessOut {
   social: Record<string, string>;
   status: string;
   verification_status?: string;
+  /** Median first-reply time from real enquiries (null until 5+ samples). */
+  response_time?: { hours: number; sample: number } | null;
   paused?: boolean;
   featured?: boolean;
   /** The platform owner's own store (Cyber Elias Academy) — free, permanent top plan. */

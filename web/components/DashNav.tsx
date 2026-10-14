@@ -3,11 +3,27 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
+import BusinessSwitcher from './BusinessSwitcher';
 
 interface Props {
   businessName: string;
   unread: number;
   isAdmin?: boolean;
+  /** Staff seat (owner/manager see everything). Mirrors worker ROLE_PATHS. */
+  memberRole?: string;
+}
+
+const ROLE_LINKS: Record<string, string[]> = {
+  catalogue: ['/dashboard', '/dashboard/catalog', '/dashboard/media', '/dashboard/offers'],
+  sales: ['/dashboard', '/dashboard/leads', '/dashboard/inbox', '/dashboard/deposits', '/dashboard/whatsapp'],
+  support: ['/dashboard', '/dashboard/leads', '/dashboard/inbox'],
+  accountant: ['/dashboard', '/dashboard/billing'],
+};
+
+function visibleForRole(links: NavLink[], role: string | undefined, isAdmin: boolean): NavLink[] {
+  if (isAdmin || !role || role === 'owner' || role === 'manager') return links;
+  const allowed = ROLE_LINKS[role] ?? ['/dashboard'];
+  return links.filter((l) => allowed.some((a) => l.href === a || l.href.startsWith(`${a}/`)) || l.href === '/account/security');
 }
 
 interface NavLink {
@@ -44,6 +60,7 @@ const VENDOR_LINKS: NavLink[] = [
   { href: '/dashboard/domain', icon: '🌐', label: 'Domain', group: 'Store' },
   { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing', group: 'Account' },
   { href: '/dashboard/settings', icon: '⚙️', label: 'Settings', group: 'Account' },
+  { href: '/dashboard/api-keys', icon: '🔑', label: 'API keys', group: 'Account' },
   { href: '/help#selling', icon: '❓', label: 'Help & guides', group: 'Account' },
   { href: '/account/security', icon: '🔐', label: 'Security', group: 'Account' },
 ];
@@ -67,6 +84,7 @@ const ADMIN_LINKS: NavLink[] = [
   { href: '/admin/audit', icon: '📜', label: 'Audit log', group: 'System' },
   { href: '/admin/health', icon: '🩺', label: 'Health', group: 'System' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings', group: 'System' },
+  { href: '/admin/support', icon: '🎫', label: 'Support tickets', group: 'System' },
   { href: '/help#admin', icon: '❓', label: 'Help & guides', group: 'System' },
   { href: '/account/security', icon: '🔐', label: 'My security', group: 'System' },
 ];
@@ -78,9 +96,9 @@ const ADMIN_LINKS: NavLink[] = [
  * the five primary sections are always visible and "More" reveals the
  * rest in place, so nothing hides behind a horizontal swipe.
  */
-export default function DashNav({ businessName, unread, isAdmin }: Props) {
+export default function DashNav({ businessName, unread, isAdmin = false, memberRole }: Props) {
   const pathname = usePathname();
-  const links = isAdmin ? ADMIN_LINKS : VENDOR_LINKS;
+  const links = visibleForRole(isAdmin ? ADMIN_LINKS : VENDOR_LINKS, memberRole, isAdmin);
   const groups = isAdmin ? ADMIN_GROUPS : VENDOR_GROUPS;
   const [expanded, setExpanded] = useState(false);
   const active = (href: string) => (href === '/dashboard' || href === '/admin' ? pathname === href : pathname.startsWith(href));
@@ -103,9 +121,12 @@ export default function DashNav({ businessName, unread, isAdmin }: Props) {
   return (
     <nav className={`dash-nav${expanded ? ' is-expanded' : ''}`} aria-label="Dashboard">
       {!isAdmin && (
-        <Link className="nav-brand" href="/dashboard">
-          {businessName || 'My Store'}
-        </Link>
+        <>
+          <BusinessSwitcher />
+          <Link className="nav-brand" href="/dashboard">
+            {businessName || 'My Store'}
+          </Link>
+        </>
       )}
       {groups.map((g) => (
         <div className="dash-nav-group" key={g}>

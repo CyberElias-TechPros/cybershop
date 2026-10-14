@@ -12,6 +12,21 @@ export interface VendorBinding {
 
 /** Owner wins. Otherwise the newest active staff seat. */
 export async function resolveVendorBinding(env: Env, userId: number): Promise<VendorBinding> {
+  // An explicit switch (staff with seats in several stores) wins over defaults.
+  const active = (await env.DB.prepare(
+    'SELECT business_id FROM user_active_business WHERE user_id = ?',
+  ).bind(userId).first()) as { business_id: number } | null;
+  if (active) {
+    const ownedActive = (await env.DB.prepare(
+      'SELECT id FROM businesses WHERE id = ? AND owner_user_id = ? AND deleted_at IS NULL',
+    ).bind(active.business_id, userId).first()) as { id: number } | null;
+    if (ownedActive) return { business_id: ownedActive.id, member_role: 'owner' };
+    const seatActive = (await env.DB.prepare(
+      `SELECT m.role FROM business_members m JOIN businesses b ON b.id = m.business_id
+       WHERE m.business_id = ? AND m.user_id = ? AND m.status = 'active' AND b.deleted_at IS NULL`,
+    ).bind(active.business_id, userId).first()) as { role: string } | null;
+    if (seatActive) return { business_id: active.business_id, member_role: seatActive.role };
+  }
   const owned = (await env.DB.prepare(
     'SELECT id FROM businesses WHERE owner_user_id = ? AND deleted_at IS NULL'
   ).bind(userId).first()) as { id: number } | null;
@@ -25,6 +40,8 @@ export async function resolveVendorBinding(env: Env, userId: number): Promise<Ve
   if (mem) return { business_id: mem.business_id, member_role: mem.role };
   return { business_id: null, member_role: null };
 }
+
+const SWITCH_ANY = /^\/api\/vendor\/(business\/switch|businesses)$/;
 
 const READ_ANY = [
   /^\/api\/vendor\/business$/,
@@ -67,6 +84,7 @@ const ROLE_PATHS: Record<string, RegExp[]> = {
  */
 export function assertStaffPermission(method: string, path: string, role: string): void {
   if (role === 'owner' || role === 'manager') return;
+  if (SWITCH_ANY.test(path)) return;
   if (method === 'GET' && READ_ANY.some((r) => r.test(path))) return;
   if (method === 'POST' && /^\/api\/vendor\/notifications\/read$/.test(path)) return;
   if (path === '/api/vendor/business' && method !== 'GET') {

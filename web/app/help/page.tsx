@@ -1,3 +1,4 @@
+import './help.css';
 import type { Metadata } from 'next';
 import HelpIndex from '@/components/HelpIndex';
 import { GUIDE_GROUPS, GUIDES } from '@/lib/guides';

@@ -15,7 +15,8 @@ import { resolveWhatsappNumber } from '../lib/routing';
 import { blockedBusinessIds, isBlocked, notInClause } from '../lib/blocks';
 import { reviewList, reviewSummary } from '../lib/reviews';
 import { parseStorefront } from '../lib/storefront';
-import { searchTerms, termClauses, relevanceSql, suggestionStem, likeContains } from '../lib/search';
+import { searchTerms, termClauses, relevanceSql, suggestionStem, likeContains, ftsMatchExpr } from '../lib/search';
+import { medianResponseHours } from '../lib/growth';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -479,9 +480,10 @@ app.get('/business/:slug', async (c) => {
     `SELECT o.id, o.title, o.description, o.kind, o.value, o.value_type, o.ends_at FROM offers o
      WHERE o.business_id = ? AND o.is_active = 1 AND (o.ends_at IS NULL OR o.ends_at > datetime('now')) LIMIT 8`
   ).bind((biz as { id: number }).id).all()).results as Record<string, unknown>[];
+  const response = await medianResponseHours(env, (biz as { id: number }).id).catch(() => null);
   return c.json({
     ok: true,
-    business,
+    business: { ...business, response_time: response },
     items,
     offers,
     unavailable: !live,
@@ -623,6 +625,19 @@ app.get('/cities', async (c) => {
  * Classifieds feed: published listings across the market.
  * Filters: q, city, category, min/max price (kobo), sort.
  */
+
+/** FTS5 candidate ids for a query, or null when FTS is unavailable/empty of terms. */
+async function ftsListingIds(env: Env, terms: string[]): Promise<number[] | null> {
+  try {
+    const expr = ftsMatchExpr(terms);
+    if (!expr) return null;
+    const rows = (await env.DB.prepare('SELECT rowid FROM listings_fts WHERE listings_fts MATCH ? LIMIT 400').bind(expr).all()).results as { rowid: number }[];
+    return rows.map((r) => r.rowid);
+  } catch {
+    return null; // LIKE fallback below — FTS must never break search.
+  }
+}
+
 app.get('/listings', async (c) => {
   const env = c.env;
   const q = c.req.query('q')?.trim().slice(0, 80) || '';
@@ -643,8 +658,14 @@ app.get('/listings', async (c) => {
   const scoreParams: string[] = [];
   if (q) {
     const terms = searchTerms(q).length ? searchTerms(q) : [q.toLowerCase()];
-    const clauses = termClauses(terms, ['l.name', 'l.description', 'b.name']);
-    if (clauses.sql) { where += ` AND ${clauses.sql}`; params.push(...clauses.params); }
+    const ftsIds = await ftsListingIds(env, terms);
+    if (ftsIds) {
+      where += ftsIds.length ? ` AND l.id IN (${ftsIds.map(() => '?').join(',')})` : ' AND 1 = 0';
+      params.push(...ftsIds);
+    } else {
+      const clauses = termClauses(terms, ['l.name', 'l.description', 'b.name']);
+      if (clauses.sql) { where += ` AND ${clauses.sql}`; params.push(...clauses.params); }
+    }
     const scored = relevanceSql('l.name', 'l.description', terms);
     scoreSql = scored.sql;
     scoreParams.push(...scored.params);
@@ -786,8 +807,14 @@ app.get('/search', async (c) => {
   const itemParams: (string | number)[] = [...blockedSearch.params];
   // A listing matches on its own name or description, or on the name of the
   // store selling it — buyers search "Zara" as often as they search "gown".
-  const itemClauses = termClauses(effective, ['l.name', 'l.description', 'b.name']);
-  if (itemClauses.sql) { itemWhere += ` AND ${itemClauses.sql}`; itemParams.push(...itemClauses.params); }
+  const ftsIds = await ftsListingIds(env, effective);
+  if (ftsIds) {
+    itemWhere += ftsIds.length ? ` AND l.id IN (${ftsIds.map(() => '?').join(',')})` : ' AND 1 = 0';
+    itemParams.push(...ftsIds);
+  } else {
+    const itemClauses = termClauses(effective, ['l.name', 'l.description', 'b.name']);
+    if (itemClauses.sql) { itemWhere += ` AND ${itemClauses.sql}`; itemParams.push(...itemClauses.params); }
+  }
   if (city) { itemWhere += ` AND LOWER(b.city) = LOWER(?)`; itemParams.push(city); }
   const itemScore = relevanceSql('l.name', 'l.description', effective);
   const items = (await env.DB.prepare(

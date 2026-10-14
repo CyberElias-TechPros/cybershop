@@ -56,7 +56,7 @@ export default async function DashboardOverviewPage() {
       {status === 'pending_payment' && (
         <div className="banner warn">
           <div>
-            <strong>Your store isn’t live yet.</strong> Choose a plan and pay to go live — the free plan takes under a minute.
+            <strong>Your store isn’t live yet.</strong> Fill your catalogue now — it all goes on sale the moment your plan is active. The free plan takes under a minute.
           </div>
           <Link className="btn btn-primary" href="/onboarding">
             Finish setup

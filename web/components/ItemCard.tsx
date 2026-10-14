@@ -12,7 +12,7 @@ export default function ItemCard({ item, biz }: { item: ItemOut; biz: BusinessOu
         <span className="skel" aria-hidden="true" />
         {img ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={img.url} alt={img.alt} loading="lazy" />
+          <img src={img.url} alt={img.alt || item.name} width={640} height={480} loading="lazy" decoding="async" />
         ) : (
           <div className="no-img" aria-hidden>
             🏷️

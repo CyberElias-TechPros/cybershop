@@ -23,7 +23,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   }
   return (
     <div className="dash" style={{ ['--acc' as string]: th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
-      <DashNav businessName={me.business?.name ?? ''} unread={me.unread_notifications} />
+      <DashNav businessName={me.business?.name ?? ''} unread={me.unread_notifications} memberRole={me.user.member_role ?? 'owner'} />
       <div className="dash-main">{children}</div>
       <ResponsiveTables />
     </div>

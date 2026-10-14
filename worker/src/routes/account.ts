@@ -174,7 +174,10 @@ app.post('/favorites', async (c) => {
     await c.env.DB.prepare('DELETE FROM favorites WHERE buyer_user_id = ? AND listing_id = ?').bind(user.id, listingId).run();
     return c.json({ ok: true, saved: false });
   }
-  await c.env.DB.prepare('INSERT INTO favorites (buyer_user_id, listing_id, created_at) VALUES (?, ?, ?)').bind(user.id, listingId, nowIso()).run();
+  await c.env.DB.prepare(
+    `INSERT INTO favorites (buyer_user_id, listing_id, created_at, price_snapshot, stock_snapshot)
+     VALUES (?, ?, ?, (SELECT price FROM listings WHERE id = ?), (SELECT stock_status FROM listings WHERE id = ?))`
+  ).bind(user.id, listingId, nowIso(), listingId, listingId).run();
   return c.json({ ok: true, saved: true });
 });
 
@@ -221,7 +224,10 @@ app.post('/favorites/sync', async (c) => {
     if (!Number.isInteger(id) || id < 1) continue;
     const ok = await c.env.DB.prepare(`SELECT id FROM listings WHERE id = ? AND status = 'published' AND deleted_at IS NULL`).bind(id).first();
     if (!ok) continue;
-    const res = await c.env.DB.prepare('INSERT OR IGNORE INTO favorites (buyer_user_id, listing_id, created_at) VALUES (?, ?, ?)').bind(user.id, id, nowIso()).run();
+    const res = await c.env.DB.prepare(
+      `INSERT OR IGNORE INTO favorites (buyer_user_id, listing_id, created_at, price_snapshot, stock_snapshot)
+       VALUES (?, ?, ?, (SELECT price FROM listings WHERE id = ?), (SELECT stock_status FROM listings WHERE id = ?))`
+    ).bind(user.id, id, nowIso(), id, id).run();
     added += Number(res.meta.changes || 0);
   }
   return c.json({ ok: true, added });

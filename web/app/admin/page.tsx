@@ -18,6 +18,7 @@ interface Overview {
     revenue_kobo: number;
     revenue_display: string;
   };
+  funnel_7d?: { views: number; item_views: number; taps: number; leads: number; tap_rate: number };
   queues: { payments: number; vendors: number; reports: number; listings: number };
   recent_payments: {
     id: number;
@@ -68,6 +69,12 @@ export default async function AdminOverviewPage() {
           <div className="num">{stats.buyers}</div>
           <div className="lbl">Buyer accounts</div>
         </div>
+        {data.funnel_7d && (
+          <div className="card stat">
+            <div className="num">{data.funnel_7d.views + data.funnel_7d.item_views} → {data.funnel_7d.taps}</div>
+            <div className="lbl">7-day funnel: views → WhatsApp taps ({data.funnel_7d.tap_rate}%) · {data.funnel_7d.leads} leads</div>
+          </div>
+        )}
       </div>
 
       <div className="banner info">

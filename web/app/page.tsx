@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import HeroLang from '@/components/HeroLang';
 import { api, PUBLIC_REVALIDATE } from '@/lib/api';
 import { clientIp } from '@/lib/ip';
 import { sessionCookieHeader } from '@/lib/session';
@@ -102,13 +103,7 @@ export default async function HomePage() {
       {/* ——— Shop header: search + city, then straight into the market ——— */}
       <section className="shop-hero">
         <div className="container">
-          <h1 className="shop-title">
-            Shop real businesses. <em>Chat on WhatsApp.</em>
-          </h1>
-          <p className="shop-sub">
-            Prices up front, sellers you can check — then one tap into a WhatsApp conversation.
-            No checkout, and CyberShop never takes your money.
-          </p>
+          <HeroLang />
           <ShopSearch cities={data.cities ?? []} />
           {live && (
             <p className="shop-counts" role="status">

@@ -6,6 +6,13 @@
  * inline. The job is simply to never leave a visitor on a blank screen.
  */
 export default function GlobalError({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
+  // Report to the API error log (best effort, no UI dependencies).
+  if (typeof window !== 'undefined') {
+    try {
+      const payload = JSON.stringify({ message: String(error?.message ?? 'global error'), route: window.location.pathname, digest: error?.digest });
+      if (navigator.sendBeacon) navigator.sendBeacon('/api/public/client-error', new Blob([payload], { type: 'application/json' }));
+    } catch { /* never throw from the error screen */ }
+  }
   return (
     <html lang="en">
       <body

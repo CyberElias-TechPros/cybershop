@@ -199,8 +199,12 @@ export const GUIDES: Guide[] = [
         steps: [
           'Tap the save/bookmark on any listing to keep it.',
           'On a store page, save the store itself to find it again quickly.',
-          'Everything you save lives under Saved (top bar) and in your account.',
+          'Everything you save lives under Saved (top bar) and in your account. When a saved store lists something new, you hear about it too.',
         ],
+      },
+      {
+        heading: 'Price drops & restocks on saved items',
+        body: ['When a store reduces the price of a listing you saved — or brings an out-of-stock one back — CyberShop notifies you (Account → Alerts and by email if enabled). The price we compare against is the price when you saved it, so save things you are watching, not just things you love.'],
       },
       {
         heading: 'Alerts for things that don\'t exist yet',
@@ -563,6 +567,10 @@ export const GUIDES: Guide[] = [
         ],
       },
       {
+        heading: 'Your weekly digest',
+        body: ['Once a week CyberShop sends your week in numbers — views, WhatsApp taps, new leads and sales you marked — as a notification (and email, if enabled). It is your receipt for what the storefront earned you; if the numbers look wrong, the funnel above tells you which step to fix.'],
+      },
+      {
         heading: 'Make it a habit',
         body: ['Glance weekly, change one thing at a time, and watch the next week. Small, steady fixes compound — that is the entire secret of the stores at the top of your category.'],
       },
@@ -651,6 +659,60 @@ export const GUIDES: Guide[] = [
           'Show scale and detail: one close-up beats three blurry wides.',
         ],
         warning: 'Only upload photos you own or have permission to use. Listings with stolen photos are removed when reported.',
+      },
+    ],
+  },
+
+  {
+    slug: 'api-keys',
+    title: 'API keys: your catalogue, anywhere',
+    icon: '🔑',
+    audience: 'selling',
+    summary: 'Read-only keys that let your own website or app pull your live catalogue from CyberShop.',
+    minutes: 3,
+    keywords: ['api', 'key', 'developer', 'integration', 'catalog', 'website', 'embed'],
+    cta: { label: 'Manage API keys', href: '/dashboard/api-keys' },
+    related: ['plans-and-billing', 'add-products'],
+    sections: [
+      {
+        heading: 'What it is',
+        body: ['An API key lets software you control fetch your published listings (names, prices, photos, links) straight from CyberShop — for your own website, a partner app, or a spreadsheet pipeline. Keys are read-only: they can never change your store, see buyers, or touch money.'],
+      },
+      {
+        heading: 'Create and use a key',
+        steps: [
+          'Dashboard → API keys → name it and create.',
+          'Copy the key immediately — it is shown once and stored only as a hash.',
+          'Send it as a header: Authorization: Bearer csk_… to GET /api/public/catalog.',
+          'Revoke any key the moment it leaks or a project ends; revocation is instant.',
+        ],
+        warning: 'Treat a key like a password for your catalogue: never paste it into public code or screenshots. Anyone holding it can read your published catalogue until you revoke it.',
+      },
+    ],
+  },
+  {
+    slug: 'support-tickets',
+    title: 'Support tickets: getting help that tracks',
+    icon: '🎫',
+    audience: 'account',
+    summary: 'Open a ticket, follow the thread, and never lose a support conversation again.',
+    minutes: 2,
+    keywords: ['support', 'ticket', 'help', 'contact', 'problem', 'complaint'],
+    cta: { label: 'Open a ticket', href: '/contact' },
+    related: ['your-account', 'security-2fa'],
+    sections: [
+      {
+        heading: 'Open a ticket',
+        steps: [
+          'Go to Contact and fill the form — guests can open tickets too, but signing in ties it to your account.',
+          'You get a ticket number immediately. Keep it.',
+          'Signed in? The whole thread lives under Account → Support tickets; replies land there and notify you.',
+        ],
+        tips: ['One ticket per problem, with your store name and what you expected to happen, gets answered fastest.'],
+      },
+      {
+        heading: 'What support can and cannot do',
+        body: ['Support can fix accounts, payments, plans and platform problems, and route safety reports to moderation. Support cannot refund money between buyers and sellers — CyberShop never held it (see buying safely).'],
       },
     ],
   },

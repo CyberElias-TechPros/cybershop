@@ -32,6 +32,7 @@ const EMAIL_TYPES = new Set([
   'follow_up.due',
   'report.resolved',
   'staff.joined',
+  'seller.digest',
 ]);
 
 function emailBodyFor(type: string, title: string, body: string, env: Env, data?: Record<string, unknown>): { html: string; cta?: { label: string; url: string } } {
@@ -51,6 +52,8 @@ function emailBodyFor(type: string, title: string, body: string, env: Env, data?
     cta = { label: 'Open deposits', url: `${env.APP_URL}/dashboard/deposits` };
   } else if (type.startsWith('thread.')) {
     cta = { label: 'Open inbox', url: `${env.APP_URL}/dashboard/inbox` };
+  } else if (type === 'seller.digest') {
+    cta = { label: 'Open analytics', url: `${env.APP_URL}/dashboard/analytics` };
   } else if (type === 'review.new') {
     cta = { label: 'See the review', url: `${env.APP_URL}/dashboard` };
   }

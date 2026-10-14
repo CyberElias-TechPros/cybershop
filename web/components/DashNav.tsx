@@ -14,67 +14,89 @@ interface NavLink {
   href: string;
   icon: string;
   label: string;
+  /** Sidebar section heading this link belongs to. */
+  group: string;
   /** Shown in the collapsed phone nav (the sections used every day). */
   primary?: boolean;
 }
 
+/*
+ * Grouped by the job, not alphabetically: a vendor thinks "my shop / my
+ * customers / my money", an admin thinks "moderation / money / system".
+ * The sidebar shows the headings; the phone chip-row hides them (there,
+ * the primary/More split is the grouping that fits).
+ */
+const VENDOR_GROUPS = ['Today', 'Selling', 'Customers', 'Store', 'Account'];
 const VENDOR_LINKS: NavLink[] = [
-  { href: '/dashboard', icon: '📊', label: 'Overview', primary: true },
-  { href: '/dashboard/analytics', icon: '📈', label: 'Analytics', primary: true },
-  { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue', primary: true },
-  { href: '/dashboard/leads', icon: '💬', label: 'Leads', primary: true },
-  { href: '/dashboard/inbox', icon: '📥', label: 'Inbox', primary: true },
-  { href: '/dashboard/media', icon: '🖼️', label: 'Media', primary: true },
-  { href: '/dashboard/offers', icon: '🎁', label: 'Offers' },
-  { href: '/dashboard/reviews', icon: '★', label: 'Reviews' },
-  { href: '/dashboard/deposits', icon: '🔒', label: 'Deposits' },
-  { href: '/dashboard/verification', icon: '🪪', label: 'Verification' },
-  { href: '/dashboard/whatsapp', icon: '📱', label: 'WhatsApp' },
-  { href: '/dashboard/templates', icon: '✉️', label: 'Templates' },
-  { href: '/dashboard/team', icon: '👥', label: 'Team' },
-  { href: '/dashboard/domain', icon: '🌐', label: 'Domain' },
-  { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing' },
-  { href: '/dashboard/settings', icon: '⚙️', label: 'Settings' },
-  { href: '/account/security', icon: '🔐', label: 'Security' },
+  { href: '/dashboard', icon: '📊', label: 'Overview', group: 'Today', primary: true },
+  { href: '/dashboard/analytics', icon: '📈', label: 'Analytics', group: 'Today', primary: true },
+  { href: '/dashboard/catalog', icon: '🏷️', label: 'Catalogue', group: 'Selling', primary: true },
+  { href: '/dashboard/media', icon: '🖼️', label: 'Media', group: 'Selling', primary: true },
+  { href: '/dashboard/offers', icon: '🎁', label: 'Offers', group: 'Selling' },
+  { href: '/dashboard/leads', icon: '💬', label: 'Leads', group: 'Customers', primary: true },
+  { href: '/dashboard/inbox', icon: '📥', label: 'Inbox', group: 'Customers', primary: true },
+  { href: '/dashboard/reviews', icon: '★', label: 'Reviews', group: 'Customers' },
+  { href: '/dashboard/deposits', icon: '🔒', label: 'Deposits', group: 'Customers' },
+  { href: '/dashboard/whatsapp', icon: '📱', label: 'WhatsApp', group: 'Store' },
+  { href: '/dashboard/templates', icon: '✉️', label: 'Templates', group: 'Store' },
+  { href: '/dashboard/verification', icon: '🪪', label: 'Verification', group: 'Store' },
+  { href: '/dashboard/team', icon: '👥', label: 'Team', group: 'Store' },
+  { href: '/dashboard/domain', icon: '🌐', label: 'Domain', group: 'Store' },
+  { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing', group: 'Account' },
+  { href: '/dashboard/settings', icon: '⚙️', label: 'Settings', group: 'Account' },
+  { href: '/account/security', icon: '🔐', label: 'Security', group: 'Account' },
 ];
 
+const ADMIN_GROUPS = ['Today', 'Moderation', 'Money', 'System'];
 const ADMIN_LINKS: NavLink[] = [
-  { href: '/admin', icon: '📊', label: 'Overview', primary: true },
-  { href: '/admin/vendors', icon: '🏢', label: 'Vendors', primary: true },
-  { href: '/admin/payments', icon: '💳', label: 'Payments', primary: true },
-  { href: '/admin/reconciliation', icon: '🧾', label: 'Reconciliation' },
-  { href: '/admin/listings', icon: '🏷️', label: 'Listings', primary: true },
-  { href: '/admin/reports', icon: '🚩', label: 'Reports', primary: true },
-  { href: '/admin/users', icon: '👥', label: 'Users' },
-  { href: '/admin/categories', icon: '🗂️', label: 'Categories' },
-  { href: '/admin/plans', icon: '🧩', label: 'Plans & Add-ons' },
-  { href: '/admin/subscriptions', icon: '📅', label: 'Subscriptions' },
-  { href: '/admin/reviews', icon: '★', label: 'Reviews' },
-  { href: '/admin/domains', icon: '🌐', label: 'Domains' },
-  { href: '/admin/verifications', icon: '🪪', label: 'Verified ID' },
-  { href: '/admin/audit', icon: '📜', label: 'Audit log' },
-  { href: '/admin/health', icon: '🩺', label: 'Health' },
-  { href: '/admin/templates', icon: '✉️', label: 'WA templates' },
-  { href: '/admin/settings', icon: '⚙️', label: 'Settings' },
-  { href: '/account/security', icon: '🔐', label: 'My security' },
+  { href: '/admin', icon: '📊', label: 'Overview', group: 'Today', primary: true },
+  { href: '/admin/vendors', icon: '🏢', label: 'Vendors', group: 'Moderation', primary: true },
+  { href: '/admin/listings', icon: '🏷️', label: 'Listings', group: 'Moderation', primary: true },
+  { href: '/admin/reports', icon: '🚩', label: 'Reports', group: 'Moderation', primary: true },
+  { href: '/admin/verifications', icon: '🪪', label: 'Verified ID', group: 'Moderation' },
+  { href: '/admin/reviews', icon: '★', label: 'Reviews', group: 'Moderation' },
+  { href: '/admin/payments', icon: '💳', label: 'Payments', group: 'Money', primary: true },
+  { href: '/admin/reconciliation', icon: '🧾', label: 'Reconciliation', group: 'Money' },
+  { href: '/admin/subscriptions', icon: '📅', label: 'Subscriptions', group: 'Money' },
+  { href: '/admin/plans', icon: '🧩', label: 'Plans & Add-ons', group: 'Money' },
+  { href: '/admin/users', icon: '👥', label: 'Users', group: 'System' },
+  { href: '/admin/categories', icon: '🗂️', label: 'Categories', group: 'System' },
+  { href: '/admin/domains', icon: '🌐', label: 'Domains', group: 'System' },
+  { href: '/admin/templates', icon: '✉️', label: 'WA templates', group: 'System' },
+  { href: '/admin/audit', icon: '📜', label: 'Audit log', group: 'System' },
+  { href: '/admin/health', icon: '🩺', label: 'Health', group: 'System' },
+  { href: '/admin/settings', icon: '⚙️', label: 'Settings', group: 'System' },
+  { href: '/account/security', icon: '🔐', label: 'My security', group: 'System' },
 ];
 
 /**
  * Workbench navigation.
  *
- * The desktop shell is a plain sidebar. On a phone, fifteen links in a
- * one-line horizontal scroller hid most of the workbench — you had to know a
- * page existed and then swipe to find it. Below the shell breakpoint the links
- * become chips that wrap: the five primary sections are always visible, and
- * "More" reveals the rest in place.
+ * Desktop: a grouped sidebar (headings above). Phone: chips that wrap —
+ * the five primary sections are always visible and "More" reveals the
+ * rest in place, so nothing hides behind a horizontal swipe.
  */
 export default function DashNav({ businessName, unread, isAdmin }: Props) {
   const pathname = usePathname();
   const links = isAdmin ? ADMIN_LINKS : VENDOR_LINKS;
+  const groups = isAdmin ? ADMIN_GROUPS : VENDOR_GROUPS;
   const [expanded, setExpanded] = useState(false);
   const active = (href: string) => (href === '/dashboard' || href === '/admin' ? pathname === href : pathname.startsWith(href));
   // The hidden section must never swallow the page the vendor is looking at.
   const hiddenActive = links.some((l) => !l.primary && active(l.href));
+
+  const renderLink = (l: NavLink) => (
+    <Link
+      key={l.href}
+      href={l.href}
+      className={`${active(l.href) ? 'active' : ''}${l.primary ? '' : ' nav-more-item'}`}
+      aria-current={active(l.href) ? 'page' : undefined}
+    >
+      <span aria-hidden>{l.icon}</span>
+      {l.label}
+      {l.href === '/dashboard/leads' && unread > 0 && <span className="badge-count">{unread}</span>}
+    </Link>
+  );
 
   return (
     <nav className={`dash-nav${expanded ? ' is-expanded' : ''}`} aria-label="Dashboard">
@@ -83,23 +105,19 @@ export default function DashNav({ businessName, unread, isAdmin }: Props) {
           {businessName || 'My Store'}
         </Link>
       )}
-      {links.map((l) => (
-        <Link
-          key={l.href}
-          href={l.href}
-          className={`${active(l.href) ? 'active' : ''}${l.primary ? '' : ' nav-more-item'}`}
-          aria-current={active(l.href) ? 'page' : undefined}
-        >
-          <span aria-hidden>{l.icon}</span>
-          {l.label}
-          {l.href === '/dashboard/leads' && unread > 0 && <span className="badge-count">{unread}</span>}
-        </Link>
+      {groups.map((g) => (
+        <div className="dash-nav-group" key={g}>
+          <span className="dash-nav-heading" aria-hidden="true">{g}</span>
+          {links.filter((l) => l.group === g).map(renderLink)}
+        </div>
       ))}
       {!isAdmin && (
-        <Link href="/" className="nav-more-item">
-          <span aria-hidden>🌐</span>
-          View my store
-        </Link>
+        <div className="dash-nav-group">
+          <Link href="/" className="nav-more-item">
+            <span aria-hidden>🌐</span>
+            View my store
+          </Link>
+        </div>
       )}
       <button
         type="button"

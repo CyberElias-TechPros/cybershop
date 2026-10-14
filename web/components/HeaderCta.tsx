@@ -10,7 +10,7 @@ export default function HeaderCta({
   extra,
   me,
 }: {
-  extra: { href: string; label: string }[];
+  extra: { href: string; label: string; icon?: string | null }[];
   me: { role: string; name: string; unread: number } | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -46,28 +46,41 @@ export default function HeaderCta({
     return () => window.removeEventListener('resize', onResize);
   }, [open, close]);
 
-  /* Everything the desktop nav and the footer offer, in one place: the menu is
-     the only navigation on a phone, so it cannot be a subset of it. */
-  const links: { href: string; label: string }[] = [
-    { href: '/listings', label: 'Shop' },
-    { href: '/businesses', label: 'Businesses' },
-    { href: '/sell', label: 'Sell on CyberShop' },
-    ...extra,
-    { href: '/saved', label: 'Saved' },
-    { href: '/cart', label: 'WhatsApp cart' },
-    ...(me
-      ? [
-          me.role === 'admin'
-            ? { href: '/admin', label: 'Admin' }
-            : me.role === 'vendor'
-              ? { href: '/dashboard', label: 'Dashboard' }
-              : { href: '/account', label: 'Account' },
-        ]
-      : [
-          { href: '/register', label: 'Sell on CyberShop' },
-          { href: '/register/buyer', label: 'Create a buyer account' },
-          { href: '/login', label: 'Sign in' },
-        ]),
+  /* Everything the desktop nav and footer offer, grouped the way people
+     think about it: shop first, categories second, then selling/account.
+     The menu is the only navigation on a phone, so it cannot be a subset
+     of the site — but it no longer has to be a flat, numbered pile. */
+  const groups: { heading: string; links: { href: string; label: string }[] }[] = [
+    {
+      heading: 'Shop',
+      links: [
+        { href: '/listings', label: 'Shop all' },
+        { href: '/businesses', label: 'Businesses' },
+        { href: '/saved', label: 'Saved' },
+        { href: '/cart', label: 'WhatsApp cart' },
+      ],
+    },
+    ...(extra.length
+      ? [{ heading: 'Categories', links: extra.map((c) => ({ href: c.href, label: `${c.icon ? `${c.icon} ` : ''}${c.label}` })) }]
+      : []),
+    {
+      heading: 'Sell & account',
+      links: me
+        ? [
+            { href: '/sell', label: 'Sell on CyberShop' },
+            me.role === 'admin'
+              ? { href: '/admin', label: 'Admin' }
+              : me.role === 'vendor'
+                ? { href: '/dashboard', label: 'Dashboard' }
+                : { href: '/account', label: 'Account' },
+          ]
+        : [
+            { href: '/sell', label: 'Sell on CyberShop' },
+            { href: '/register', label: 'Open a storefront' },
+            { href: '/register/buyer', label: 'Create a buyer account' },
+            { href: '/login', label: 'Sign in' },
+          ],
+    },
   ];
 
   return (
@@ -123,10 +136,17 @@ export default function HeaderCta({
           Close ✕
         </button>
         <nav aria-label="Mobile">
-          {links.map((l, i) => (
-            <a key={l.href} href={l.href} style={{ ['--i' as string]: i }}>
-              <em>{String(i + 1).padStart(2, '0')}</em> {l.label}
-            </a>
+          {groups.map((g, gi) => (
+            <div className="cine-menu-group" key={g.heading}>
+              <span className="cine-menu-heading" id={`menu-g-${gi}`}>{g.heading}</span>
+              <div role="group" aria-labelledby={`menu-g-${gi}`}>
+                {g.links.map((l, i) => (
+                  <a key={l.href} href={l.href} style={{ ['--i' as string]: i }}>
+                    {l.label}
+                  </a>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
       </div>

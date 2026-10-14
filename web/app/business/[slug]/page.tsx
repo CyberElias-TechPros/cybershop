@@ -15,7 +15,7 @@ import StickyWa from '@/components/StickyWa';
 import { Reveal } from '@/components/Motion';
 import SafetyTips from '@/components/SafetyTips';
 import { FlipBack } from '@/components/Fx';
-import { categoryTheme } from '@/lib/theme';
+import { resolveStoreTheme } from '@/lib/theme';
 import { siteInfo } from '@/lib/site';
 import type { CSSProperties } from 'react';
 
@@ -103,11 +103,13 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
 
   const sf = business.storefront;
   const show = (key: string) => sf?.sections?.[key] !== false;
-  const th = categoryTheme(business.categories);
+  // Trade theme: the vendor's explicit choice, else their category's look.
+  // The old free-form accent hex is deliberately not rendered any more.
+  const { theme } = resolveStoreTheme(sf?.style, business.categories);
   const flipId = `biz:${business.slug}`;
 
   return (
-    <div data-store={sf?.style || 'classic'} style={{ ['--acc' as string]: sf?.accent || th.acc, ['--acc2' as string]: th.acc2 } as CSSProperties}>
+    <div data-store={theme.key} style={{ ['--acc' as string]: theme.acc, ['--acc2' as string]: theme.acc2 } as CSSProperties}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       <StickyWa name={business.name} waUrl={stickyWa} ctaLabel="Chat now" />
       <FlipBack id={flipId} />
@@ -150,6 +152,10 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
                   <span>{business.categories.map((c) => c.name).join(', ')}</span>
                 </>
               )}
+            </p>
+            <p className="store-theme-tag">
+              <span aria-hidden>{theme.icon}</span> {theme.name}
+              <span className="store-theme-noun"> · {theme.noun}</span>
             </p>
             <div className="trust-row" style={{ marginTop: 10 }}>
               {business.is_platform_owner && <span className="trust-chip official">Official CyberShop store</span>}
@@ -244,6 +250,20 @@ export default async function BusinessPage({ params }: { params: Promise<SP> }) 
                 {sf?.hours ? ` · ${sf.hours}` : ''}
               </p>
             </div>
+          )}
+
+          {items.length > 0 && (
+            <Reveal>
+              <div className="section-head catalogue-head">
+                <div>
+                  <span className="eyebrow">{theme.icon} {theme.name}</span>
+                  <h2>{theme.noun}</h2>
+                </div>
+                <span className="section-count">
+                  {items.length} item{items.length === 1 ? '' : 's'}
+                </span>
+              </div>
+            </Reveal>
           )}
 
           {[...groups.entries()].map(([seg, groupItems_]) => (

@@ -30,7 +30,7 @@ const FALLBACK: SellOut = {
 };
 
 const FEATURES: { icon: string; title: string; body: string }[] = [
-  { icon: '🏪', title: 'A storefront that sells', body: 'Your own page with catalogue, photos, voice notes and offers — beautiful in every WhatsApp group chat thanks to composed share cards with your price and photo.' },
+  { icon: '🏪', title: 'A storefront that sells', body: 'Your own page with catalogue, photos, voice notes and offers — dressed in a theme named after your trade (Boutique, Kitchen, Academy…), and beautiful in every WhatsApp group chat thanks to composed share cards with your price and photo.' },
   { icon: '💬', title: 'Leads, not likes', body: 'Every “Enquire on WhatsApp” tap lands in your Leads inbox with the item, the buyer and the message — even if the chat never starts.' },
   { icon: '🎓', title: 'Any industry, no code', body: 'Fashion sizes, course durations, property bedrooms, menus — catalogue fields adapt to what you sell. New industry? It is a category, not a rebuild.' },
   { icon: '📈', title: 'Know what works', body: 'Views, WhatsApp clicks and conversion per listing, your best hour to post, CSV export — so you stock what people actually ask for.' },

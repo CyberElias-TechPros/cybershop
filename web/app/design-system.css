@@ -314,7 +314,7 @@ a:hover {
 }
 /* Phones: never fewer than two columns for catalogue cards — a single
    full-bleed card wastes the screen and makes the market feel empty. */
-@media (max-width: 430px) {
+@media (max-width: 560px) {
   .grid-items {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px;
@@ -1740,4 +1740,44 @@ ol.safety-list {
   font-variant-numeric: tabular-nums;
   color: var(--em);
   opacity: 0.75;
+}
+
+/* ——— Grouped workbench nav ———
+   Sidebar sections (Today / Selling / Customers / Store / Account, admin:
+   Today / Moderation / Money / System). On phones the wrappers dissolve
+   (display: contents) so the chip flow + primary/More logic is unchanged. */
+.dash-nav-group { display: grid; gap: 2px; margin-bottom: var(--s-4); }
+.dash-nav-heading {
+  padding: 0 var(--s-3); margin-bottom: 5px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--ink-faint);
+}
+@media (max-width: 860px) {
+  .dash-nav-group { display: contents; }
+  .dash-nav-heading { display: none; }
+}
+
+/* Tiny/small-screen shell tightening (this file loads last, so these win) */
+@media (max-width: 359px) {
+  .site-header .inner { gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+}
+@media (max-width: 640px) {
+  .store-hero .inner { padding-top: 40px; padding-bottom: 28px; gap: 12px; }
+}
+
+/* ——— Responsive scale, owned here because this file loads last ———
+   Wide: stop stranding the shop in a 1200px column on big monitors.
+   Tiny: below 360px the two-up card grid is too cramped to read. */
+@media (min-width: 1600px) {
+  :root { --maxw: 1360px; }
+}
+@media (min-width: 2200px) {
+  :root { --maxw: 1560px; }
+}
+@media (max-width: 359px) {
+  .grid-items, .grid-cats { grid-template-columns: minmax(0, 1fr); }
+  .brand { font-size: 1.15rem; }
+}
+@media (max-width: 560px) {
+  .section-head { flex-direction: column; align-items: flex-start; }
 }

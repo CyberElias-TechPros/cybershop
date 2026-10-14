@@ -42,7 +42,11 @@ export interface BusinessOut {
   reviews?: { count: number; average: number | null };
   address?: string | null;
   storefront?: {
+    /** Store theme key: 'auto' (follow category) or a trade theme key
+     *  (boutique | kitchen | gadget | academy | property | general).
+     *  See web/lib/theme.ts. Legacy style names resolve to 'auto'. */
     style: string;
+    /** @deprecated free-form accent — no longer rendered; themes are curated. */
     accent: string;
     sections: Record<string, boolean>;
     faq: { q: string; a: string }[];

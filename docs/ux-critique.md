@@ -206,3 +206,50 @@ particular that the first shop listing is visible without scrolling on
 the smallest phone, the save button never overlaps card badges, and the
 Galaxy screenshots in `docs/galaxy-store.md` are captured from the
 current build.
+
+---
+
+## 7. Addendum (2026-10-14, later) — store trade themes
+
+**Trigger:** *"I need a store theme for it so it's more relatable to users."*
+
+**Finding first:** the storefront "Style" setting (`classic / editorial /
+minimal / bold` + a free-form accent hex) was a placebo — the value was
+written into a `data-store` attribute with **zero CSS rules behind it**,
+and the accent only tinted a glow. Every trade wore the same outfit.
+
+**Built instead — themes named after the trade** (buyers and sellers both
+recognise a Boutique or a Kitchen; nobody recognises "editorial"):
+
+| Theme | For | Catalogue noun |
+|---|---|---|
+| 👗 Boutique | Fashion, beauty, salon | The Collection |
+| 🍽️ Kitchen | Food, restaurants, bakeries | The Menu |
+| 📱 Gadget Hub | Phones, electronics, autos | The Line-up |
+| 🎓 Academy | Courses, training, schools | Courses & Programmes |
+| 🏠 Property | Real estate, land, homes | Properties & Spaces |
+| 🛍️ General Store | Services, retail, everything else | The Catalogue |
+
+How it works:
+
+- **Worker** (`worker/src/lib/storefront.ts`): `style` now validates
+  against theme keys + `auto`. Legacy abstract values parse to `auto` —
+  no migration; existing stores silently get their category's theme.
+  Unit tests: `worker/src/tests/storefront.test.ts` (6).
+- **Web** (`web/lib/theme.ts`): each theme carries a contrast-checked
+  accent pair, icon and catalogue noun; `resolveStoreTheme()` gives an
+  explicit vendor choice priority over the category default ("Tech
+  Academy" resolves to Academy, not Gadget). Item pages follow the same
+  resolved theme as their store.
+- **Storefront**: `data-store="<key>"` now has real CSS — per-theme hero
+  glow (via `--acc/--acc2`), tinted aurora, logo shapes (Boutique round,
+  Gadget sharp…), a theme tag in the hero, and the catalogue headed by
+  the theme's noun. Platform chrome (header, badges, WhatsApp-green CTA)
+  is deliberately unthemed so trust signals stay consistent.
+- **Settings**: the dropdown + hex input are gone, replaced by a visual
+  `ThemePicker` (Auto card showing the category-resolved theme, then the
+  six trades with swatches). The free-form accent is no longer rendered
+  and is cleared on save.
+- **Verified live**: seeded Academy store renders `data-store="academy"`
+  with its palette and "Courses & Programmes"; switching the vendor to
+  Boutique and back to Auto round-tripped correctly through the API.

@@ -3858,3 +3858,87 @@ html.no-scroll {
 .sell-faq-item { border: 1px solid var(--line); border-radius: var(--radius); background: var(--glass); padding: 14px 16px; }
 .sell-faq-item summary { cursor: pointer; font-weight: 700; min-height: 32px; }
 .sell-faq-item p { color: var(--ink-dim); margin: 8px 0 0; }
+
+/* ——— Store trade themes ([data-store] on the storefront root) ———
+   Each theme recolors the store's own surfaces (hero glow, logo, section
+   rules, offers) via the --acc/--acc2 the page sets, plus a small hero/
+   logo treatment. Platform chrome (header, badges, WhatsApp-green CTA)
+   is intentionally untouched. See web/lib/theme.ts. */
+.store-theme-tag { margin: 8px 0 0; color: var(--acc, var(--em-soft)); font-weight: 700; font-size: 0.88rem; }
+.store-theme-noun { color: var(--ink-dim); font-weight: 500; }
+.catalogue-head { margin-top: 8px; }
+[data-store] .store-hero::after {
+  background:
+    linear-gradient(180deg, rgba(6, 11, 9, 0.25) 0%, rgba(6, 11, 9, 0.55) 60%, var(--bg-0) 100%),
+    radial-gradient(60% 80% at 20% 10%, color-mix(in oklab, var(--acc, #2ce58e) 18%, transparent), transparent 60%);
+}
+[data-store] .aurora span:nth-child(1) { background: radial-gradient(circle, color-mix(in oklab, var(--acc, #2ce58e) 20%, transparent), transparent 65%); }
+[data-store] .aurora span:nth-child(2) { background: radial-gradient(circle, color-mix(in oklab, var(--acc2, #f2c879) 12%, transparent), transparent 65%); }
+[data-store] .aurora span:nth-child(3) { background: radial-gradient(circle, color-mix(in oklab, var(--acc, #2ce58e) 14%, transparent), transparent 65%); }
+[data-store] .store-logo.initials {
+  color: var(--acc, var(--em));
+  background: color-mix(in oklab, var(--acc, #2ce58e) 12%, transparent);
+  border-color: color-mix(in oklab, var(--acc, #2ce58e) 40%, transparent);
+}
+[data-store] .store-logo { border-color: color-mix(in oklab, var(--acc, #2ce58e) 35%, transparent); }
+/* Per-trade hero/logo treatments */
+[data-store='boutique'] .store-logo { border-radius: 50%; }
+[data-store='boutique'] .store-title h1 { font-style: italic; }
+[data-store='kitchen'] .store-logo { border-radius: 22px; }
+[data-store='kitchen'] .type-group h2 { font-style: italic; }
+[data-store='gadget'] .store-logo { border-radius: 10px; }
+[data-store='gadget'] .store-title h1 { letter-spacing: -0.03em; }
+[data-store='academy'] .store-logo { border-radius: 14px; }
+[data-store='property'] .store-logo { border-radius: 12px; }
+[data-store='property'] .store-hero { min-height: 320px; }
+[data-store='general'] .store-logo { border-radius: 18px; }
+/* Theme picker (dashboard settings) */
+.theme-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.theme-card { position: relative; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--glass); padding: 12px; cursor: pointer; color: var(--ink); display: grid; gap: 6px; min-height: 44px; }
+.theme-card:hover { border-color: var(--line-2); }
+.theme-card.is-active { border-color: var(--tc-acc); box-shadow: 0 0 0 1px var(--tc-acc); }
+.theme-card:focus-visible { outline: 2px solid var(--em); outline-offset: 2px; }
+.theme-swatches { display: flex; gap: 5px; }
+.theme-swatches i { width: 18px; height: 18px; border-radius: 50%; display: block; border: 1px solid rgba(255,255,255,0.25); }
+.theme-name { font-weight: 700; font-size: 0.94rem; }
+.theme-for { color: var(--muted, var(--ink-faint)); font-size: 0.8rem; line-height: 1.35; }
+.theme-auto-note { color: var(--muted, var(--ink-faint)); font-size: 0.85rem; margin: 0 0 12px; }
+@media (pointer: coarse) { .theme-card { padding: 14px 12px; } }
+
+/* ==========================================================================
+   Responsive scale — smallest to largest screen.
+   Load order is globals -> cine -> design-system, so rules that compete
+   with design-system's (grids, container, brand, max width) live at the
+   end of that file; the category/menu grouping lives in cine.css. This
+   block keeps only what nothing later redefines.
+   ========================================================================== */
+
+/* Nothing may ever push the page sideways (auroras, reels, long words). */
+html, body { overflow-x: clip; }
+img, video { max-width: 100%; }
+
+/* Phones: tighter cards inside the two-up grid (columns set in
+   design-system.css, which loads last). */
+@media (max-width: 560px) {
+  .item-body { padding: 10px 11px 13px; }
+  .item-name { font-size: 0.9rem; }
+  .item-price { font-size: 0.92rem; }
+}
+/* Tiny screens (<=359px: foldables, older small phones) */
+@media (max-width: 359px) {
+  .shop-title { font-size: 1.65rem; }
+  .store-logo { width: 54px; height: 54px; border-radius: 14px; }
+}
+
+/* Theme picker: two-up on phones, one-up when truly tiny */
+@media (max-width: 560px) {
+  .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 359px) {
+  .theme-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* Touch targets stay >=44px on coarse pointers */
+@media (pointer: coarse) {
+  .theme-card, .btn-save { min-height: 44px; }
+}

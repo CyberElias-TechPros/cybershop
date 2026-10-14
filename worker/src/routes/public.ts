@@ -242,21 +242,159 @@ function parseSafety(raw: string | null): SiteSafety {
   };
 }
 
+/**
+ * Card-shaped listing rows for shop surfaces (home feed, category pages).
+ * One SQL statement — no per-listing queries — returning exactly what a
+ * product card renders: photo, price, seller, city, verified, rating, stock.
+ * Rating is the *business's* published-review average (reviews attach to the
+ * store/enquiry, surfaced per listing), never invented: null when count is 0.
+ */
+async function marketCards(
+  env: Env,
+  blocked: { sql: string; params: (string | number)[] },
+  opts: { categoryId?: number; featuredOnly?: boolean; limit?: number } = {}
+): Promise<Record<string, unknown>[]> {
+  const limit = Math.min(48, Math.max(1, opts.limit ?? 12));
+  let where = `WHERE l.status = 'published' AND l.deleted_at IS NULL AND ${LIVE}${blocked.sql}`;
+  const params: (string | number)[] = [...blocked.params];
+  if (opts.categoryId) { where += ' AND l.category_id = ?'; params.push(opts.categoryId); }
+  if (opts.featuredOnly) where += ' AND l.featured = 1';
+  const rows = (await env.DB.prepare(
+    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.stock_status, l.published_at, l.featured,
+            t.url_segment, t.slug AS type_slug, c.slug AS category_slug, c.name AS category_name,
+            b.id AS business_id, b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status, b.logo_media_id,
+            (SELECT AVG(rating) FROM reviews r WHERE r.business_id = b.id AND r.status = 'published') AS rating_avg,
+            (SELECT COUNT(*) FROM reviews r WHERE r.business_id = b.id AND r.status = 'published') AS rating_count,
+            (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
+            (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
+            (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0,
+            (SELECT m3.storage_key FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_storage_key,
+            (SELECT m3.driver FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_driver
+     FROM listings l
+     JOIN businesses b ON b.id = l.business_id
+     JOIN item_types t ON t.id = l.item_type_id
+     LEFT JOIN categories c ON c.id = l.category_id
+     ${where} ORDER BY l.featured DESC, l.published_at DESC LIMIT ?`
+  ).bind(...params, limit).all()).results as Record<string, unknown>[];
+  return rows.map((it) => {
+    const i = it as unknown as { id: number; name: string; slug: string; price: number | null; price_type: string; stock_status: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; category_slug: string | null; category_name: string | null; business_id: number; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null; logo_media_id: number | null; logo_storage_key: string | null; logo_driver: 'd1' | 'gateway' | null; rating_avg: number | null; rating_count: number };
+    const count = Number(i.rating_count || 0);
+    return {
+      id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, type_slug: i.type_slug,
+      category_slug: i.category_slug, category_name: i.category_name,
+      business_id: i.business_id, biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
+      biz_logo: i.logo_media_id && i.logo_storage_key && i.logo_driver
+        ? mediaUrl(env, { driver: i.logo_driver, storage_key: i.logo_storage_key, id: i.logo_media_id })
+        : null,
+      verified: i.verification_status === 'verified',
+      boosted: !!i.featured,
+      published_at: i.published_at,
+      price_kobo: i.price,
+      price_type: i.price_type,
+      stock_status: i.stock_status,
+      rating: count ? { average: Math.round(Number(i.rating_avg) * 10) / 10, count } : { average: null, count: 0 },
+      price_display: i.price_type === 'negotiable' ? 'Price on request' : i.price_type === 'free' ? 'Free' : formatNaira(i.price),
+      image: i.media_id0 && i.storage_key0 && i.driver0 ? mediaUrl(env, { driver: i.driver0, storage_key: i.storage_key0, id: i.media_id0 }) : null,
+    };
+  });
+}
+
+/**
+ * Business cards for directory/home rails, batched: categories, published
+ * listing counts and review summaries are fetched with one GROUP BY query
+ * each for the whole set — replacing the old per-business fan-out
+ * (~7 queries × every store) that made the homepage the most expensive
+ * public read in the app.
+ */
+async function businessCards(env: Env, rows: Record<string, unknown>[]): Promise<Record<string, unknown>[]> {
+  if (!rows.length) return [];
+  const ids = rows.map((r) => Number((r as { id: number }).id));
+  const ph = ids.map(() => '?').join(',');
+  const catRows = (await env.DB.prepare(
+    `SELECT bc.business_id, c.name, c.slug, c.icon FROM business_categories bc JOIN categories c ON c.id = bc.category_id WHERE bc.business_id IN (${ph})`
+  ).bind(...ids).all()).results as { business_id: number; name: string; slug: string; icon: string }[];
+  const countRows = (await env.DB.prepare(
+    `SELECT business_id, COUNT(*) AS n FROM listings WHERE business_id IN (${ph}) AND status = 'published' AND deleted_at IS NULL GROUP BY business_id`
+  ).bind(...ids).all()).results as { business_id: number; n: number }[];
+  const reviewRows = (await env.DB.prepare(
+    `SELECT business_id, COUNT(*) AS n, AVG(rating) AS avg FROM reviews WHERE business_id IN (${ph}) AND status = 'published' GROUP BY business_id`
+  ).bind(...ids).all()).results as { business_id: number; n: number; avg: number | null }[];
+  const catsBy = new Map<number, { name: string; slug: string; icon: string }[]>();
+  for (const r of catRows) { const a = catsBy.get(r.business_id) ?? []; a.push({ name: r.name, slug: r.slug, icon: r.icon }); catsBy.set(r.business_id, a); }
+  const countBy = new Map(countRows.map((r) => [r.business_id, Number(r.n)]));
+  const reviewBy = new Map(reviewRows.map((r) => [r.business_id, { count: Number(r.n), average: r.avg != null ? Math.round(Number(r.avg) * 10) / 10 : null }]));
+  return rows.map((raw) => {
+    const b = raw as { id: number; name: string; slug: string; about: string | null; city: string | null; state_region: string | null; phone: string | null; website: string | null; status: string; verification_status?: string; created_at?: string | null; is_platform_owner?: number; is_featured?: number; logo_media_id: number | null; cover_media_id: number | null; logo_key?: string | null; logo_driver?: 'd1' | 'gateway' | null; cover_key?: string | null; cover_driver?: 'd1' | 'gateway' | null };
+    return {
+      id: b.id, name: b.name, slug: b.slug, about: b.about, city: b.city, state_region: b.state_region,
+      phone: b.phone ?? null, website: b.website ?? null, social: {}, status: b.status,
+      verification_status: b.verification_status ?? 'unverified',
+      paused: false, featured: !!b.is_featured, is_platform_owner: !!b.is_platform_owner,
+      created_at: b.created_at ?? null,
+      listing_count: countBy.get(b.id) ?? 0,
+      categories: catsBy.get(b.id) ?? [],
+      whatsapp_number: null,
+      logo: b.logo_media_id && b.logo_key && b.logo_driver ? { url: mediaUrl(env, { driver: b.logo_driver, storage_key: b.logo_key, id: b.logo_media_id }), alt: b.name } : null,
+      cover: b.cover_media_id && b.cover_key && b.cover_driver ? { url: mediaUrl(env, { driver: b.cover_driver, storage_key: b.cover_key, id: b.cover_media_id }) } : null,
+      reviews: reviewBy.get(b.id) ?? { count: 0, average: null },
+    };
+  });
+}
+
+const BIZ_CARD_SQL = `
+  SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.phone, b.website, b.status,
+         b.verification_status, b.created_at, b.is_platform_owner, b.is_featured, b.logo_media_id, b.cover_media_id,
+         (SELECT m.storage_key FROM media m WHERE m.id = b.logo_media_id AND m.deleted_at IS NULL) AS logo_key,
+         (SELECT m.driver FROM media m WHERE m.id = b.logo_media_id AND m.deleted_at IS NULL) AS logo_driver,
+         (SELECT m.storage_key FROM media m WHERE m.id = b.cover_media_id AND m.deleted_at IS NULL) AS cover_key,
+         (SELECT m.driver FROM media m WHERE m.id = b.cover_media_id AND m.deleted_at IS NULL) AS cover_driver
+  FROM businesses b`;
+
 app.get('/home', async (c) => {
   const env = c.env;
   const settings = await platformSettings(env);
   const categories = (await env.DB.prepare('SELECT name, slug, description, icon FROM categories WHERE is_active = 1 AND deleted_at IS NULL ORDER BY sort_order').all()).results as Record<string, unknown>[];
   const blocked = await blockFilter(c);
   const featured = (await env.DB.prepare(
-    `SELECT b.id, b.name, b.slug, b.about, b.city, b.state_region, b.logo_media_id, b.cover_media_id, b.status, b.verification_status, b.created_at
-     FROM businesses b WHERE ${LIVE}${blocked.sql}
-     ORDER BY b.is_featured DESC, b.created_at DESC LIMIT 12`
+    `${BIZ_CARD_SQL} WHERE ${LIVE}${blocked.sql}
+     ORDER BY b.is_featured DESC, b.created_at DESC LIMIT 8`
   ).bind(...blocked.params).all()).results as Record<string, unknown>[];
-  const bizRows = featured.length
-    ? (await Promise.all(featured.map((b) => publicBusiness(env, b))))
-    : [];
+  const [bizRows, fresh, featuredListings] = await Promise.all([
+    businessCards(env, featured),
+    marketCards(env, blocked, { limit: 12 }),
+    marketCards(env, blocked, { featuredOnly: true, limit: 8 }),
+  ]);
   const bizCount = (await env.DB.prepare(`SELECT COUNT(*) AS n FROM businesses b WHERE ${LIVE}`).first()) as { n: number };
-  return c.json({ ok: true, platform: settings.platform, categories, businesses: bizRows, business_count: bizCount.n });
+  const listingCount = (await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id WHERE l.status = 'published' AND l.deleted_at IS NULL AND ${LIVE}`
+  ).first()) as { n: number };
+  const cities = (await env.DB.prepare(
+    `SELECT b.city AS city, COUNT(*) AS n FROM businesses b WHERE ${LIVE} AND b.city IS NOT NULL AND TRIM(b.city) != '' GROUP BY b.city ORDER BY n DESC, b.city ASC LIMIT 12`
+  ).all()).results as { city: string; n: number }[];
+  return c.json({
+    ok: true, platform: settings.platform, categories, businesses: bizRows, business_count: bizCount.n,
+    // The shop feed: the homepage is a market first, a brochure second.
+    listings: fresh, featured_listings: featuredListings, listing_count: listingCount.n, cities,
+  });
+});
+
+/** Public plan catalogue for the /sell page — names, prices, features only. */
+app.get('/plans', async (c) => {
+  const env = c.env;
+  const parseFeatures = (raw: string | null): string[] => {
+    try {
+      const v = JSON.parse(raw || '[]') as unknown;
+      if (!Array.isArray(v)) return [];
+      return v.map((f) => (typeof f === 'string' ? f : (f as { label?: string })?.label || '')).filter(Boolean).slice(0, 12);
+    } catch { return []; }
+  };
+  const plans = (await env.DB.prepare('SELECT name, slug, description, price, interval, features FROM plans WHERE is_active = 1 ORDER BY sort_order').all()).results as { name: string; slug: string; description: string | null; price: number; interval: string; features: string | null }[];
+  const addons = (await env.DB.prepare('SELECT name, slug, description, price FROM addons WHERE is_active = 1 ORDER BY sort_order').all()).results as { name: string; slug: string; description: string | null; price: number }[];
+  return c.json({
+    ok: true,
+    plans: plans.map((p) => ({ name: p.name, slug: p.slug, description: p.description, price_kobo: p.price, price_display: p.price === 0 ? 'Free' : formatNaira(p.price), interval: p.interval, features: parseFeatures(p.features) })),
+    addons: addons.map((a) => ({ name: a.name, slug: a.slug, description: a.description, price_kobo: a.price, price_display: formatNaira(a.price) })),
+  });
 });
 
 app.get('/businesses', async (c) => {
@@ -291,7 +429,17 @@ app.get('/categories/:slug', async (c) => {
      ORDER BY b.is_featured DESC, b.created_at DESC LIMIT ? OFFSET ?`
   ).bind((cat as { id: number }).id, ...blockedCat.params, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const businesses = await Promise.all(rows.map((b) => publicBusiness(env, b)));
-  return c.json({ ok: true, category: { name: cat.name, slug: cat.slug, description: cat.description, icon: cat.icon }, businesses, page, pages: 1 });
+  // A category is a shop aisle, not just a directory: its published listings
+  // come first, the stores behind them second.
+  const catId = (cat as { id: number }).id;
+  const listings = await marketCards(env, blockedCat, { categoryId: catId, limit: 24 });
+  const listingTotal = (await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id WHERE l.status = 'published' AND l.deleted_at IS NULL AND l.category_id = ? AND ${LIVE}`
+  ).bind(catId).first()) as { n: number };
+  const bizTotal = (await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM businesses b JOIN business_categories bc ON bc.business_id = b.id WHERE bc.category_id = ? AND ${LIVE}`
+  ).bind(catId).first()) as { n: number };
+  return c.json({ ok: true, category: { name: cat.name, slug: cat.slug, description: cat.description, icon: cat.icon }, businesses, listings, listing_total: listingTotal.n, page, pages: Math.max(1, Math.ceil(bizTotal.n / perPage)) });
 });
 
 /** Storefront data (server-side, no auth). */
@@ -526,22 +674,29 @@ app.get('/listings', async (c) => {
     `${relevanceOrder}l.featured DESC, l.published_at DESC`;
   const total = ((await env.DB.prepare(`SELECT COUNT(*) AS n FROM listings l JOIN businesses b ON b.id = l.business_id ${where}`).bind(...params).first()) as { n: number }).n;
   const rows = (await env.DB.prepare(
-    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.published_at, l.featured, t.url_segment, t.slug AS type_slug,
-            b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status, b.logo_media_id,
+    `SELECT l.id, l.name, l.slug, l.price, l.price_type, l.stock_status, l.published_at, l.featured, t.url_segment, t.slug AS type_slug,
+            c.slug AS category_slug, c.name AS category_name,
+            b.id AS business_id, b.slug AS biz_slug, b.name AS biz_name, b.city, b.verification_status, b.logo_media_id,
+            (SELECT AVG(rating) FROM reviews r WHERE r.business_id = b.id AND r.status = 'published') AS rating_avg,
+            (SELECT COUNT(*) FROM reviews r WHERE r.business_id = b.id AND r.status = 'published') AS rating_count,
             (SELECT m2.storage_key FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS storage_key0,
             (SELECT m2.driver FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS driver0,
             (SELECT m2.id FROM item_media im2 JOIN media m2 ON m2.id = im2.media_id WHERE im2.listing_id = l.id ORDER BY im2.position LIMIT 1) AS media_id0,
             (SELECT m3.storage_key FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_storage_key,
             (SELECT m3.driver FROM media m3 WHERE m3.id = b.logo_media_id AND m3.deleted_at IS NULL) AS logo_driver
-     FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id
+     FROM listings l JOIN businesses b ON b.id = l.business_id JOIN item_types t ON t.id = l.item_type_id LEFT JOIN categories c ON c.id = l.category_id
      ${where} ORDER BY ${order} LIMIT ? OFFSET ?`
      // The score's placeholders are in ORDER BY, so they bind after the WHERE ones.
   ).bind(...params, ...scoreParams, perPage, (page - 1) * perPage).all()).results as Record<string, unknown>[];
   const items = rows.map((it) => {
-    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null; logo_media_id: number | null; logo_storage_key: string | null; logo_driver: 'd1' | 'gateway' | null };
+    const i = it as { id: number; name: string; slug: string; price: number | null; price_type: string; stock_status: string; published_at: string | null; featured: number; url_segment: string; type_slug: string; category_slug: string | null; category_name: string | null; business_id: number; biz_slug: string; biz_name: string; city: string | null; verification_status: string; storage_key0: string | null; driver0: 'd1' | 'gateway' | null; media_id0: number | null; logo_media_id: number | null; logo_storage_key: string | null; logo_driver: 'd1' | 'gateway' | null; rating_avg: number | null; rating_count: number };
+    const ratingCount = Number(i.rating_count || 0);
     return {
       id: i.id, name: i.name, slug: i.slug, url_segment: i.url_segment, type_slug: i.type_slug,
+      category_slug: i.category_slug, category_name: i.category_name, business_id: i.business_id,
       biz_slug: i.biz_slug, biz_name: i.biz_name, city: i.city,
+      stock_status: i.stock_status, price_type: i.price_type,
+      rating: ratingCount ? { average: Math.round(Number(i.rating_avg) * 10) / 10, count: ratingCount } : { average: null, count: 0 },
       // The store's profile photo rides along on every card: a face the buyer
       // recognises converts better than a name alone.
       biz_logo: i.logo_media_id && i.logo_storage_key && i.logo_driver

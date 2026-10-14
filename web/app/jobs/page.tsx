@@ -41,6 +41,11 @@ export default async function JobsPage() {
         <p style={{ color: 'var(--ink-dim)', maxWidth: '52ch' }}>
           Vendors pay for this board. Applying is still WhatsApp — CyberShop never runs payroll or checkout.
         </p>
+        <div className="banner warn" role="note" style={{ maxWidth: '72ch' }}>
+          <strong>Stay safe:</strong> a real employer never asks you to pay for an interview, training kit,
+          or “processing” before you start. If a listing asks for money first, stop and{' '}
+          <a href="/safety">read the safety guide</a>. Never send your full CV with bank details to a stranger.
+        </div>
         {data.items.length === 0 ? (
           <div className="empty">
             <h2>No jobs posted yet</h2>

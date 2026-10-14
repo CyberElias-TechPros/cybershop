@@ -114,6 +114,16 @@ export interface HomeOut {
   categories: CategoryOut[];
   businesses: BusinessOut[];
   business_count: number;
+  /** The shop feed — fresh listings across the whole market. */
+  listings: MarketListing[];
+  featured_listings: MarketListing[];
+  listing_count: number;
+  cities: { city: string; n: number }[];
+}
+
+export interface SellOut {
+  plans: { name: string; slug: string; description: string | null; price_kobo: number; price_display: string; interval: string; features: string[] }[];
+  addons: { name: string; slug: string; description: string | null; price_kobo: number; price_display: string }[];
 }
 
 export interface BusinessesOut {
@@ -126,6 +136,9 @@ export interface BusinessesOut {
 export interface CategoryPageOut {
   category: { name: string; slug: string; description: string | null; icon: string | null };
   businesses: BusinessOut[];
+  /** Listings first — a category is a shop aisle, not only a directory. */
+  listings: MarketListing[];
+  listing_total: number;
   page: number;
   pages: number;
 }
@@ -160,14 +173,23 @@ export interface MarketListing {
   url_segment: string;
   biz_slug: string;
   biz_name: string;
+  business_id?: number;
   /** Store profile photo — the face of the seller on every card. */
   biz_logo?: string | null;
   city: string | null;
+  /** Seller's identity has been checked by CyberShop (not "paid to rank"). */
   verified?: boolean;
+  /** Seller paid to feature this listing. Labelled, never disguised. */
   boosted?: boolean;
   type_slug?: string;
+  category_slug?: string | null;
+  category_name?: string | null;
   published_at?: string | null;
   price_kobo?: number | null;
+  price_type?: string;
+  stock_status?: string;
+  /** The store's published-review summary. average is null until count > 0. */
+  rating?: { average: number | null; count: number };
   price_display: string;
   image: string | null;
 }

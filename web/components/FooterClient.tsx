@@ -33,10 +33,9 @@ export default function FooterClient({ supportEmail, safety }: { supportEmail: s
         </div>
         <nav aria-label="Explore">
           <strong>Explore</strong>
-          <a href="/listings">Listings</a>
-          <a href="/jobs">Jobs</a>
+          <a href="/listings">Shop</a>
           <a href="/businesses">Businesses</a>
-          <a href="/search">Search</a>
+          <a href="/jobs">Jobs &amp; CVs</a>
           <a href="/saved">Saved ads</a>
           <a href="/account">Your account</a>
           <a href="/cart">WhatsApp cart</a>
@@ -44,9 +43,9 @@ export default function FooterClient({ supportEmail, safety }: { supportEmail: s
         </nav>
         <nav aria-label="Vendors">
           <strong>Vendors</strong>
+          <a href="/sell">Sell on CyberShop — plans &amp; pricing</a>
           <a href="/register">Open a storefront</a>
           <a href="/login">Sign in</a>
-          <a href="/onboarding">Choose a plan</a>
           <a href="/contact">Contact us</a>
         </nav>
         <nav aria-label="House">

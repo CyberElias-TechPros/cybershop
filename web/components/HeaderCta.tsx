@@ -58,6 +58,7 @@ export default function HeaderCta({
         { href: '/businesses', label: 'Businesses' },
         { href: '/saved', label: 'Saved' },
         { href: '/cart', label: 'WhatsApp cart' },
+              { href: '/help', label: 'Help & guides' },
       ],
     },
     ...(extra.length

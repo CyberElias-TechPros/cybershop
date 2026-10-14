@@ -79,6 +79,7 @@ export default async function SellPage() {
             </p>
             <div className="cta-actions" style={{ marginTop: 22 }}>
               <a className="btn btn-gold sheen big" href="/register">Open your store — free</a>
+              <a className="btn btn-ghost big" href="/help#selling">Read the seller guides</a>
               <a className="btn btn-ghost big" href="/businesses">See live stores first</a>
             </div>
             {!live && (

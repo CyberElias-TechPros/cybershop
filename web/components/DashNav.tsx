@@ -44,6 +44,7 @@ const VENDOR_LINKS: NavLink[] = [
   { href: '/dashboard/domain', icon: '🌐', label: 'Domain', group: 'Store' },
   { href: '/dashboard/billing', icon: '💳', label: 'Plan & Billing', group: 'Account' },
   { href: '/dashboard/settings', icon: '⚙️', label: 'Settings', group: 'Account' },
+  { href: '/help#selling', icon: '❓', label: 'Help & guides', group: 'Account' },
   { href: '/account/security', icon: '🔐', label: 'Security', group: 'Account' },
 ];
 
@@ -66,6 +67,7 @@ const ADMIN_LINKS: NavLink[] = [
   { href: '/admin/audit', icon: '📜', label: 'Audit log', group: 'System' },
   { href: '/admin/health', icon: '🩺', label: 'Health', group: 'System' },
   { href: '/admin/settings', icon: '⚙️', label: 'Settings', group: 'System' },
+  { href: '/help#admin', icon: '❓', label: 'Help & guides', group: 'System' },
   { href: '/account/security', icon: '🔐', label: 'My security', group: 'System' },
 ];
 

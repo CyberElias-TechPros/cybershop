@@ -64,6 +64,7 @@ export default function FooterClient({
           <strong>Vendors</strong>
           <a href="/sell">Sell on CyberShop — plans &amp; pricing</a>
           <a href="/register">Open a storefront</a>
+          <a href="/help#selling">Seller guides</a>
           <a href="/login">Sign in</a>
           <a href="/contact">Contact us</a>
         </nav>
@@ -72,6 +73,8 @@ export default function FooterClient({
           <button type="button" className="footer-mail" onClick={copyEmail} title="Copy our support email">
             {copied ? 'Copied ✓' : supportEmail}
           </button>
+          <a href="/help">Help Centre</a>
+          <a href="/help/getting-started">Getting started</a>
           <a href="/contact">Support</a>
           <a href="/terms">Terms</a>
           <a href="/privacy">Privacy</a>

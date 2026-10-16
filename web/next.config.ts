@@ -22,7 +22,7 @@ const siteUrl = process.env.SITE_URL || '';
 const production = siteUrl.startsWith('https://') && !/\.(e2b\.app|vercel\.app)$/.test(new URL(siteUrl).hostname);
 
 const scriptSrc = production
-  ? "'self' 'unsafe-inline' https://static.cloudflareinsights.com https://pagead2.googlesyndication.com https://googleadsyndication.com https://www.googletagmanager.com https://www.googletagservices.com https://partner.googleadservices.com"
+  ? "'self' 'unsafe-inline' https://static.cloudflareinsights.com https://pagead2.googlesyndication.com https://googleadsyndication.com https://www.googletagmanager.com https://www.googletagservices.com https://partner.googleadservices.com https://ep2.adtrafficquality.google"
   : "'self' 'unsafe-inline' 'unsafe-eval'";
 
 const csp = [
@@ -32,7 +32,7 @@ const csp = [
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "media-src 'self' blob: data: https:",
-  "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://*.adtrafficquality.google",
+  "connect-src 'self' https://api.paystack.co https://checkout.paystack.com https://pagead2.googlesyndication.com https://*.adtrafficquality.google",
   // Paystack opens its checkout in an iframe/inline page.
   "frame-src 'self' https://paystack.com https://checkout.paystack.com https://js.paystack.co https://googleadsyndication.com https://googlesyndication.com https://www.google.com https://*.doubleclick.net",
   // Preview hosts are allowed so branch previews keep working; a live

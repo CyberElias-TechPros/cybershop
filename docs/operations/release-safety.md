@@ -319,3 +319,19 @@ No real provider payment, remote migration or hosted cutover was executed in
 this implementation pass. Android association/signing has a separate owner
 identity gate in `android/README.md`; backend/web rollout must not invent a
 release certificate to make the TWA appear verified.
+
+
+## Observed preview isolation gate — 2026-10-22
+
+Read-only connected-project metadata for `cybershop-web` shows automatic Git
+preview builds are enabled. The branch's frontend preview built successfully,
+but single `WORKER_URL` and `WORKER_INTERNAL_SECRET` variable records target both
+preview and production. No values were decrypted and no live backend was probed.
+This is not evidence of isolated staging; do not run mutating acceptance tests on
+the preview until independent test backend/database/media/mail/provider targets
+are confirmed. Do not copy production secrets to make a preview pass. The project
+Node setting is 24.x while the recorded local/CI toolchain is 22; agree supported
+runtime parity before acceptance. Confirm actual canonical origins (production
+alias inventory includes `shop.freegameplay.site`) rather than treating the
+provisional TWA `cybershop.ng` default as approved ownership. No Vercel settings,
+secrets, domains or production deployment were changed during this inspection.

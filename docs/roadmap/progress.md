@@ -37,6 +37,31 @@ runbook; never paste credentials in chat or Git.
 
 ### Verification closure — 2026-10-22
 
+**Final runtime-source verification:** [CI run 39774901322](https://github.com/CyberElias-TechPros/cybershop/actions/runs/39774901322)
+passed **all seven jobs** for `8d3c88bde2cb80559f059881230ff1671b033866`, including
+the expanded 12-browser-case suite. Android job `119811266101` also passed
+APK checksum/public-certificate capture and the explicit unapproved-release
+request denial check. [Internal candidate artifact](https://github.com/CyberElias-TechPros/cybershop/actions/runs/39774901322/artifacts/12423942313)
+is retained seven days; no production release identity or distribution approval
+is implied. The following later edits only record evidence and external blockers.
+
+**Read-only hosting inspection:** the connected Vercel project's existing Git
+integration automatically built a preview of `8d3c88b`; deployment
+`dpl_3xTRiZ4kF8gtBZrYFKGNrYVbYRKo` reports READY/STAGED. No explicit deployment,
+domain change, secret update, provider charge or database migration was performed.
+A successful frontend build does **not** make this an accepted isolated staging
+stack: metadata shows `WORKER_URL` and `WORKER_INTERNAL_SECRET` records both target
+production **and** preview. Values were not decrypted and live reachability was
+not probed. Do not create accounts, upload private files or simulate payments on
+that preview until an independent staging backend/media/mail and test-mode
+provider configuration have been proven. Local browser tests use isolated D1.
+The project setting is Node 24.x versus local/CI Node 22; runtime-policy parity
+also needs review. Production alias inventory includes `shop.freegameplay.site`,
+whereas `cybershop.ng` remains the provisional TWA default; confirm the intended
+canonical HTTPS origin and association before release. No domain was added or
+substituted. See R04.04/R04.06/R06.09 for the unaccepted gates.
+
+
 - Full Worker suite: **327 PASS / 34 files, 260.60 seconds**. The real PHP
   receipt suite ran using the explicit WASM command in this sandbox; no hidden
   skip or production state was used.
@@ -251,4 +276,4 @@ Read [release-safety.md](../operations/release-safety.md) before any live rollou
 | Android signing custody, developer accounts and physical devices | TWA route is selected; confirmed package/ownership/device evidence is still required before release packaging and review |
 | Store approval/publication | Only an actual channel review result establishes acceptance |
 
-The register currently has **535 tasks**: **42 locally verified checkpoints**, **68 existing/implemented-code checkpoints**, and **425 unaccepted actions**. A code checkpoint is not production approval. Batch 2 appended 32 narrowly scoped implementation/risk checkpoints and retained broader provider, finance, device and production acceptance tasks as open. Historical tasks were not deleted to inflate completion.
+The register currently has **535 tasks**: **43 locally verified checkpoints**, **67 existing/implemented-code checkpoints**, and **425 unaccepted actions**. A code checkpoint is not production approval. Batch 2 appended 32 narrowly scoped implementation/risk checkpoints and retained broader provider, finance, device and production acceptance tasks as open. Historical tasks were not deleted to inflate completion.

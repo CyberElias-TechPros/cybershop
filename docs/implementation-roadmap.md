@@ -22,7 +22,7 @@
 
 ## What is actually done
 
-**Task-register snapshot:** 535 steps in 35 packages: 42 locally verified checkpoints, 68 existing/implemented-code checkpoints, and 425 unaccepted implementation/validation actions. Updated 2026-10-22; code checkpoints are not production acceptance. See the [implementation progress log](roadmap/progress.md). The baseline verification table below is historical.
+**Task-register snapshot:** 535 steps in 35 packages: 43 locally verified checkpoints, 67 existing/implemented-code checkpoints, and 425 unaccepted implementation/validation actions. Updated 2026-10-22; code checkpoints are not production acceptance. See the [implementation progress log](roadmap/progress.md). The baseline verification table below is historical.
 
 ### Repository-confirmed implementation
 
@@ -1073,7 +1073,7 @@ Each package states its **why, intended result, connections, accountable roles, 
 - [x] **R29.15 [CODE]** Add a minimal TWA launcher with exact HTTPS-origin filtering, stripped incoming intent extras and custom-tab fallback instead of a privileged WebView.
 - [x] **R29.16 [VERIFIED]** Serve runtime-configured Digital Asset Links JSON; fail 503 without valid identities and refuse debug certificates on the production domain.
 - [x] **R29.17 [VERIFIED]** Add pinned Android debug build/unit/lint CI with checksum-verified Gradle distribution and short-lived internal artifacts.
-- [x] **R29.18 [CODE]** Fail release tasks without explicit approval and protected signing variables; keep debug application identity separate.
+- [x] **R29.18 [VERIFIED]** Fail release tasks without explicit approval and protected signing variables; keep debug application identity separate.
 - [ ] **R29.19 [TODO]** Confirm the existing Galaxy package/application ID, installed signing certificate and update lineage before adopting the proposed release identity.
 
 

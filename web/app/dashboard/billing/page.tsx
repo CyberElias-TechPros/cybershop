@@ -108,7 +108,7 @@ export default function BillingPage() {
     setError('');
     setNotice('');
     try {
-      const j = await capi<{ free?: boolean; message?: string; payment?: { id: number; reference: string }; paystack?: { url?: string } }>(
+      const j = await capi<{ free?: boolean; settled_with_credit?: boolean; message?: string; payment?: { id: number; reference: string; status?: string }; paystack?: { url?: string } }>(
         '/vendor/payment-intent',
         { method: 'POST', body: JSON.stringify({ method, ...target }) }
       );
@@ -116,6 +116,9 @@ export default function BillingPage() {
         setNotice(j.message ?? 'Your free plan is active.');
         await load();
         return;
+      }
+      if (j.settled_with_credit || j.payment?.status==='approved') {
+        await load(); setNotice(j.settled_with_credit ? 'Your plan is active using platform credit. No cash payment is due.' : 'Payment confirmed. Your receipt is available.'); return;
       }
       if (method === 'paystack' && j.paystack?.url) {
         window.location.href = j.paystack.url;
@@ -129,6 +132,15 @@ export default function BillingPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function recoverPayment(payment: Payment, resume: boolean) {
+    setBusy(true);setError('');setNotice('');
+    try {
+      const result=await capi<{status:string;checkout_url:string|null;message:string}>(`/vendor/payments/${payment.id}/recover`,{method:'POST',body:'{}'});
+      if (resume && result.checkout_url) {window.location.assign(result.checkout_url);return;}
+      setNotice(result.message);await load();
+    } catch(e) {setError(extractError(e));} finally {setBusy(false);}
   }
 
   /** XHR (not fetch) so the liquid fill can track real upload progress. */
@@ -197,11 +209,11 @@ export default function BillingPage() {
       <div className="dash-head">
         <h1>Plan & billing</h1>
       </div>
-      {error && <div className="form-msg error">{error}</div>}
-      {notice && <div className="form-msg success">{notice}</div>}
+      {error && <div role="alert" className="form-msg error">{error}</div>}
+      {notice && <div role="status" className="form-msg success">{notice}</div>}
       <ReferralCard />
 
-      {pending && (
+      {pending?.method==='bank_transfer' && (
         <div className="banner warn">
           <div>
             <strong>
@@ -279,6 +291,14 @@ export default function BillingPage() {
           )}
         </div>
       )}
+
+      {payments.filter((p)=>p.method==='paystack' && p.status==='pending').map((p)=>(
+        <section key={`recover:${p.id}`} className="card panel" aria-label={`Recover payment ${p.reference}`}>
+          <h2>Unconfirmed hosted checkout</h2><p>{p.reference} — {p.amount_display}. Check the existing payment before paying again. If initialization timed out, support may need to reconcile this reference.</p>
+          <button className="btn small" disabled={busy} onClick={()=>recoverPayment(p,false)}>Check payment status</button>{' '}
+          <button className="btn small" disabled={busy} onClick={()=>recoverPayment(p,true)}>Resume same checkout</button>
+        </section>
+      ))}
 
       {entitlement && (
         <div className="card panel" style={{ borderColor: 'var(--gold)' }}>

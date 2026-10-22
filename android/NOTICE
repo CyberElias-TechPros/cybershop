@@ -1,0 +1,6 @@
+Gradle wrapper scripts and gradle-wrapper.jar copied from @bubblewrap/core 1.27.0,
+GoogleChromeLabs/bubblewrap, Apache License 2.0. Existing copyright/license
+notices in the scripts are preserved. Runtime uses Android Browser Helper 2.7.4
+(Apache License 2.0). Distribution uses Gradle 8.14.3 (Apache License 2.0);
+its SHA-256 is pinned from the official gradle/gradle-distributions release asset.
+Application source is maintained in this repository, not generated market art.

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { setupIntegration, api, adminLoginBody, BASE_URL } from './harness';
+import { setupIntegration, api, adminLoginBody, BASE_URL, syntheticMediaReceipt } from './harness';
 
 setupIntegration();
 
@@ -209,7 +209,7 @@ describe('catalogue media finalize (gateway driver contract)', () => {
     const key = tok.json.pathPrefix + 'aaaabbbb-cccc-4ddd-8eee-ffffffffffff.jpg';
     const fin = await api('/api/vendor/media/finalize', {
       method: 'POST',
-      body: { token: tok.json.token, storage_key: key, original_name: 'x.jpg', mime: 'image/jpeg', size: 1200 },
+      body: { token: tok.json.token, receipt: syntheticMediaReceipt({ token: tok.json.token, storage_key: key, mime: 'image/jpeg', size: 1200 }), original_name: 'x.jpg' },
       cookie,
     });
     expect(fin.status, JSON.stringify(fin.json)).toBe(200);
@@ -230,7 +230,7 @@ describe('catalogue media finalize (gateway driver contract)', () => {
     const tampered = token.slice(0, -1) + (token.endsWith('0') ? '1' : '0');
     const fin = await api('/api/vendor/media/finalize', {
       method: 'POST',
-      body: { token: tampered, storage_key: tok.json.pathPrefix + 'aaaa1111-bbbb-4ccc-8ddd-eeee22223333.jpg', mime: 'image/jpeg', size: 10 },
+      body: { token: tampered, receipt: syntheticMediaReceipt({ token: tampered, storage_key: tok.json.pathPrefix+'bad.jpg', mime: 'image/jpeg', size: 10 }) },
       cookie,
     });
     expect(fin.status).toBe(403);
@@ -334,8 +334,10 @@ describe('public pages + WhatsApp inquiry capture', () => {
     expect(leads.json.total).toBe(1);
     expect(leads.json.inquiries[0].item_name).toBe('HP Laptop');
 
-    // sitemap includes the published item
-    const res = await fetch(`${BASE_URL}/api/sitemap.xml`);
+    // The sitemap index links to stable ID-range pages; inventory is not truncated.
+    const index = await fetch(`${BASE_URL}/api/sitemap.xml`);
+    expect(await index.text()).toContain('/sitemaps/listings/');
+    const res = await fetch(`${BASE_URL}/api/sitemap.xml/listings/0`);
     const xml = await res.text();
     expect(xml).toContain(`/business/${slug}/products/${storefront.json.items[0].slug}`);
   });

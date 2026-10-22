@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { setupIntegration, api, adminLoginBody } from './harness';
+import { setupIntegration, api, adminLoginBody, syntheticMediaReceipt } from './harness';
 
 /**
  * The media gateway path.
@@ -9,12 +9,9 @@ import { setupIntegration, api, adminLoginBody } from './harness';
  * exercised, which meant the documented production path was the one thing
  * nobody had run.
  *
- * The PHP script itself is not this repo's to test, but the whole contract
- * around it is: the Worker issues a short-lived HMAC-signed token, and then
- * accepts a finalize call that must prove the token is un-forged, un-spent,
- * un-expired, owned by the caller, and describing a file that really was
- * uploaded to the path it was authorised for. Every one of those is a way this
- * goes wrong, so every one of them is tested.
+ * This suite uses synthetic HMAC receipts to test Worker boundaries only.
+ * Actual PHP upload, normalization, signing and Worker finalization are exercised
+ * separately in media-receipt.test.ts and test_gateway.py.
  */
 setupIntegration();
 
@@ -64,7 +61,7 @@ async function tokenFor(c = cookie) {
 }
 
 function finalize(body: Record<string, unknown>, c = cookie) {
-  return api('/api/vendor/media/finalize', { method: 'POST', cookie: c, body });
+  return api('/api/vendor/media/finalize', { method: 'POST', cookie: c, body: { ...body, receipt: syntheticMediaReceipt(body) } });
 }
 
 describe('media gateway upload path', () => {
@@ -78,6 +75,7 @@ describe('media gateway upload path', () => {
     // The token has to be short-lived: it authorises a write to the host.
     const payload = JSON.parse(Buffer.from(t.token.split('.')[0]!, 'base64url').toString());
     expect(payload.b).toBe(businessId);
+    expect(payload.p).toBe(t.pathPrefix);
     expect(payload.e - Math.floor(Date.now() / 1000)).toBeGreaterThan(0);
     expect(payload.e - Math.floor(Date.now() / 1000)).toBeLessThanOrEqual(600);
   });
@@ -86,7 +84,7 @@ describe('media gateway upload path', () => {
     expect((await api('/api/vendor/media/token', { method: 'POST', body: { kind: 'catalogue' } })).status).toBe(401);
   });
 
-  it('completes a real upload and serves it from the media host', async () => {
+  it('registers synthetic signed storage metadata and exposes its media-host URL', async () => {
     const t = await tokenFor();
     const r = await finalize({
       token: t.token,

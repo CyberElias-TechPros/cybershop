@@ -1,8 +1,17 @@
 # Going live — the whole runbook
 
-Everything in this repository works today with demo keys. This document is the
-ordered list of what changes to go live. Nothing here requires a code change:
-**you are adding keys, hosts and a Paystack account, and then running commands.**
+> **Readiness note (2026-10-21):** this is an existing provisioning runbook, not
+> proof of production acceptance. The [web + Android implementation roadmap](implementation-roadmap.md)
+> records concrete environment-selection, D1-binding and readiness-check gaps
+> (R06), plus required live payment, media, email and recovery evidence. Resolve
+> See [release safeguards and setup](operations/release-safety.md) for the implemented
+> pipeline, required settings and remaining acceptance. Resolve those gates before executing production commands below; do not assume that
+> adding keys alone is sufficient or that environment bindings are inherited.
+
+The repository includes local/demo flows. This document covers provisioning
+keys, hosts and a Paystack account after the roadmap's code/configuration and
+acceptance gaps are resolved. The commands below need an environment/binding
+review before use; they are not, by themselves, a complete release checklist.
 
 Two services make up CyberShop:
 
@@ -36,12 +45,13 @@ cd worker
 npx wrangler d1 create cybershop
 ```
 
-Wrangler prints the `database_id`. Paste it into **both** places in
-`worker/wrangler.jsonc` (the top-level `d1_databases` block is shared by the
-`production` environment). Then apply the schema to the remote database:
+Wrangler prints the `database_id`. Confirm the intended existing database before creating anything new. Declare
+its ID explicitly in `env.production.d1_databases` in `worker/wrangler.jsonc`;
+non-inheritable bindings must not be assumed to come from the top-level block.
+Only update the local binding too if it is intentionally the same resource. Then apply the schema to the remote database:
 
 ```bash
-npx wrangler d1 migrations apply cybershop --remote
+npx wrangler d1 migrations apply cybershop --remote --env production
 ```
 
 Do this again after every merge that adds a file under `worker/migrations/`.
@@ -67,6 +77,7 @@ What each one does:
 
 | Secret | Used for | If it is wrong |
 |---|---|---|
+| `MAIL_OUTBOX_KEY` | independently encrypts durable email payloads (required hosted) | queued ciphertext becomes unreadable if changed without a reviewed drain/rotation |
 | `AUTH_SECRET` | signs session tokens | everyone is logged out; worse, sessions are forgeable if it is a known value |
 | `INTERNAL_SECRET` | proves a request came from the Next.js proxy | every `/api/*` call 403s |
 | `GATEWAY_SECRET` | signs media upload tokens (`MEDIA_DRIVER=gateway`) | uploads fail |
@@ -74,9 +85,10 @@ What each one does:
 | `PAYSTACK_SECRET_KEY` | charges cards, verifies payments server-to-server, verifies webhook signatures | no card payments, webhooks rejected |
 | `PAYSTACK_PUBLIC_KEY` | Paystack inline checkout | checkout will not load |
 
-Optional but recommended:
+Hosted mail is required. Configure `RESEND_API_KEY` **or** an approved HTTPS `MAIL_ENDPOINT`, a verified sender and a separate random outbox key:
 
 ```bash
+npx wrangler secret put MAIL_OUTBOX_KEY     --env production     # independent random value; preserve custody
 npx wrangler secret put RESEND_API_KEY       --env production     # resend.com → API Keys
 npx wrangler secret put MAIL_FROM            --env production     # "CyberShop <noreply@cybershop.ng>" (verified domain)
 npx wrangler secret put VERCEL_TOKEN         --env production     # vercel.com/account/tokens
@@ -85,9 +97,10 @@ npx wrangler secret put SEED_ADMIN_EMAIL     --env production
 npx wrangler secret put SEED_ADMIN_PASSWORD  --env production
 ```
 
-`RESEND_API_KEY` is what makes email verification, password resets and lead
-notifications actually arrive. Without it the app still works but every mail is
-logged and dropped. `VERCEL_TOKEN` + `VERCEL_PROJECT_ID` are only needed for
+`RESEND_API_KEY` (or `MAIL_ENDPOINT`) enables delivery attempts for verification,
+password reset and lead mail. Hosted readiness refuses missing provider/sender
+or `MAIL_OUTBOX_KEY`; it does not silently drop mail. Queue acceptance is not
+inbox delivery. Follow the [durable mail/payment rollout](operations/release-safety.md#durable-mail-and-payment-rollout--2026-10-22) before installing migrations 0015–0017. `VERCEL_TOKEN` + `VERCEL_PROJECT_ID` are only needed for
 vendor custom domains; without them an admin attaches the domain by hand (the
 DNS challenge still works).
 
@@ -314,8 +327,8 @@ Walk these once on production with real keys, end to end:
 
 `AUTH_SECRET` · `INTERNAL_SECRET` · `GATEWAY_SECRET` · `IP_SALT` ·
 `PAYSTACK_SECRET_KEY` · `PAYSTACK_PUBLIC_KEY`
-— plus optional `RESEND_API_KEY`, `MAIL_FROM`, `MAIL_FROM_NAME`,
-`MAIL_ENDPOINT`, `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`,
+— plus required hosted `MAIL_OUTBOX_KEY`, `MAIL_FROM` and one of
+`RESEND_API_KEY`/`MAIL_ENDPOINT`; optional `MAIL_FROM_NAME`, `VERCEL_TOKEN`, `VERCEL_PROJECT_ID`, `VERCEL_TEAM_ID`,
 `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD`.
 
 ### Worker vars (`wrangler.jsonc` → `env.production.vars`)
@@ -324,9 +337,10 @@ Walk these once on production with real keys, end to end:
 `MEDIA_BASE_URL` · `GATEWAY_PUBLIC_URL` · `PAYSTACK_MOCK` ·
 `PAYSTACK_WEBHOOK_URL` · `REQUIRE_ADMIN_2FA`
 
-`REQUIRE_ADMIN_2FA` is off by default so a fresh install is not locked out on
-day one. Set it to `1` once **every** admin has enrolled — an admin without a
-second factor is then refused the console entirely until they set one up. An
+`REQUIRE_ADMIN_2FA=1` is explicit and required in production. An unenrolled
+admin can complete the controlled security-enrolment flow but is refused the
+console until an active factor is present. Development defaults do not authorize
+a live rollout without administrator enrolment and rehearsed recovery. An
 admin approves bank transfers, verifies identity documents, suspends stores and
 grants plans; a password alone should not be that powerful.
 

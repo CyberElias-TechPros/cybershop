@@ -1,0 +1,58 @@
+plugins { id 'com.android.application' }
+
+def origin = providers.gradleProperty('cybershopOrigin').getOrElse('https://cybershop.ng')
+def uri = new URI(origin)
+if (uri.scheme != 'https' || !uri.host || uri.userInfo || uri.port != -1 || (uri.path && uri.path != '/') || uri.query || uri.fragment) {
+    throw new GradleException('cybershopOrigin must be an exact public HTTPS origin without credentials, port, query or fragment')
+}
+origin = 'https://' + uri.host.toLowerCase()
+def appId = providers.gradleProperty('cybershopApplicationId').getOrElse('ng.cybershop.app')
+if (!(appId ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}/)) throw new GradleException('Invalid application ID')
+def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
+def approved = providers.gradleProperty('cybershopReleaseApproved').getOrElse('false') == 'true'
+def signingNames = ['ANDROID_KEYSTORE_PATH','ANDROID_KEYSTORE_PASSWORD','ANDROID_KEY_ALIAS','ANDROID_KEY_PASSWORD']
+if (releaseRequested && (!approved || signingNames.any { !System.getenv(it) })) {
+    throw new GradleException('Release requires approved package/origin/policy, signing custody and all ANDROID_KEY* variables; see android/README.md')
+}
+android {
+    namespace 'ng.cybershop.app'
+    compileSdk 36
+    buildToolsVersion '36.0.0'
+    defaultConfig {
+        applicationId appId
+        minSdk 24
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+        manifestPlaceholders = [trustedHost: uri.host.toLowerCase()]
+        buildConfigField 'String', 'TRUSTED_ORIGIN', '"' + origin + '"'
+        resValue 'string', 'launch_url', origin + '/'
+        // Escaped JSON for AAPT string-resource parsing, not an embedded secret.
+        def association = groovy.json.JsonOutput.toJson([[relation:['delegate_permission/common.handle_all_urls'],target:[namespace:'web',site:origin]]])
+        resValue 'string', 'asset_statements', association.replace('"','\\"')
+    }
+    signingConfigs {
+        if (approved && signingNames.every { System.getenv(it) }) {
+            release {
+                storeFile file(System.getenv('ANDROID_KEYSTORE_PATH'))
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        debug { applicationIdSuffix '.debug'; versionNameSuffix '-internal' }
+        release {
+            minifyEnabled false
+            if (signingConfigs.findByName('release')) signingConfig signingConfigs.release
+        }
+    }
+    buildFeatures { buildConfig true }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { abortOnError true; checkReleaseBuilds true }
+}
+dependencies {
+    implementation 'com.google.androidbrowserhelper:androidbrowserhelper:2.7.4'
+    testImplementation 'junit:junit:4.13.2'
+}

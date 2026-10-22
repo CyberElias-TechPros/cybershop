@@ -4,10 +4,12 @@ import { requireAdmin, requireUser } from '../lib/auth';
 import { grantEntitlement, revokeEntitlement, setPlatformOwner, entitlementFor } from '../lib/entitlement';
 import { resolveReport, claimReport, slaFor, REPORT_OUTCOMES, REPORT_SLA_HOURS } from '../lib/moderation';
 import { reconcilePayments, reconciliationRows } from '../lib/reconcile';
+import { paymentFollowupHealth } from '../lib/payments';
+import { outboxHealth, replayMail } from '../lib/outbox';
 import { healthSnapshot, ALERT_RULES } from '../lib/errorlog';
 import { likeContains } from '../lib/search';
 import { csvResponse } from '../lib/csv';
-import { badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
+import { AppError, badRequest, validationError, notFound, conflict, forbidden } from '../lib/errors';
 import { nowIso, clampInt } from '../lib/util';
 import { reqStr, optStr, reqInt, isHttpUrl } from '../lib/validate';
 import { audit } from '../lib/audit';
@@ -315,7 +317,7 @@ app.post('/users/:id/reset-link', async (c) => {
   const resetUrl = `${c.env.APP_URL}/reset-password?token=${token}`;
   await audit(c.env, { actor: admin, action: 'user.reset_link', entityType: 'user', entityId: user.id, ip: ip(c) });
   if (mailConfigured(c.env)) {
-    await sendEmail(c.env, {
+    const queued = await sendEmail(c.env, {
       to: user.email,
       subject: 'Reset your CyberShop password',
       text: `Hi ${user.name},
@@ -325,8 +327,9 @@ ${resetUrl}
 
 — CyberShop`,
       html: mailHtml('Reset your password', `Hi ${user.name.replace(/</g, '&lt;')} — support issued you a single-use reset link, valid for one hour.`, { label: 'Choose a new password', url: resetUrl }),
-    });
-    return c.json({ ok: true, sent: true, message: `Reset link emailed to ${user.email}.` });
+    }, { userId: user.id, expiresInSeconds: 3540 });
+    if (!queued) throw new AppError(503, 'mail_queue_unavailable', 'Unable to queue the email. Please retry.');
+    return c.json({ ok: true, sent: false, queued: true, message: `Reset link queued for ${user.email}.` });
   }
   // no mail provider: return the link so an operator can hand it over
   return c.json({ ok: true, sent: false, reset_url: resetUrl, message: 'No mail provider configured — copy this link to the user.' });
@@ -774,7 +777,18 @@ app.get('/health', async (c) => {
   const recent = (await c.env.DB.prepare(
     `SELECT id, scope, route, status, code, message, created_at FROM error_log ORDER BY id DESC LIMIT 50`
   ).all()).results as Record<string, unknown>[];
-  return c.json({ ok: true, health, recent, alert_rules: ALERT_RULES.map((r) => ({ key: r.key, threshold: r.threshold, window_minutes: r.windowMinutes })) });
+  const jobs = (await c.env.DB.prepare('SELECT * FROM cron_runs ORDER BY started_at DESC LIMIT 20').all()).results;
+  return c.json({ ok: true, health, recent, jobs, payment_followups: await paymentFollowupHealth(c.env), mail: await outboxHealth(c.env), alert_rules: ALERT_RULES.map((r) => ({ key: r.key, threshold: r.threshold, window_minutes: r.windowMinutes })) });
+});
+
+// Replay only an unexpired dead intent; never renew security-link validity.
+app.post('/mail/:id/replay', async (c) => {
+  const admin = await requireAdmin(c.env, c);
+  const id = c.req.param('id');
+  if (!/^[a-f0-9-]{32,64}$/.test(id)) throw badRequest('Invalid message identifier.');
+  if (!(await replayMail(c.env, id))) throw conflict('Message is not eligible for replay.');
+  await audit(c.env, { actor: admin, action: 'mail.replayed', entityType: 'mail', meta: { message_id: id }, ip: clientIp(c) });
+  return c.json({ ok: true });
 });
 
 // ---------------------------------------------------------------- audit & settings

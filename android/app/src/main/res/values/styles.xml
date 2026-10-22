@@ -1,0 +1,1 @@
+<resources><style name="AppTheme" parent="android:style/Theme.Translucent.NoTitleBar"><item name="android:windowLightStatusBar">false</item><item name="android:statusBarColor">@color/brand_background</item><item name="android:navigationBarColor">@color/brand_background</item></style></resources>

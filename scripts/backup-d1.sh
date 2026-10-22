@@ -18,6 +18,9 @@ cd "$(dirname "$0")/.."
 TARGET=remote
 [ "${1:-}" = "--local" ] && TARGET=local
 
+ENV_ARGS=()
+[ "$TARGET" = remote ] && ENV_ARGS=(--env production)
+
 DB=cybershop
 DIR=backups
 KEEP=30
@@ -27,7 +30,7 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$DIR/$DB-$TARGET-$STAMP.sql"
 
 echo "→ dumping $DB ($TARGET) → $OUT"
-( cd worker && npx wrangler d1 export "$DB" $([ "$TARGET" = remote ] && echo --remote || echo --local) --output "../$OUT" ) 
+( cd worker && npx wrangler d1 export "$DB" $([ "$TARGET" = remote ] && echo --remote || echo --local) --output "../$OUT" "${ENV_ARGS[@]}" )
 
 if [ ! -s "$OUT" ]; then
   echo "error: dump is empty — refusing to count that as a backup" >&2

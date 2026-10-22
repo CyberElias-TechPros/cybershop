@@ -1,13 +1,14 @@
 import type { Env } from '../config';
-import { AppError, badRequest, notFound, conflict } from './errors';
+import { AppError, badRequest, notFound, conflict, forbidden } from './errors';
 import { paymentReference, nowIso, daysFromNow, todayStr } from './util';
+import { logError } from './errorlog';
 import { audit } from './audit';
-import { notify } from './notify';
-import { verifyPaystackReference } from './paystack';
-import { paystackMock } from '../config';
+import { notify, mirrorNotification } from './notify';
+import { verifyPaystackReference, type InitiateResult, type VerificationResult } from './paystack';
+import { paystackMock, buyerDepositsEnabled } from '../config';
 import type { SessionUser } from './auth';
 import { markDepositPaid } from './premium';
-import { spendCredit, restoreCredit, rewardReferrer, reverseReferralReward } from './referral';
+import { rewardReferrer, reverseReferralReward } from './referral';
 
 export interface PaymentRow {
   id: number;
@@ -61,40 +62,90 @@ export async function createPaymentIntent(
     method: PaymentRow['method'];
   }
 ): Promise<PaymentRow> {
+  if (args.addon?.type === 'buyer_escrow' && !buyerDepositsEnabled(env)) throw forbidden('The deposits add-on is not currently available for purchase.');
   const planId = args.plan?.id ?? null;
   const addonId = args.addon?.id ?? null;
   const gross = args.plan ? args.plan.price : args.addon ? args.addon.price : 0;
   if (gross <= 0) throw badRequest('Nothing to pay for this selection (free plan needs no payment).');
-  const owner = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(args.businessId).first()) as { owner_user_id: number } | null;
-  if (args.plan && owner) {
-    const stale = (await env.DB.prepare(`SELECT id, metadata FROM payments WHERE business_id = ? AND status = 'pending' AND plan_id IS NOT NULL`).bind(args.businessId).all()).results as { id: number; metadata: string | null }[];
-    for (const row of stale) {
-      let held = 0;
-      try { held = Number((JSON.parse(row.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { held = 0; }
-      if (held > 0) await restoreCredit(env, owner.owner_user_id, held);
-      await env.DB.prepare(`UPDATE payments SET status = 'failed', rejection_reason = 'Replaced by a newer payment.' WHERE id = ? AND status = 'pending'`).bind(row.id).run();
+  if (!Number.isSafeInteger(gross)) throw badRequest('Invalid payment amount.');
+  const reference = paymentReference();
+  // The INSERT triggers reserve credit, replace eligible bank drafts and (if
+  // fully credit-funded) approve atomically. No balance read/write before it.
+  try {
+    await env.DB.prepare(`INSERT INTO payments (business_id,kind,reference,plan_id,addon_id,amount,currency,method,status,metadata)
+      VALUES (?,?,?,?,?,?,'NGN',?,'pending',?)`)
+      .bind(args.businessId, args.kind, reference, planId, addonId, gross, args.method, JSON.stringify({ created: nowIso() })).run();
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('A provider payment is already pending')) {
+      throw conflict('A provider payment is already pending. Review it in Billing before starting another.');
+    }
+    throw new AppError(503, 'payment_intent_unavailable', 'Unable to create a payment safely. Please retry.');
+  }
+  const payment = await env.DB.prepare('SELECT * FROM payments WHERE reference=?').bind(reference).first<PaymentRow>();
+  if (!payment) throw new AppError(503, 'payment_intent_unavailable', 'Unable to retrieve the payment. Check Billing before retrying.');
+  if (payment.status === 'approved') {
+    try { await flushPaymentActivations(env, payment.id); } catch { console.error('[payments] followup_deferred'); }
+  }
+  return payment;
+}
+
+/** Persist only validated provider capabilities, never browser-supplied URLs. */
+export async function saveHostedCheckout(env: Env, paymentId: number, checkout: InitiateResult): Promise<void> {
+  if (!safeCheckoutUrl(env,checkout.url)) throw new AppError(502,'paystack_invalid_checkout','Unable to save checkout. Check Billing before retrying.');
+  await env.DB.batch([
+    env.DB.prepare(`INSERT INTO payment_checkouts(payment_id,checkout_url,created_at)
+      SELECT id,?,? FROM payments WHERE id=? AND method='paystack' AND status='pending' ON CONFLICT(payment_id) DO NOTHING`)
+      .bind(checkout.url,nowIso(),paymentId),
+    env.DB.prepare(`UPDATE payments SET paystack_reference=? WHERE id=? AND method='paystack' AND status='pending'`)
+      .bind(checkout.paystackReference,paymentId),
+  ]);
+}
+function safeCheckoutUrl(env: Env, value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (url.username || url.password || url.hash) return null;
+    if (url.protocol==='https:' && url.hostname==='checkout.paystack.com' && !url.port) return url.href;
+    if (paystackMock(env) && url.origin===new URL(env.APP_URL).origin && url.pathname==='/paystack/mock') return url.href;
+  } catch { /* invalid capability */ }
+  return null;
+}
+
+/** Read authoritative state before offering the same checkout; never initialize a replacement. */
+export async function recoverHostedPayment(env: Env, businessId: number, paymentId: number,
+  verifier: (env: Env, reference: string) => Promise<VerificationResult> = verifyPaystackReference) {
+  const p = await env.DB.prepare('SELECT * FROM payments WHERE id=? AND business_id=?').bind(paymentId,businessId).first<PaymentRow>();
+  if (!p) throw notFound('Payment not found.');
+  const current = async (message?: string, review=false) => {
+    const row = (await env.DB.prepare('SELECT status FROM payments WHERE id=?').bind(p.id).first<{status:string}>())!;
+    return { status: row.status, checkout_url: null as string | null, needs_review: review, message: message ?? (row.status==='approved' ? 'Payment confirmed. Your receipt is available.' : `Payment is ${row.status}.`) };
+  };
+  if (!['pending','submitted'].includes(p.status)) return current();
+  if (p.method!=='paystack') throw badRequest('This is not a hosted checkout. Use bank transfer proof review.');
+  if (!paystackMock(env)) {
+    let verified: VerificationResult;
+    try { verified=await verifier(env,p.paystack_reference || p.reference); }
+    catch { throw new AppError(503,'payment_status_unavailable','The provider could not confirm this payment. No replacement or credit release was made. Please check again later.'); }
+    if (verified.amountKobo!==p.amount) {
+      await logError(env,{scope:'api',route:'/api/vendor/payments/recover',status:502,code:'paystack_amount_mismatch',message:'Provider amount mismatch requires finance review.'});
+      return current('The provider amount needs operator review. Do not pay again.',true);
+    }
+    if (verified.success) {
+      await applyApproved(env,p,null,true,p.paystack_reference || p.reference);
+      return current();
+    }
+    if (verified.terminalFailure) {
+      await env.DB.prepare(`UPDATE payments SET status='failed' WHERE id=? AND status IN ('pending','submitted')`).bind(p.id).run();
+      return current('The provider confirmed this attempt ended without an outstanding payment. Any held platform credit was returned.');
     }
   }
-  let credit = 0;
-  if (args.plan && owner) credit = await spendCredit(env, owner.owner_user_id, gross);
-  const amount = gross - credit;
-  const reference = paymentReference();
-  const meta = JSON.stringify({ created: nowIso(), gross, credit_kobo: credit });
-  if (amount <= 0) {
-    const res = await env.DB.prepare(
-      `INSERT INTO payments (business_id, kind, reference, plan_id, addon_id, amount, currency, method, status, metadata, verified_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'NGN', 'manual', 'approved', ?, ?)`
-    ).bind(args.businessId, args.kind, reference, planId, addonId, gross, meta, nowIso()).run();
-    const paid = (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(Number(res.meta.last_row_id)).first()) as PaymentRow;
-    await applyApproved(env, paid, null, true);
-    return paid;
-  }
-  const res = await env.DB.prepare(
-    `INSERT INTO payments (business_id, kind, reference, plan_id, addon_id, amount, currency, method, status, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, 'NGN', ?, 'pending', ?)`
-  ).bind(args.businessId, args.kind, reference, planId, addonId, amount, args.method, meta).run();
-  const id = Number(res.meta.last_row_id);
-  return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(id).first()) as PaymentRow;
+  const result=await current('This payment is not yet confirmed. Resume the same saved checkout if available; do not start another payment.');
+  if (!['pending','submitted'].includes(result.status)) return result;
+  const checkout=await env.DB.prepare('SELECT checkout_url,created_at FROM payment_checkouts WHERE payment_id=?').bind(p.id).first<{checkout_url:string;created_at:string}>();
+  // A local age bound is not a claim about provider expiry. Unknown/old links
+  // require support/provider reconciliation, not a new initialization request.
+  if (checkout && Date.parse(checkout.created_at)>=Date.now()-86400_000) result.checkout_url=safeCheckoutUrl(env,checkout.checkout_url);
+  if (!result.checkout_url) result.message='No usable saved checkout is available. Keep this reference and contact support for provider reconciliation. Do not pay again.';
+  return result;
 }
 
 /** Vendor uploads a bank-transfer proof → payment becomes submitted; business moves to pending_approval. */
@@ -106,8 +157,9 @@ export async function submitBankProof(
   if (!p) throw notFound('Payment not found.');
   if (!['pending'].includes(p.status)) throw conflict('This payment can no longer be updated.');
   if (p.method !== 'bank_transfer') throw badRequest('Proof upload is only for bank transfer payments.');
-  await env.DB.prepare(`UPDATE payments SET status = 'submitted', proof_media_id = ?, submitted_at = ? WHERE id = ?`)
-    .bind(args.proofMediaId, nowIso(), p.id).run();
+  const submitted = await env.DB.prepare(`UPDATE payments SET status='submitted',proof_media_id=?,submitted_at=? WHERE id=? AND status='pending' RETURNING id`)
+    .bind(args.proofMediaId, nowIso(), p.id).first();
+  if (!submitted) throw conflict('Payment status changed. Refresh before uploading proof.');
   if (p.kind === 'activation') {
     await env.DB.prepare(`UPDATE businesses SET status = 'pending_approval' WHERE id = ? AND status = 'pending_payment'`).bind(args.businessId).run();
   }
@@ -118,71 +170,74 @@ export async function submitBankProof(
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
 }
 
-/** Apply the approved side effects: activate business / renew subscription / grant add-on. */
-async function applyApproved(env: Env, p: PaymentRow, verifiedBy: number | null, auto: boolean): Promise<void> {
-  const biz = (await env.DB.prepare('SELECT id, name, owner_user_id FROM businesses WHERE id = ?').bind(p.business_id).first()) as
-    | { id: number; name: string; owner_user_id: number }
-    | null;
+/** The database trigger commits status, entitlement, receipt, audit and retry ledger together. */
+async function applyApproved(env: Env, p: PaymentRow, verifiedBy: number | null, auto: boolean, reference?: string): Promise<boolean> {
+  const changed = await env.DB.prepare(`UPDATE payments SET status='approved',verified_at=?,verified_by=?,
+    paystack_reference=COALESCE(paystack_reference,?) WHERE id=? AND status IN ('pending','submitted','reviewing') RETURNING id`)
+    .bind(nowIso(), verifiedBy, reference ?? null, p.id).first<{ id: number }>();
+  if (!changed) return false;
+  // A crash here cannot lose paid access or its in-app receipt. The two-minute
+  // sweep retries provider enqueue/referrals using the committed activation ledger.
+  try { await flushPaymentActivations(env, p.id); }
+  catch { console.error('[payments] followup_deferred'); }
+  return true;
+}
 
-  if (p.kind === 'activation' && p.plan_id) {
-    const plan = (await env.DB.prepare('SELECT * FROM plans WHERE id = ?').bind(p.plan_id).first()) as PlanRow & { trial_days: number } | null;
-    if (plan) {
-      await env.DB.prepare(`UPDATE businesses SET status = 'active' WHERE id = ?`).bind(p.business_id).run();
-      const days = INTERVAL_DAYS[plan.interval] ?? 0;
-      const sub = (await env.DB.prepare(
-        `SELECT id, status FROM subscriptions WHERE business_id = ? ORDER BY id DESC LIMIT 1`
-      ).bind(p.business_id).first()) as { id: number; status: string } | null;
-      if (sub) {
-        await env.DB.prepare(
-          `UPDATE subscriptions SET plan_id = ?, status = 'active', starts_at = ?, renews_at = ?, expires_at = ? WHERE id = ?`
-        ).bind(plan.id, nowIso(), days ? daysFromNow(days) : null, days ? daysFromNow(days) : null, sub.id).run();
-      } else {
-        await env.DB.prepare(
-          `INSERT INTO subscriptions (business_id, plan_id, status, starts_at, renews_at, expires_at) VALUES (?, ?, 'active', ?, ?, ?)`
-        ).bind(p.business_id, plan.id, nowIso(), days ? daysFromNow(days) : null, days ? daysFromNow(days) : null).run();
+export async function flushPaymentActivations(env: Env, paymentId?: number): Promise<number> {
+  const rows = (await env.DB.prepare(`SELECT a.*,p.business_id,p.plan_id,p.kind,p.amount,h.gross_kobo FROM payment_activations a JOIN payments p ON p.id=a.payment_id LEFT JOIN payment_credit_holds h ON h.payment_id=p.id
+    WHERE p.status='approved' AND (a.notice_processed_at IS NULL OR a.referral_processed_at IS NULL)
+    ${paymentId ? 'AND p.id=?' : ''} ORDER BY COALESCE(a.last_attempt_at,a.created_at),a.payment_id LIMIT 10`).bind(...(paymentId ? [paymentId] : [])).all()).results as unknown as {
+      payment_id: number; notification_id: number; notice_processed_at: string | null; referral_processed_at: string | null;
+      business_id: number; plan_id: number | null; kind: string; amount: number; gross_kobo: number | null;
+    }[];
+  for (const row of rows) {
+    try {
+      await env.DB.prepare('UPDATE payment_activations SET last_attempt_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
+      if (!row.notice_processed_at && await mirrorNotification(env, row.notification_id)) {
+        await env.DB.prepare('UPDATE payment_activations SET notice_processed_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
       }
-    }
+      if (!row.referral_processed_at) {
+        if (row.plan_id && ['activation','subscription_renewal'].includes(row.kind)) {
+          await rewardReferrer(env, row.business_id, row.gross_kobo ?? row.amount);
+        }
+        await env.DB.prepare('UPDATE payment_activations SET referral_processed_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
+      }
+    } catch { console.error('[payments] activation_followup_deferred'); }
   }
+  return rows.length;
+}
 
-  if (p.kind === 'subscription_renewal' && p.plan_id) {
-    const plan = (await env.DB.prepare('SELECT * FROM plans WHERE id = ?').bind(p.plan_id).first()) as PlanRow | null;
-    const sub = (await env.DB.prepare(`SELECT * FROM subscriptions WHERE business_id = ? ORDER BY id DESC LIMIT 1`).bind(p.business_id).first()) as
-      | { id: number; expires_at: string | null; plan_id: number }
-      | null;
-    if (plan && sub) {
-      const days = INTERVAL_DAYS[plan.interval] ?? 30;
-      const base = sub.expires_at && sub.expires_at > nowIso() ? new Date(sub.expires_at).getTime() : Date.now();
-      const next = new Date(base + days * 86400_000).toISOString();
-      await env.DB.prepare(
-        `UPDATE subscriptions SET plan_id = ?, status = 'active', expires_at = ?, renews_at = ? WHERE id = ?`
-      ).bind(plan.id, next, next, sub.id).run();
-      await env.DB.prepare(`UPDATE businesses SET status = 'active' WHERE id = ? AND status IN ('expired','grace','suspended')`).bind(p.business_id).run();
-    }
+/** Retry post-commit email/referral work without redoing credit or entitlement effects. */
+export async function flushPaymentSettlements(env: Env, paymentId?: number): Promise<number> {
+  const rows = (await env.DB.prepare(`SELECT s.*,p.business_id,p.plan_id,p.amount FROM payment_settlements s JOIN payments p ON p.id=s.payment_id
+    WHERE p.status=s.status AND (s.notice_processed_at IS NULL OR s.referral_processed_at IS NULL)
+    ${paymentId ? 'AND p.id=?' : ''} ORDER BY COALESCE(s.last_attempt_at,s.created_at),s.payment_id LIMIT 10`).bind(...(paymentId ? [paymentId] : [])).all()).results as unknown as {
+      payment_id: number; notification_id: number; notice_processed_at: string | null; referral_processed_at: string | null;
+      business_id: number; plan_id: number | null; amount: number;
+    }[];
+  for (const row of rows) {
+    try {
+      await env.DB.prepare('UPDATE payment_settlements SET last_attempt_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
+      if (!row.notice_processed_at && await mirrorNotification(env, row.notification_id)) {
+        await env.DB.prepare('UPDATE payment_settlements SET notice_processed_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
+      }
+      if (!row.referral_processed_at) {
+        const plan = row.plan_id ? await env.DB.prepare('SELECT price FROM plans WHERE id=?').bind(row.plan_id).first<{ price: number }>() : null;
+        await reverseReferralReward(env, row.business_id, plan?.price ?? row.amount);
+        await env.DB.prepare('UPDATE payment_settlements SET referral_processed_at=? WHERE payment_id=?').bind(nowIso(), row.payment_id).run();
+      }
+    } catch { console.error('[payments] settlement_followup_deferred'); }
   }
+  return rows.length;
+}
 
-  if (p.kind === 'addon' && p.addon_id) {
-    const addon = (await env.DB.prepare('SELECT * FROM addons WHERE id = ?').bind(p.addon_id).first()) as AddonRow | null;
-    if (addon) {
-      const expires = new Date(Date.now() + addon.duration_days * 86400_000).toISOString();
-      await env.DB.prepare(
-        `INSERT INTO vendor_addons (business_id, addon_id, quantity, status, payment_id, purchased_at, expires_at) VALUES (?, ?, 1, 'active', ?, ?, ?)`
-      ).bind(p.business_id, addon.id, p.id, nowIso(), expires).run();
-    }
-  }
-
-  if (biz) {
-    await notify(env, {
-      userId: biz.owner_user_id,
-      type: 'payment.approved',
-      title: auto ? 'Payment confirmed' : 'Your payment has been approved',
-      body: `${p.reference} — ${new Intl.NumberFormat('en-NG').format(p.amount / 100)} NGN. Your store is ready.`,
-      data: { payment_id: p.id },
-    });
-  }
-  if (p.plan_id && (p.kind === 'activation' || p.kind === 'subscription_renewal')) {
-    const plan = (await env.DB.prepare('SELECT price FROM plans WHERE id = ?').bind(p.plan_id).first()) as { price: number } | null;
-    await rewardReferrer(env, p.business_id, plan?.price ?? p.amount);
-  }
+export async function paymentFollowupHealth(env: Env) {
+  const rows = (await env.DB.prepare(`SELECT 'activation' AS kind,a.payment_id AS payment_id,a.created_at AS created_at FROM payment_activations a JOIN payments p ON p.id=a.payment_id
+    WHERE p.status='approved' AND (a.notice_processed_at IS NULL OR a.referral_processed_at IS NULL)
+    UNION ALL SELECT 'settlement',s.payment_id AS payment_id,s.created_at AS created_at FROM payment_settlements s JOIN payments p ON p.id=s.payment_id
+    WHERE p.status=s.status AND (s.notice_processed_at IS NULL OR s.referral_processed_at IS NULL)
+    ORDER BY created_at LIMIT 30`).all()).results;
+  return { oldest_pending: rows };
 }
 
 /** Admin approves a payment (bank proof path). */
@@ -193,9 +248,7 @@ export async function approvePayment(
   const p = (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(args.paymentId).first()) as PaymentRow | null;
   if (!p) throw notFound('Payment not found.');
   if (!['pending', 'submitted', 'reviewing'].includes(p.status)) throw conflict(`Payment is already ${p.status}.`);
-  await env.DB.prepare(`UPDATE payments SET status = 'approved', verified_at = ?, verified_by = ? WHERE id = ?`)
-    .bind(nowIso(), args.admin.id, p.id).run();
-  await applyApproved(env, p, args.admin.id, false);
+  if (!(await applyApproved(env, p, args.admin.id, false))) throw conflict('Payment status changed. Refresh before reviewing.');
   await audit(env, { actor: args.admin, action: 'payment.approve', entityType: 'payment', entityId: p.id, ip: args.ip, meta: { reference: p.reference, amount: p.amount, method: p.method } });
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
 }
@@ -208,19 +261,10 @@ export async function rejectPayment(
   const p = (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(args.paymentId).first()) as PaymentRow | null;
   if (!p) throw notFound('Payment not found.');
   if (!['pending', 'submitted', 'reviewing'].includes(p.status)) throw conflict(`Payment is already ${p.status}.`);
-  await env.DB.prepare(`UPDATE payments SET status = 'rejected', rejection_reason = ?, verified_at = ?, verified_by = ? WHERE id = ?`)
-    .bind(args.reason, nowIso(), args.admin.id, p.id).run();
-  // The business goes back to "still owes a payment" so the vendor can pay
-  // again (new proof or new payment intent) without further admin action.
-  await env.DB.prepare(`UPDATE businesses SET status = 'pending_payment' WHERE id = ? AND status = 'pending_approval'`)
-    .bind(p.business_id).run();
-  const biz = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(p.business_id).first()) as { owner_user_id: number } | null;
-  if (biz) {
-    let credit = 0;
-    try { credit = Number((JSON.parse(p.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { credit = 0; }
-    if (credit > 0) await restoreCredit(env, biz.owner_user_id, credit);
-    await notify(env, { userId: biz.owner_user_id, type: 'payment.rejected', title: 'Your payment was not approved', body: args.reason, data: { payment_id: p.id } });
-  }
+  const rejected = await env.DB.prepare(`UPDATE payments SET status='rejected',rejection_reason=?,verified_at=?,verified_by=? WHERE id=? AND status IN ('pending','submitted','reviewing') RETURNING id`)
+    .bind(args.reason, nowIso(), args.admin.id, p.id).first();
+  if (!rejected) throw conflict('Payment status changed. Refresh before reviewing.');
+  try { await flushPaymentSettlements(env, p.id); } catch { console.error('[payments] settlement_followup_deferred'); }
   await audit(env, { actor: args.admin, action: 'payment.reject', entityType: 'payment', entityId: p.id, ip: args.ip, meta: { reference: p.reference, reason: args.reason } });
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
 }
@@ -241,26 +285,7 @@ export async function refundPayment(
   const marked = await env.DB.prepare(`UPDATE payments SET status = 'refunded', rejection_reason = ?, verified_at = ?, verified_by = ? WHERE id = ? AND status = 'approved'`)
     .bind(args.reason, nowIso(), args.admin.id, p.id).run();
   if (marked.meta.changes === 0) throw conflict('Only an approved payment can be marked refunded.');
-  const biz = (await env.DB.prepare('SELECT owner_user_id FROM businesses WHERE id = ?').bind(p.business_id).first()) as { owner_user_id: number } | null;
-  if (biz) {
-    let credit = 0;
-    try { credit = Number((JSON.parse(p.metadata || '{}') as { credit_kobo?: number }).credit_kobo || 0); } catch { credit = 0; }
-    if (credit > 0) await restoreCredit(env, biz.owner_user_id, credit);
-    await notify(env, {
-      userId: biz.owner_user_id,
-      type: 'payment.refunded',
-      title: 'A plan payment was marked refunded',
-      body: `${p.reference} — ${args.reason}. CyberShop does not move the money; the operator returns it. Your store stays as it is unless they also revoke the plan.`,
-      data: { payment_id: p.id },
-    });
-  }
-  if (p.kind === 'addon') {
-    await env.DB.prepare(`UPDATE vendor_addons SET status = 'expired' WHERE payment_id = ? AND status = 'active'`).bind(p.id).run();
-  }
-  if (p.plan_id && (p.kind === 'activation' || p.kind === 'subscription_renewal')) {
-    const plan = (await env.DB.prepare('SELECT price FROM plans WHERE id = ?').bind(p.plan_id).first()) as { price: number } | null;
-    await reverseReferralReward(env, p.business_id, plan?.price ?? p.amount);
-  }
+  try { await flushPaymentSettlements(env, p.id); } catch { console.error('[payments] settlement_followup_deferred'); }
   await audit(env, { actor: args.admin, action: 'payment.refund', entityType: 'payment', entityId: p.id, ip: args.ip, meta: { reference: p.reference, reason: args.reason } });
   return (await env.DB.prepare('SELECT * FROM payments WHERE id = ?').bind(p.id).first()) as PaymentRow;
 }
@@ -279,24 +304,25 @@ export async function handlePaystackWebhook(env: Env, reference: string, ip: str
   if (p.status === 'approved') return { ok: true, detail: 'already approved (idempotent)' };
   if (!['pending', 'submitted'].includes(p.status)) return { ok: false, detail: `payment ${p.status}` };
 
-  let verified: { success: boolean; amountKobo: number };
+  let verified: Awaited<ReturnType<typeof verifyPaystackReference>>;
   if (paystackMock(env)) {
-    verified = { success: true, amountKobo: p.amount };
+    verified = { success: true, amountKobo: p.amount, email: null, terminalFailure: false };
   } else {
     verified = await verifyPaystackReference(env, reference);
   }
   if (!verified.success) {
-    await env.DB.prepare(`UPDATE payments SET status = 'failed' WHERE id = ? AND status IN ('pending','submitted')`).bind(p.id).run();
+    if (verified.terminalFailure) await env.DB.prepare(`UPDATE payments SET status = 'failed' WHERE id = ? AND status IN ('pending','submitted')`).bind(p.id).run();
     return { ok: false, detail: 'paystack verification failed' };
   }
-  if (verified.amountKobo + 1 < p.amount) {
-    await env.DB.prepare(`UPDATE payments SET status = 'rejected', rejection_reason = 'Amount received does not match.' WHERE id = ?`).bind(p.id).run();
+  if (verified.amountKobo !== p.amount) {
+    await env.DB.prepare(`UPDATE payments SET status = 'rejected', rejection_reason = 'Amount received does not match.' WHERE id = ? AND status IN ('pending','submitted')`).bind(p.id).run();
     return { ok: false, detail: 'amount mismatch' };
   }
 
-  await env.DB.prepare(`UPDATE payments SET status = 'approved', verified_at = ?, verified_by = NULL, paystack_reference = COALESCE(paystack_reference, ?) WHERE id = ?`)
-    .bind(nowIso(), reference, p.id).run();
-  await applyApproved(env, { ...p, status: 'approved' }, null, true);
+  if (!(await applyApproved(env, p, null, true, reference))) {
+    const current = await env.DB.prepare('SELECT status FROM payments WHERE id=?').bind(p.id).first<{ status: string }>();
+    return { ok: current?.status === 'approved', detail: current?.status === 'approved' ? 'already approved (idempotent)' : 'payment status changed' };
+  }
   await audit(env, { actor: { id: null, role: 'system' }, action: 'payment.auto_approve', entityType: 'payment', entityId: p.id, ip, meta: { reference: p.reference, amount: p.amount, mock: paystackMock(env) } });
   return { ok: true, detail: 'approved' };
 }

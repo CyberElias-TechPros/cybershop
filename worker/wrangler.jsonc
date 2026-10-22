@@ -22,6 +22,7 @@
   // `wrangler secret put` list. Keeping them out of git is the whole point.
   // ---------------------------------------------------------------------------
   "vars": {
+    "APP_ENV": "development",
     "APP_URL": "http://localhost:3000",
     "WEB_ORIGIN": "http://localhost:3000",
     "SESSION_SECURE": "0",
@@ -34,10 +35,19 @@
   "env": {
     "production": {
       "name": "cybershop-api",
-      // ---- CHANGE THESE FOUR to your real hosts before the first deploy ----
+      "d1_databases": [{
+        "binding": "DB",
+        "database_name": "cybershop",
+        "database_id": "63b9daa8-87cc-4dee-a66b-ac6a28f732ea",
+        "migrations_dir": "migrations"
+      }],
+      "triggers": { "crons": ["17 * * * *", "*/2 * * * *"] },
+      // Confirm these intended existing hosts/resources before the first production deploy.
       // APP_URL must be the public origin of the Next.js site (Vercel). It is
       // what goes into every email, the sitemap and every shared WhatsApp link.
       "vars": {
+        "APP_ENV": "production",
+        "REQUIRE_ADMIN_2FA": "1",
         "APP_URL": "https://cybershop.ng",
         "WEB_ORIGIN": "https://cybershop.ng",
         "SESSION_SECURE": "1",
@@ -47,13 +57,13 @@
         "MEDIA_DRIVER": "d1",
         "MEDIA_BASE_URL": "https://cybershop.ng",
         "GATEWAY_PUBLIC_URL": "https://media.cybershop.ng",
-        // "1" only while you are rehearsing checkouts on live infrastructure.
-        // Every payment "succeeds" without money moving — /healthz flags it.
+        // Hosted profiles must use real provider verification, never mock money.
+        // Staging uses Paystack test keys; production requires live keys.
         "PAYSTACK_MOCK": "0",
-        "PAYSTACK_WEBHOOK_URL": "https://cybershop-api.<your-subdomain>.workers.dev/api/webhooks/paystack"
+        "BUYER_DEPOSITS_ENABLED": "0",
+        "PAYSTACK_WEBHOOK_URL": "https://cybershop-api.calm-disk-8311.workers.dev/api/webhooks/paystack"
       }
     }
   },
-  "triggers": { "crons": ["17 * * * *"] },
   "observability": { "enabled": true }
 }

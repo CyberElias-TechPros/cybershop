@@ -29,3 +29,6 @@ const MEDIA_ROOT = __DIR__;
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Exact web origins allowed to read upload responses (no wildcard credentials).
+const ALLOWED_ORIGINS = ['https://cybershop.ng'];

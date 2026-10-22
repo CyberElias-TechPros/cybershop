@@ -12,7 +12,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
   const path = req.nextUrl.pathname;
-  if (path.startsWith('/_next') || path.startsWith('/api') || path.startsWith('/icon-') || path === '/sw.js' || path === '/offline.html') {
+  if (path.startsWith('/.well-known/') || path.startsWith('/_next') || path.startsWith('/api') || path.startsWith('/icon-') || path === '/sw.js' || path === '/offline.html') {
     return NextResponse.next();
   }
   const worker = process.env.WORKER_URL;

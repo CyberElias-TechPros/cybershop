@@ -153,3 +153,16 @@ export function generateBackupCodes(count = 10): string[] {
   }
   return out;
 }
+
+/** Preserve recovery-code letters: stripping non-digits misclassifies some as TOTP. */
+export function parseSecondFactor(input: unknown): { kind: 'totp' | 'recovery' | 'invalid'; code: string } {
+  if (typeof input !== 'string') return { kind: 'invalid', code: '' };
+  const clean = input.trim().toUpperCase().replace(/\s/g, '');
+  if (/^[0-9A-F]{5}-?[0-9A-F]{5}$/.test(clean)) {
+    const hex = clean.replace('-', '');
+    return { kind: 'recovery', code: `${hex.slice(0, 5)}-${hex.slice(5)}` };
+  }
+  const numeric = clean.replace('-', '');
+  if (/^\d{6}$/.test(numeric)) return { kind: 'totp', code: numeric };
+  return { kind: 'invalid', code: '' };
+}

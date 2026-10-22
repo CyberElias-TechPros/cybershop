@@ -4,13 +4,41 @@ on:
   push:
     branches: [main, 'arena/**']
   pull_request:
+  workflow_call:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  release-tools:
+    name: Release safeguards — unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: node --test scripts/tests/*.test.mjs
+      - run: python3 scripts/check-roadmap.py
+
+  media-gateway:
+    name: PHP gateway — real HTTP contract
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        php: ['8.2', '8.4']
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: gd
+          coverage: none
+      - run: php -l media-gateway/upload.php
+      - run: python3 media-gateway/test_gateway.py
+
   worker:
     name: API worker — typecheck + integration suite
     runs-on: ubuntu-latest
@@ -19,12 +47,23 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: gd
+          coverage: none
       - name: Install
         working-directory: worker
         run: npm ci --no-fund --no-audit
+      - name: Audit dependencies
+        working-directory: worker
+        run: npm audit --audit-level=moderate
       - name: Typecheck
         working-directory: worker
         run: npm run typecheck
+      - name: Production bundle (no deployment)
+        working-directory: worker
+        run: npx wrangler deploy --env production --dry-run --outdir .wrangler/release-dry-run
       - name: Test (unit + integration on local wrangler dev)
         working-directory: worker
         timeout-minutes: 10
@@ -41,6 +80,9 @@ jobs:
       - name: Install
         working-directory: web
         run: npm ci --no-fund --no-audit
+      - name: Audit dependencies
+        working-directory: web
+        run: npm audit --audit-level=moderate
       - name: Typecheck
         working-directory: web
         run: npx tsc --noEmit
@@ -51,3 +93,58 @@ jobs:
         run: npm run build
       - name: Audit (CSS shipped to every route must stay within budget)
         run: node scripts/web-audit/css-budget.mjs web
+
+  browser:
+    name: Browser journeys — desktop + Android viewport (not physical-device acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Install API tools
+        working-directory: worker
+        run: npm ci --no-fund --no-audit
+      - name: Install web and pinned browser
+        working-directory: web
+        run: npm ci --no-fund --no-audit
+      - name: Real Next + Worker + isolated D1 browser journeys
+        working-directory: web
+        run: npm run test:e2e
+      - name: Synthetic test failure evidence (no production data)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-evidence
+          path: |
+            web/test-results/
+            web/playwright-report/
+          retention-days: 3
+
+  android:
+    name: Android TWA — debug build, unit tests and lint (not store acceptance)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Build isolated debug identity only
+        working-directory: android
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+      - name: Internal debug candidate and reports (not signed for distribution)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-internal-${{ github.sha }}
+          path: |
+            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/reports/
+          retention-days: 7
+          if-no-files-found: ignore

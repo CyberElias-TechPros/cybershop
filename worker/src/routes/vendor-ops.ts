@@ -9,7 +9,7 @@ import { effectiveQuotas, assertListingQuota, assertBusinessWritable } from '../
 import { assertAddon } from '../lib/premium';
 import { csvObjects } from '../lib/csv';
 import { normalizeDomain, domainTxtHasToken, attachVercelDomain } from '../lib/domain';
-import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
+import { mailConfigured, sendEmail, mailHtml, escapeMailHtml } from '../lib/mail';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -249,15 +249,16 @@ app.post('/staff/invite', async (c) => {
     `INSERT INTO staff_invites (business_id, email, role, token, expires_at) VALUES (?, ?, ?, ?, ?)`
   ).bind(business.id, email, role, token, expires).run();
   const url = `${c.env.APP_URL}/invite/${token}`;
+  let queued = false;
   if (mailConfigured(c.env)) {
-    await sendEmail(c.env, {
+    queued = await sendEmail(c.env, {
       to: email,
       subject: `${business.name} invited you to CyberShop`,
       text: `${user.name} invited you to help run ${business.name} as ${role}.\n\nAccept (7 days):\n${url}`,
-      html: mailHtml('You are invited', `${user.name} invited you to help run <strong>${business.name}</strong> as ${role}. The link works for 7 days.`, { label: 'Accept invite', url }),
+      html: mailHtml('You are invited', `${escapeMailHtml(user.name)} invited you to help run <strong>${escapeMailHtml(business.name)}</strong> as ${escapeMailHtml(role)}. The link works for 7 days.`, { label: 'Accept invite', url }),
     });
   }
-  return c.json({ ok: true, invite_url: url, emailed: mailConfigured(c.env) });
+  return c.json({ ok: true, invite_url: url, emailed: false, email_queued: queued });
 });
 
 app.put('/staff/:userId', async (c) => {

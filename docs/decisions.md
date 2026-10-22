@@ -193,3 +193,22 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
   controls if `decodeAudioData` can't read the codec.
 - **Status:** Final (v3 + Wave 3: cart & voice, 2026-09-11).
 
+
+## D-019 — Android route — TWA selected by user (2026-10-22)
+- **Decision:** Build a Trusted Web Activity over the existing HTTPS web app,
+  using Android Browser Helper with custom-tab fallback, no privileged WebView
+  bridge and no embedded internal API secret. User explicitly selected the
+  browser-powered/TWA option in the architecture clarification.
+- **Implementation:** `android/`; guarded exact-origin launcher and intent
+  sanitization, debug/release identity separation, fail-closed release-signing
+  gate and server-configured Digital Asset Links endpoint. See
+  `android/README.md` (repository root) for actual build/device procedures.
+- **Reference:** npm `@bubblewrap/core` 1.27.0 template (Apache-2.0) reviewed for
+  SDK-36/LauncherActivity metadata and Android Browser Helper 2.7.4;
+  official `gradle/gradle-distributions` v8.14.3 asset digest reviewed via GitHub.
+- **Risk / open decisions:** Confirm the package/signing lineage of the existing
+  Galaxy listing before any update. Proposed `ng.cybershop.app` is not evidence
+  of ownership of that store identity. Current channel/payment/privacy policy,
+  signing custody, HTTPS association and actual Samsung acceptance remain open.
+- **Status:** Architecture selected; internal source present, not distribution
+  acceptance. CI/build and device evidence must be recorded separately.

@@ -16,7 +16,7 @@ import { likeContains } from '../lib/search';
 import { csvResponse as sharedCsvResponse } from '../lib/csv';
 import { notifyStoreFollowers } from '../lib/growth';
 import { assertAddon, assertFeaturedSlot, parseInspection } from '../lib/premium';
-import { createPaymentIntent, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
+import { createPaymentIntent, saveHostedCheckout, recoverHostedPayment, submitBankProof, activateFreePlan, type PlanRow, type AddonRow } from '../lib/payments';
 import { initiatePaystack } from '../lib/paystack';
 import { normalizeWaNumber } from '../lib/wa';
 import { formatNaira } from '../lib/money';
@@ -210,21 +210,14 @@ app.post('/media/upload-audio', async (c) => {
 
 app.post('/media/finalize', async (c) => {
   const { business } = await requireVendor(c.env, c);
+  assertBusinessWritable(business.status);
   const body = await c.req.json().catch(() => null);
   if (!body) throw badRequest('Invalid request.');
-  const mime = typeof body.mime === 'string' ? body.mime : '';
-  if (!IMAGE_MIME.has(mime)) throw validationError('Only JPG, PNG or WEBP images are allowed.');
-  const size = reqInt(body.size, { min: 1, max: 9 * 1048576 });
-  await assertStorageQuota(c.env, business.id, size);
   const row = await finalizeGatewayUpload(c.env, {
     businessId: business.id,
-        token: reqStr(body.token, { min: 50, max: 200 }),
-    storageKey: reqStr(body.storage_key, { min: 10, max: 255 }),
+    token: reqStr(body.token, { min: 50, max: 512 }),
+    receipt: reqStr(body.receipt, { min: 50, max: 2048 }),
     originalName: optStr(body.original_name, 255) ?? undefined,
-    mime,
-    size,
-    width: body.width ? reqInt(body.width, { min: 1, max: 10000 }) : undefined,
-    height: body.height ? reqInt(body.height, { min: 1, max: 10000 }) : undefined,
   });
   return c.json({ ok: true, media: { id: row.id, url: mediaUrl(c.env, row), size_bytes: row.size_bytes } });
 });
@@ -876,12 +869,13 @@ app.get('/payments/:id', async (c) => {
   const { business } = await requireVendor(c.env, c);
   const id = reqInt(c.req.param('id'), { min: 1 });
   const p = (await c.env.DB.prepare(
-    `SELECT p.*, pl.name AS plan_name, a.name AS addon_name FROM payments p
+    `SELECT p.*, pl.name AS plan_name, a.name AS addon_name,h.gross_kobo,h.amount_kobo AS credit_kobo,h.returned_at AS credit_returned_at FROM payments p
+     LEFT JOIN payment_credit_holds h ON h.payment_id=p.id
      LEFT JOIN plans pl ON pl.id = p.plan_id LEFT JOIN addons a ON a.id = p.addon_id
      WHERE p.id = ? AND p.business_id = ?`
   ).bind(id, business.id).first()) as Record<string, unknown> | null;
   if (!p) throw notFound('Payment not found.');
-  return c.json({ ok: true, payment: { ...p, amount_display: formatNaira(Number(p.amount)) } });
+  return c.json({ ok: true, payment: { ...p, amount_display: formatNaira(Number(p.amount)), gross_display: formatNaira(Number(p.gross_kobo ?? p.amount)), credit_display: formatNaira(Number(p.credit_kobo ?? 0)), cash_display: formatNaira(Math.max(0,Number(p.gross_kobo ?? p.amount)-Number(p.credit_kobo ?? 0))) } });
 });
 
 app.post('/payment-intent', async (c) => {
@@ -897,7 +891,7 @@ app.post('/payment-intent', async (c) => {
       await activateFreePlan(c.env, business.id);
       return c.json({ ok: true, free: true, message: 'Your store is live on the free plan.' });
     }
-    const kind = business.status === 'pending_payment' ? 'activation' : 'subscription_renewal';
+    const kind = ['pending_payment','pending_approval'].includes(business.status) ? 'activation' : 'subscription_renewal';
     payment = await createPaymentIntent(c.env, { businessId: business.id, kind, plan, addon: null, method });
     if (payment.status === 'approved') {
       return c.json({ ok: true, payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method: payment.method, status: payment.status }, settled_with_credit: true });
@@ -918,12 +912,20 @@ app.post('/payment-intent', async (c) => {
       name: user.name,
       meta: { business_id: String(business.id), kind: payment.kind },
     });
-    if (initiated.paystackReference) {
-      await c.env.DB.prepare('UPDATE payments SET paystack_reference = ? WHERE id = ?').bind(initiated.paystackReference, payment.id).run();
-    }
+    await saveHostedCheckout(c.env,payment.id,initiated);
+    const current=await c.env.DB.prepare('SELECT status FROM payments WHERE id=?').bind(payment.id).first<{status:string}>();
+    if (current?.status==='approved') return c.json({ok:true,payment:{id:payment.id,status:'approved'}});
     return c.json({ ok: true, payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method }, paystack: initiated });
   }
   return c.json({ ok: true, payment: { id: payment.id, reference: payment.reference, amount: payment.amount, method, status: payment.status } });
+});
+
+app.post('/payments/:id/recover', async (c) => {
+  const { business } = await requireVendor(c.env,c);
+  // Even a restricted store can check a payment already in flight. Recovery
+  // cannot initialize another charge or reinstate moderation restrictions.
+  const result=await recoverHostedPayment(c.env,business.id,reqInt(c.req.param('id'),{min:1}));
+  return c.json({ok:true,...result});
 });
 
 /** Vendor uploads a bank transfer proof (multipart file ≤ 8MB). */

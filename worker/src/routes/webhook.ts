@@ -77,7 +77,7 @@ app.post('/paystack', async (c) => {
   }
   // Only money arriving is interesting. Refunds, chargebacks and failed charges
   // carry a reference too, and acting on them would look like a payment.
-  if (event && !event.startsWith('charge.success')) {
+  if (event !== 'charge.success') {
     return c.json({ ok: true, detail: `ignored event ${event}` });
   }
 

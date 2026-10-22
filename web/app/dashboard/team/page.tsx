@@ -32,7 +32,7 @@ export default function TeamPage() {
         Seats used: {used}/{limit < 0 ? 'unlimited' : limit}. Catalogue can edit listings. Sales handles leads and WhatsApp. Support handles leads and inbox. Accountant handles billing. Managers can do everything except remove the owner.
       </p>
       {error && <div className="form-msg error">{error}</div>}
-      {link && <div className="form-msg success">Invite link (also emailed when mail is configured): {link}</div>}
+      {link && <div className="form-msg success">Invite link (email delivery may be queued separately): {link}</div>}
       <form
         className="card panel form-row"
         onSubmit={async (e) => {

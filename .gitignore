@@ -16,3 +16,22 @@ coverage/
 
 # Database dumps (scripts/backup-d1.sh)
 backups/
+
+# Deployment credentials and mobile signing/build artifacts
+media-gateway/config.php
+.dev.vars.*
+!.dev.vars*.example
+*.keystore
+*.jks
+*.p12
+*.apk
+*.aab
+
+# Isolated browser-test runtime state and generated reports
+.e2e-state/
+playwright-report/
+test-results/
+
+# Android local build/cache state
+.gradle/
+**/local.properties

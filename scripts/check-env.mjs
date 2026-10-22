@@ -17,6 +17,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readJsonc, checkProductionConfig } from './lib/release.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const args = new Set(process.argv.slice(2));
@@ -52,27 +53,10 @@ function readEnvFile(file) {
   return out;
 }
 
-/** Pull the "vars" object out of wrangler.jsonc (tolerate // comments). */
+/** Share the fail-closed release parser instead of maintaining a second brace scanner. */
 function readWranglerVars(file) {
-  const raw = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  const stripComments = raw.replace(/^\s*\/\/.*$/gm, '');
-  const grab = (key) => {
-    const at = stripComments.indexOf(`"${key}"`);
-    if (at < 0) return null;
-    // walk forward to the matching brace of that object
-    let i = stripComments.indexOf('{', at);
-    if (i < 0) return null;
-    let depth = 0;
-    for (let j = i; j < stripComments.length; j++) {
-      if (stripComments[j] === '{') depth++;
-      else if (stripComments[j] === '}') {
-        depth--;
-        if (depth === 0) return JSON.parse(stripComments.slice(i, j + 1));
-      }
-    }
-    return null;
-  };
-  return { root: grab('vars'), production: grab('production') };
+  const config = readJsonc(file);
+  return { root: config.vars, production: config.env?.production, config };
 }
 
 // Values that are fine on a laptop and fatal in production.
@@ -127,11 +111,11 @@ const SECRETS = [
   { key: 'GATEWAY_SECRET', how: 'openssl rand -hex 32', why: 'signs media upload tokens (gateway driver)' },
   { key: 'IP_SALT', how: 'openssl rand -hex 32', why: 'hashes visitor IPs so they are never stored raw' },
   { key: 'PAYSTACK_SECRET_KEY', how: 'Paystack → Settings → API Keys (sk_live_…)', why: 'charges cards and verifies payments' },
-  { key: 'PAYSTACK_PUBLIC_KEY', how: 'Paystack → Settings → API Keys (pk_live_…)', why: 'Paystack inline checkout' },
+  { key: 'PAYSTACK_PUBLIC_KEY', how: 'Paystack → Settings → API Keys (pk_live_…)', why: 'Paystack account configuration' },
+  { key: 'MAIL_FROM', how: 'verified sender address', why: 'required transactional sender' },
 ];
 const OPTIONAL_SECRETS = [
-  { key: 'RESEND_API_KEY', how: 'resend.com → API Keys', why: 'transactional email (verification, resets, lead alerts)' },
-  { key: 'MAIL_FROM', how: 'a verified sending domain, e.g. "CyberShop <noreply@cybershop.ng>"', why: 'from-address on outgoing mail' },
+  { key: 'RESEND_API_KEY', how: 'resend.com → API Keys', why: 'required unless MAIL_ENDPOINT is configured' },
   { key: 'VERCEL_TOKEN', how: 'vercel.com/account/tokens', why: 'attaches vendor custom domains automatically' },
   { key: 'VERCEL_PROJECT_ID', how: 'Vercel project settings', why: 'custom domains' },
   { key: 'SEED_ADMIN_EMAIL', how: 'your admin email', why: 'creates the first admin on first boot (unset it afterwards)' },
@@ -141,6 +125,7 @@ const OPTIONAL_SECRETS = [
 const REQUIRED_PROD_VARS = ['APP_URL', 'WEB_ORIGIN', 'SESSION_SECURE', 'MEDIA_DRIVER', 'PAYSTACK_MOCK'];
 
 if (!localOnly) {
+  for (const error of checkProductionConfig(w.config, process.env.PRODUCTION_WORKER_URL)) fail('worker/production', error);
   for (const key of REQUIRED_PROD_VARS) {
     const v = prodVars[key];
     if (v === undefined) fail('worker/production', `env.production.vars.${key} is missing from wrangler.jsonc`);
@@ -188,7 +173,7 @@ if (!existsSync(path.join(ROOT, 'worker', 'node_modules'))) warn('worker', 'depe
 
 // --------------------------------------------------------------------- report
 console.log(C.bold('\n— Result —'));
-if (errors.length === 0 && warnings.length === 0) console.log(C.green('  ✓ everything checks out.'));
+if (errors.length === 0 && warnings.length === 0) console.log(C.green('  ✓ local/static checks passed; remote secrets and delivery are not verified.'));
 for (const e of errors) console.log(C.red(`  ✗ ${e}`));
 for (const wmsg of warnings) console.log(C.yellow(`  ! ${wmsg}`));
 
@@ -199,7 +184,7 @@ if (missingSecrets.length && !localOnly) {
     console.log(`  npx wrangler secret put ${s.key} --env production   ${C.dim(`# ${s.how}`)}`);
   }
   console.log(C.dim('\n  Then: npx wrangler deploy --env production'));
-  console.log(C.dim('  And:  npx wrangler d1 migrations apply cybershop --remote'));
+  console.log(C.dim('  And:  npx wrangler d1 migrations apply cybershop --remote --env production'));
 }
 
 const bad = errors.length > 0 || (strict && warnings.length > 0);

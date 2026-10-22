@@ -124,7 +124,7 @@ jobs:
 
   android:
     name: Android TWA — debug build, unit tests and lint (not store acceptance)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
@@ -132,12 +132,27 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
-      - run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Use the pinned runner Android SDK
+        run: |
+          test -n "$ANDROID_HOME"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-36' 'build-tools;36.0.0'
       - name: Build isolated debug identity only
         working-directory: android
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug 2>&1 | tee /tmp/cybershop-android-build.log
+      - name: Surface sanitized debug-build diagnostics in checks
+        if: failure()
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p=Path('/tmp/cybershop-android-build.log')
+          if p.exists():
+              text='\n'.join(p.read_text(errors='replace').splitlines()[-100:])[-6000:]
+              text=text.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+              print('::error title=Android debug build::'+text)
+          PYTHON
       - name: Internal debug candidate and reports (not signed for distribution)
         if: always()
         uses: actions/upload-artifact@v4

@@ -277,3 +277,17 @@ Read [release-safety.md](../operations/release-safety.md) before any live rollou
 | Store approval/publication | Only an actual channel review result establishes acceptance |
 
 The register currently has **535 tasks**: **43 locally verified checkpoints**, **67 existing/implemented-code checkpoints**, and **425 unaccepted actions**. A code checkpoint is not production approval. Batch 2 appended 32 narrowly scoped implementation/risk checkpoints and retained broader provider, finance, device and production acceptance tasks as open. Historical tasks were not deleted to inflate completion.
+
+
+## User clarification — Android origin and existing app update (2026-10-22)
+
+User selected `https://shop.freegameplay.site` and **preserve the existing store
+listing**, superseding the provisional Android launch origin noted above. The
+launcher default and Java link-policy tests now use that origin. Digital Asset
+Links also deny debug identities on this confirmed production host, even when
+misconfigured as staging. Release requires explicit existing package ID and
+version properties; it cannot silently use the internal placeholder identity.
+The public package ID, actual distributed signing certificate/lineage and highest
+published version still require owner evidence. No domain, secret or store
+configuration was changed. Previous CI evidence applies to the preceding source;
+the origin/signing-gate update needs its own exact-commit CI result.

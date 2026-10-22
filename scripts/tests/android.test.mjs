@@ -18,7 +18,8 @@ describe('Android Digital Asset Links fail-closed configuration',()=>{
   }
   it('never publishes debug certificates on the production domain',()=>{
     const env={...config([{...entry(),package_name:'ng.cybershop.app.debug'}]),ANDROID_ASSOCIATION_ENV:'staging'};
-    assert.equal(assetLinksResponse(env).status,503);
+    for (const host of ['cybershop.ng','www.cybershop.ng','shop.freegameplay.site'])
+      assert.equal(assetLinksResponse({...env,SITE_URL:'https://'+host}).status,503);
     assert.equal(assetLinksResponse({...env,SITE_URL:'https://owned-stage.cybershop.ng'}).status,200);
     assert.equal(assetLinksResponse({...env,SITE_URL:'https://owned-stage.cybershop.ng',ANDROID_ASSOCIATION_ENV:'production'}).status,503);
   });
@@ -35,5 +36,8 @@ describe('Android source/build safeguards (not compilation/device proof)',()=>{
   it('pins distribution integrity and uses explicit signed-release gate',()=>{
     assert.match(read('gradle/wrapper/gradle-wrapper.properties'),/distributionSha256Sum=[a-f0-9]{64}/);
     assert.match(read('app/build.gradle'),/cybershopReleaseApproved/);assert.match(read('app/build.gradle'),/applicationIdSuffix '\.debug'/);
+    assert.match(read('app/build.gradle'),/getOrElse\('https:\/\/shop.freegameplay.site'\)/);
+    assert.match(read('app/build.gradle'),/!existingIdentitySpecified/);
+    assert.match(read('app/build.gradle'),/cybershopVersionCode/);
   });
 });

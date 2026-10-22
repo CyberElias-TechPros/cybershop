@@ -1,6 +1,6 @@
 plugins { id 'com.android.application' }
 
-def origin = providers.gradleProperty('cybershopOrigin').getOrElse('https://cybershop.ng')
+def origin = providers.gradleProperty('cybershopOrigin').getOrElse('https://shop.freegameplay.site')
 def uri = new URI(origin)
 if (uri.scheme != 'https' || !uri.host || uri.userInfo || uri.port != -1 || (uri.path && uri.path != '/') || uri.query || uri.fragment) {
     throw new GradleException('cybershopOrigin must be an exact public HTTPS origin without credentials, port, query or fragment')
@@ -8,11 +8,17 @@ if (uri.scheme != 'https' || !uri.host || uri.userInfo || uri.port != -1 || (uri
 origin = 'https://' + uri.host.toLowerCase()
 def appId = providers.gradleProperty('cybershopApplicationId').getOrElse('ng.cybershop.app')
 if (!(appId ==~ /[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}/)) throw new GradleException('Invalid application ID')
+// The existing listing identity/version must be explicit; this default is internal-only.
+def versionCodeText = providers.gradleProperty('cybershopVersionCode').getOrElse('1')
+if (!(versionCodeText ==~ /[1-9][0-9]{0,9}/) || versionCodeText.toLong() > 2100000000L) throw new GradleException('Invalid Android version code')
+def appVersionName = providers.gradleProperty('cybershopVersionName').getOrElse('0.1.0')
+if (!(appVersionName ==~ /[A-Za-z0-9][A-Za-z0-9._+-]{0,49}/)) throw new GradleException('Invalid Android version name')
 def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains('release') }
 def approved = providers.gradleProperty('cybershopReleaseApproved').getOrElse('false') == 'true'
 def signingNames = ['ANDROID_KEYSTORE_PATH','ANDROID_KEYSTORE_PASSWORD','ANDROID_KEY_ALIAS','ANDROID_KEY_PASSWORD']
-if (releaseRequested && (!approved || signingNames.any { !System.getenv(it) })) {
-    throw new GradleException('Release requires approved package/origin/policy, signing custody and all ANDROID_KEY* variables; see android/README.md')
+def existingIdentitySpecified = ['cybershopApplicationId','cybershopVersionCode','cybershopVersionName'].every { providers.gradleProperty(it).isPresent() }
+if (releaseRequested && (!approved || !existingIdentitySpecified || signingNames.any { !System.getenv(it) })) {
+    throw new GradleException('Release requires approved package/origin/policy, explicit existing application ID/version, signing custody and all ANDROID_KEY* variables; see android/README.md')
 }
 android {
     namespace 'ng.cybershop.app'
@@ -22,8 +28,8 @@ android {
         applicationId appId
         minSdk 24
         targetSdk 36
-        versionCode 1
-        versionName '0.1.0'
+        versionCode versionCodeText.toInteger()
+        versionName appVersionName
         manifestPlaceholders = [trustedHost: uri.host.toLowerCase()]
         buildConfigField 'String', 'TRUSTED_ORIGIN', '"' + origin + '"'
         resValue 'string', 'launch_url', origin + '/'

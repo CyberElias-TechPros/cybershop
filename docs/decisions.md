@@ -216,3 +216,15 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
 - **Status:** Architecture selected; internal source present, not distribution
   acceptance. Debug build/unit/lint passed in branch CI run 39773920769;
   device and distribution evidence remain separate.
+
+
+### D-019 clarification — confirmed origin and existing-listing update (2026-10-22)
+
+The user selected `https://shop.freegameplay.site` as the exact Android origin
+and chose **update the existing listing**, not a new application. This supersedes
+the provisional `cybershop.ng` launch default. No DNS or hosting changes are
+implied. The actual public package ID/signing lineage/highest published version
+are still unknown. `ng.cybershop.app.debug` remains an internal placeholder;
+release now requires explicit existing-package and next-version properties as
+well as the original protected signing/approval gate. No store identity is guessed.
+The confirmed production host refuses debug DAL entries even with a staging flag.

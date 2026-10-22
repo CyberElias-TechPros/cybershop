@@ -7,11 +7,12 @@ There is no native JavaScript bridge and no bundled Worker/internal secret.
 
 ## Identity and build
 
-- Proposed release application ID: `ng.cybershop.app`. **Confirm the package of
-  any existing Samsung listing before publishing**; an update must preserve its
-  identity and signing lineage. Do not overwrite/re-sign an existing app blindly.
+- User selected **update the existing listing**, not a new app (2026-10-22).
+  Its public package ID, installed signer lineage and highest published version
+  remain unconfirmed. `ng.cybershop.app` is an **internal build placeholder**,
+  not an approved replacement identity. Preserve the existing identity/signature.
 - Debug ID: `ng.cybershop.app.debug` (separate from release).
-- Default exact launch origin: `https://cybershop.ng`; min SDK 24, target/compile
+- User-confirmed exact launch origin: `https://shop.freegameplay.site`; min SDK 24, target/compile
   SDK 36, build tools 36.0.0, Java 17, AGP 8.9.1, Android Browser Helper 2.7.4,
   Gradle 8.14.3 with SHA-256 pinned from the official GitHub release asset.
 - The AGP/API baseline follows Bubblewrap 1.27.0's template. A newer plugin and
@@ -57,7 +58,8 @@ not invent package/certificate values. Set server-only deployment variables:
   `sha256_cert_fingerprints` (full colon-separated SHA-256 certificate strings).
 - `ANDROID_ASSOCIATION_ENV=staging` only for the explicitly owned staging site
   when associating `.debug`/`.staging` package identities. Production
-  `cybershop.ng`/`www.cybershop.ng` reject these even with the staging flag.
+  `shop.freegameplay.site`, `cybershop.ng` and `www.cybershop.ng` reject these
+  even with the staging flag.
 
 Use `./gradlew signingReport` for the actual installed debug certificate; obtain
 release/store signing fingerprints from approved key custody or the store
@@ -69,10 +71,14 @@ Android App Link/TWA verification **on the distributed binary**.
 ## Release signing gate
 
 Release tasks intentionally fail without `-PcybershopReleaseApproved=true` and
-all four protected environment variables: `ANDROID_KEYSTORE_PATH`,
+explicit `-PcybershopApplicationId=EXISTING.PACKAGE.ID`,
+`-PcybershopVersionCode=CONFIRMED_NEXT_CODE` and
+`-PcybershopVersionName=CONFIRMED_VERSION_NAME`, plus all four protected environment variables: `ANDROID_KEYSTORE_PATH`,
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
 Never put keystores or credentials in Git, issue text, chat or build logs.
-Choose the confirmed application ID/origin/version and review current payment,
+Confirm the existing installed package and signing lineage, and choose a version
+code above every published channel version. Providing properties is an operator
+assertion, not automatic verification against a store console. Review current payment,
 privacy and store requirements before authorizing a release. The flag is a
 manual approval boundary, not evidence that policy/legal review happened.
 Debug signing is generated locally by Android tooling; it is not release custody.

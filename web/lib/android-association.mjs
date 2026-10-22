@@ -9,7 +9,7 @@ export function assetLinksResponse(env) {
     const entries = JSON.parse(env.ANDROID_ASSETLINKS);
     if (!Array.isArray(entries) || !entries.length || entries.length > 5) return unavailable();
     const seen = new Set();
-    const debugAllowed = env.ANDROID_ASSOCIATION_ENV === 'staging' && site.hostname !== 'cybershop.ng' && site.hostname !== 'www.cybershop.ng';
+    const debugAllowed = env.ANDROID_ASSOCIATION_ENV === 'staging' && site.hostname !== 'cybershop.ng' && site.hostname !== 'www.cybershop.ng' && site.hostname !== 'shop.freegameplay.site';
     const result = [];
     for (const entry of entries) {
       if (!entry || typeof entry.package_name !== 'string' || !/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*){2,}$/.test(entry.package_name) || seen.has(entry.package_name)) return unavailable();

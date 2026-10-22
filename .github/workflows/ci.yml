@@ -161,6 +161,24 @@ jobs:
             exit 1
           fi
           grep -F 'Release requires approved package/origin/policy' /tmp/cybershop-release-denial.log
+      - name: Prove an existing-listing release cannot use default identity or version
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PATH: /tmp/cybershop-nonexistent-synthetic-key
+          ANDROID_KEYSTORE_PASSWORD: synthetic-not-a-real-password
+          ANDROID_KEY_ALIAS: synthetic-not-a-real-key
+          ANDROID_KEY_PASSWORD: synthetic-not-a-real-password
+        run: |
+          require_denial() {
+            if ./gradlew --no-daemon "$@" bundleRelease > /tmp/cybershop-existing-identity-denial.log 2>&1; then
+              echo '::error::Release unexpectedly accepted missing existing identity/version'
+              exit 1
+            fi
+            grep -F 'Release requires approved package/origin/policy' /tmp/cybershop-existing-identity-denial.log
+          }
+          require_denial -PcybershopReleaseApproved=true
+          require_denial -PcybershopReleaseApproved=true -PcybershopApplicationId=ng.synthetic.existing
+          require_denial -PcybershopReleaseApproved=true -PcybershopApplicationId=ng.synthetic.existing -PcybershopVersionCode=2
       - name: Surface sanitized debug-build diagnostics in checks
         if: failure()
         run: |

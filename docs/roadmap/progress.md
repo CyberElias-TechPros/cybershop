@@ -6,8 +6,9 @@ This log distinguishes **repository implementation**, **local verification** and
 
 ## Batch 3 — receipt-backed media, checkout recovery and selected Android implementation
 
-**State:** code present; focused checks pass; full regression and Android CI
-verification are being completed. No production deployment or release signing.
+**State:** implementation committed/pushed; full API regression, production web
+build, expanded browser checks and an actual branch Android build/unit/lint CI
+have passed. No production deployment or release signing.
 User selected TWA in the Android architecture clarification (D-019).
 
 | Work | Purpose / connections | Evidence and honest boundary |
@@ -15,10 +16,10 @@ User selected TWA in the Android architecture clarification (D-019).
 | Signed post-write media receipts | Bind actual PHP-normalized bytes/path/MIME/dimensions/SHA-256 to the upload/business/expiry; browser metadata cannot fabricate a stored file | Actual PHP → Worker → D1 suite: 7 PASS; synthetic Worker-only contract: 30 PASS with flows |
 | Atomic media registration | Consume the token and insert media in one D1 batch; prevent replay and recover insert failure | Actual concurrent finalize, forged/copied receipt, failed-insert retry and signed-file quota competition tests |
 | Storage accounting | Gateway and D1 inserts compare current stored-byte totals atomically using the resolved request quota | Gateway concurrency covered; simultaneous plan/add-on limit changes and broader storage lifecycle still need acceptance |
-| Image writer | Bound header dimensions/pixels before GD; fail closed on decode/normalization failure; exclusive create/partial-write cleanup | 17 actual PHP HTTP tests PASS using explicit PHP 8.5 WASM fallback; native PHP 8.2/8.4 CI configured; not Apache/cPanel certification |
+| Image writer | Bound header dimensions/pixels before GD; fail closed on decode/normalization failure; exclusive create/partial-write cleanup | 17 actual PHP HTTP tests PASS using explicit PHP 8.5 WASM fallback; native PHP 8.2/8.4 CI jobs also passed in run 39773920769; not Apache/cPanel certification |
 | Hosted recovery | Privately save validated checkout URLs; owned check/resume verifies status, amount and safely reuses the same capability; no automatic replacement initialization | 7 real-D1 recovery tests PASS with synthetic authoritative responses; actual sandbox finality/reuse contract remains open |
-| Billing feedback | Add check/resume/support guidance; fully credit-funded success does not request bank proof; bank-only proof banner | Web typecheck; final browser/build checks pending |
-| Android project | TWA selected by user; exact-origin/intent filter, no JS bridge, pinned Gradle/SDK/Browser Helper, debug identity and release-signing guard | Source exists in android/; Android compilation/unit/lint configured, not yet recorded as passed |
+| Billing feedback | Add check/resume/support guidance; fully credit-funded success does not request bank proof; bank-only proof banner | Web typecheck/build PASS; 12 browser checks PASS, including same-checkout check/resume, no bank-proof prompt and one approved intent after simulated completion |
+| Android project | TWA selected by user; exact-origin/intent filter, no JS bridge, pinned Gradle/SDK/Browser Helper, debug identity and release-signing guard | Android CI job 119808337414 passed testDebugUnitTest, lintDebug and assembleDebug on source 0edc101; isolated debug APK retained seven days; no physical-device/store proof |
 | Domain association | Runtime-configured real package/certificate JSON; 503/no-store when absent; no production debug association | 41 Node safeguards/association tests PASS; real certificate/HTTPS/on-device association still missing |
 
 **Rollout:** migration 0018 plus coordinated new PHP/Worker/web clients is
@@ -33,6 +34,59 @@ store/payment/privacy policy review, actual provider/DNS/hosting acceptance and
 full restore/production release authorization. Internal source is not a store
 submission or legal/financial approval. See android/README.md and the release
 runbook; never paste credentials in chat or Git.
+
+### Verification closure — 2026-10-22
+
+- Full Worker suite: **327 PASS / 34 files, 260.60 seconds**. The real PHP
+  receipt suite ran using the explicit WASM command in this sandbox; no hidden
+  skip or production state was used.
+- Expanded browser suite: **12 PASS / 1.4 minutes**, across desktop Chromium and
+  Pixel-7-sized Chromium. Added check/resume/completion flow is explicitly
+  **development-only simulation**, not provider sandbox or physical Android.
+  Its first run exposed an ambiguous test locator (two valid status regions);
+  scoping to payment feedback corrected the test. No application fault was hidden.
+- Node safeguards: **41 PASS / 0 skipped**. Worker/web typechecks, standalone
+  production web build, interactive nesting audit, 29.2-KB/32-KB route CSS budget,
+  both npm audits (zero findings) and production Worker bundle dry-run passed.
+- [Actual branch CI run 39773920769](https://github.com/CyberElias-TechPros/cybershop/actions/runs/39773920769)
+  completed **7/7 jobs successfully** on source
+  `0edc101adb55b5a864df2dd366bf3c2c656cccec`. It includes native PHP 8.2/8.4,
+  Worker tests, web build, original 10 browser checks, release safeguards and
+  Android debug compilation/unit tests/lint. The initial SDK-setup failure in
+  run 39773668904 was before compilation; using the Ubuntu-24.04 runner's
+  preinstalled SDK fixed that setup and the next actual build passed.
+- [Internal Android artifact](https://github.com/CyberElias-TechPros/cybershop/actions/runs/39773920769/artifacts/12422994572)
+  is a seven-day debug candidate, **not a release-signed or approved binary**.
+  CI now also records its source/checksum/public signer metadata and contains
+  an explicit unsigned-release denial regression. Those added steps' outcomes
+  belong to the subsequent exact-source CI run, not the older run above.
+- Added defect form and contribution/PR review requirements; YAML parsed and
+  required field IDs/uniqueness checked. These do not provision actual reviewers,
+  branch protection, a private vulnerability intake or a staffed support SLA.
+- Added coordinated migration 0018 PHP/Worker/web cutover and migration 0019
+  capability/privacy/reconciliation instructions to the release runbook.
+
+**Provenance:** sandbox Node `22.22.3`, npm `10.9.8`; verification recorded
+2026-10-22 UTC (local Lagos UTC+1). API/runtime source matches commit `0edc101`;
+the expanded 12-case browser suite ran the later working-tree test addition
+without runtime-source changes. Final pushed source and check results are
+immutable in the GitHub CI commit/run links. Lockfile SHA-256 values:
+
+```text
+worker/package-lock.json 432c4d47fafe2d15d837b6b5da24a5e52ba8aec7d1afc35415af2df87720631c
+web/package-lock.json    1a2caba198e98fbe22c007e9dc769c5581e6ce99c8530bf7d3464f9af9e8b1ea
+Gradle wrapper JAR       3dc39ad650d40f6c029bd8ff605c6d95865d657dbfdeacdb079db0ddfffedf9f
+```
+
+Commands: `npm test` (Worker, with explicit `GATEWAY_TEST_PHP` fallback);
+`npm run test:e2e` and `npm run build` (web, sequentially);
+`npm run typecheck` (each package); `node --test scripts/tests/*.test.mjs`;
+`node scripts/web-audit/{jsx-nesting,css-budget}.mjs web` (each audit separately);
+`npm audit --audit-level=moderate` (each package);
+`wrangler deploy --env production --dry-run` (Worker only, **no deployment**).
+CI Android command: `./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug`.
+No earlier historical batch's pending/absent implementation statement overrides
+this dated verification closure.
 
 ## Batch 2 — durable operations, browser journeys and atomic payments
 
@@ -182,7 +236,7 @@ Read [release-safety.md](../operations/release-safety.md) before any live rollou
 3. Extend browser journeys to catalogue/media, discovery/WhatsApp, buyer data rights, staff permissions, admin review and accessibility failure paths (R25/R22).
 4. Add bounded/checkpointed hourly sweeps, external failure/cron-silence integration and an isolated full restore/compatible rollback rehearsal (R27/R10.32).
 5. Rehearse real provider/DNS mail acceptance, custom endpoint idempotency and independent outbox-key rotation (R21).
-6. Complete audience/low-data/accessibility validation and approved Android architecture spike, then implement the selected client and physical-device/store acceptance track (R02/R03/R29–R34).
+6. Complete audience/low-data/accessibility validation and the selected TWA client's physical-device/store acceptance track (R02/R03/R29–R34).
 
 ### Owner/external evidence needed
 
@@ -194,7 +248,7 @@ Read [release-safety.md](../operations/release-safety.md) before any live rollou
 | Legal/financial deposit scope and store purchase rules | Requires approved money responsibilities and current channel-policy assessment |
 | cPanel/Apache/GD and full media/backup restore | Requires actual target host and isolated restore environment |
 | Delivered real email and support rota | Requires verified DNS/provider and staffed operations |
-| Android route, signing custody, developer accounts and physical devices | Requires scope/ownership/device evidence before reproducible final packaging and review |
+| Android signing custody, developer accounts and physical devices | TWA route is selected; confirmed package/ownership/device evidence is still required before release packaging and review |
 | Store approval/publication | Only an actual channel review result establishes acceptance |
 
-The register currently has **535 tasks**: **38 locally verified checkpoints**, **67 existing/implemented-code checkpoints**, and **430 unaccepted actions**. A code checkpoint is not production approval. Batch 2 appended 32 narrowly scoped implementation/risk checkpoints and retained broader provider, finance, device and production acceptance tasks as open. Historical tasks were not deleted to inflate completion.
+The register currently has **535 tasks**: **42 locally verified checkpoints**, **68 existing/implemented-code checkpoints**, and **425 unaccepted actions**. A code checkpoint is not production approval. Batch 2 appended 32 narrowly scoped implementation/risk checkpoints and retained broader provider, finance, device and production acceptance tasks as open. Historical tasks were not deleted to inflate completion.

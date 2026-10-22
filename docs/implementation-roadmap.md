@@ -22,7 +22,7 @@
 
 ## What is actually done
 
-**Task-register snapshot:** 535 steps in 35 packages: 38 locally verified checkpoints, 67 existing/implemented-code checkpoints, and 430 unaccepted implementation/validation actions. Updated 2026-10-22; code checkpoints are not production acceptance. See the [implementation progress log](roadmap/progress.md). The baseline verification table below is historical.
+**Task-register snapshot:** 535 steps in 35 packages: 42 locally verified checkpoints, 68 existing/implemented-code checkpoints, and 425 unaccepted implementation/validation actions. Updated 2026-10-22; code checkpoints are not production acceptance. See the [implementation progress log](roadmap/progress.md). The baseline verification table below is historical.
 
 ### Repository-confirmed implementation
 
@@ -200,8 +200,8 @@ Each package states its **why, intended result, connections, accountable roles, 
 - [ ] **R01.06 [TODO]** Reconcile each historical audit finding with current code; do not rebuild already-implemented features.
 - [ ] **R01.07 [TODO]** Create project-board issues using this roadmap's stable task IDs and dependencies.
 - [ ] **R01.08 [TODO]** Record commit, runtime versions, lockfiles and commands for every verification run.
-- [ ] **R01.09 [TODO]** Create defect template with persona, URL, device, expected/actual result and sanitized repro.
-- [ ] **R01.10 [TODO]** Define review rules for secrets, tenancy, migrations, tests and sensitive actions.
+- [x] **R01.09 [VERIFIED]** Create defect template with persona, URL, device, expected/actual result and sanitized repro.
+- [x] **R01.10 [CODE]** Define review rules for secrets, tenancy, migrations, tests and sensitive actions.
 - [ ] **R01.11 [TODO]** Review status weekly; require dated evidence and a reviewer before acceptance.
 
 <a id="r02"></a>
@@ -254,7 +254,7 @@ Each package states its **why, intended result, connections, accountable roles, 
 - [ ] **R03.06 [TODO]** Compare TWA/PWA, Capacitor and Kotlin/Compose against device APIs, offline needs, policies, cost and maintenance.
 - [ ] **R03.07 [TODO]** Run TWA feasibility spike for origin trust, cookies, uploads, audio, WhatsApp, Paystack return and Back.
 - [ ] **R03.08 [TODO]** Recommend TWA only if spike and current channel-policy review pass; otherwise approve one alternative.
-- [ ] **R03.09 [TODO]** Record Android ADR explicitly superseding earlier exclusion for approved scope only.
+- [x] **R03.09 [CODE]** Record Android ADR explicitly superseding earlier exclusion for approved scope only.
 - [ ] **R03.10 [TODO]** Decide buyer/vendor/staff parity and whether admin remains web-only initially.
 - [ ] **R03.11 [TODO]** Choose launch media driver, capacity limits and migration path.
 - [ ] **R03.12 [TODO]** Document non-goals: reading WhatsApp messages, verified sale attribution, escrow and unsupported offline mutations.
@@ -1057,9 +1057,9 @@ Each package states its **why, intended result, connections, accountable roles, 
 **Acceptance / deliverable:** One reproducible internal app securely launches approved origin on real devices.
 
 - [ ] **R29.01 [TODO]** Approve architecture from R03 with current policy eligibility and required device features.
-- [x] **R29.02 [CODE]** Create android/ only after route decision; amend route-specific steps if not TWA.
+- [x] **R29.02 [VERIFIED]** Create android/ only after route decision; amend route-specific steps if not TWA.
 - [ ] **R29.03 [TODO]** Choose permanent package/application ID, label, version scheme and current min/target SDK.
-- [ ] **R29.04 [TODO]** Pin build tools/generator/JDK/SDK and document reproducible clean build.
+- [x] **R29.04 [CODE]** Pin build tools/generator/JDK/SDK and document reproducible clean build.
 - [x] **R29.05 [CODE]** Set staging/live HTTPS launch URL, origin/scope/network policy; prohibit cleartext live traffic.
 - [x] **R29.06 [CODE]** Separate debug/internal signing from release signing; no keystores/passwords in Git.
 - [ ] **R29.07 [TODO]** Assign release-key custody, encrypted backup, recovery and Play signing strategy if applicable.
@@ -1071,8 +1071,8 @@ Each package states its **why, intended result, connections, accountable roles, 
 - [ ] **R29.13 [TODO]** Have second engineer reproduce build and review license/source instructions.
 - [ ] **R29.14 [TODO]** For Capacitor/native implement safe navigation/bridge/scoped auth storage first; never bundle INTERNAL_SECRET.
 - [x] **R29.15 [CODE]** Add a minimal TWA launcher with exact HTTPS-origin filtering, stripped incoming intent extras and custom-tab fallback instead of a privileged WebView.
-- [x] **R29.16 [CODE]** Serve runtime-configured Digital Asset Links JSON; fail 503 without valid identities and refuse debug certificates on the production domain.
-- [x] **R29.17 [CODE]** Add pinned Android debug build/unit/lint CI with checksum-verified Gradle distribution and short-lived internal artifacts.
+- [x] **R29.16 [VERIFIED]** Serve runtime-configured Digital Asset Links JSON; fail 503 without valid identities and refuse debug certificates on the production domain.
+- [x] **R29.17 [VERIFIED]** Add pinned Android debug build/unit/lint CI with checksum-verified Gradle distribution and short-lived internal artifacts.
 - [x] **R29.18 [CODE]** Fail release tasks without explicit approval and protected signing variables; keep debug application identity separate.
 - [ ] **R29.19 [TODO]** Confirm the existing Galaxy package/application ID, installed signing certificate and update lineage before adopting the proposed release identity.
 
@@ -1148,7 +1148,7 @@ Each package states its **why, intended result, connections, accountable roles, 
 
 **Acceptance / deliverable:** Signed exact-source candidates pass device/security/accessibility regression.
 
-- [ ] **R32.01 [TODO]** Add clean Android build, lint and route-appropriate unit/instrumentation CI.
+- [x] **R32.01 [CODE]** Add clean Android build, lint and route-appropriate unit/instrumentation CI.
 - [ ] **R32.02 [TODO]** Protect signing jobs/secrets from untrusted PRs with least privilege.
 - [ ] **R32.03 [TODO]** Build signed Play AAB and other channel-required artifact; verify checksum/signature.
 - [ ] **R32.04 [TODO]** Increment versionCode/versionName and record commit/web compatibility/release notes.

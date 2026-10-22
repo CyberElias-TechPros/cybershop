@@ -142,6 +142,25 @@ jobs:
         run: |
           set -o pipefail
           ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug 2>&1 | tee /tmp/cybershop-android-build.log
+      - name: Record internal candidate identity and signature
+        working-directory: android
+        run: |
+          set -o pipefail
+          mkdir -p app/build/reports
+          {
+            echo 'Internal debug candidate only: not a signed store release or device acceptance.'
+            echo "Source commit: $GITHUB_SHA"
+            sha256sum app/build/outputs/apk/debug/app-debug.apk
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
+          } | tee app/build/reports/internal-candidate.txt
+      - name: Prove unsigned release requests fail closed
+        working-directory: android
+        run: |
+          if ./gradlew --no-daemon bundleRelease > /tmp/cybershop-release-denial.log 2>&1; then
+            echo '::error::Unsigned release unexpectedly succeeded'
+            exit 1
+          fi
+          grep -F 'Release requires approved package/origin/policy' /tmp/cybershop-release-denial.log
       - name: Surface sanitized debug-build diagnostics in checks
         if: failure()
         run: |

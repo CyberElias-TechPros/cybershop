@@ -35,6 +35,17 @@ certificate to be associated on an **owned staging** host for a trusted,
 address-bar-free launch. Until association works, browser UI is the honest
 fallback. A generic desktop viewport is not an Android acceptance test.
 
+## Recorded nonproduction build evidence
+
+[Branch CI run 39773920769](https://github.com/CyberElias-TechPros/cybershop/actions/runs/39773920769)
+on source `0edc101adb55b5a864df2dd366bf3c2c656cccec` passed debug compilation,
+JUnit tests and Android lint. Its seven-day `android-internal-0edc101...` artifact
+is an internal debug candidate. Current CI additionally writes APK SHA-256 and
+public signing metadata to `app/build/reports/internal-candidate.txt` and checks
+that an unapproved unsigned `bundleRelease` request fails for the signing gate.
+These are build/security regressions, not distributed certificate association,
+physical-device acceptance, approved release signing or store review.
+
 ## Domain association
 
 Serve `/.well-known/assetlinks.json` from the exact HTTPS web origin. The Next

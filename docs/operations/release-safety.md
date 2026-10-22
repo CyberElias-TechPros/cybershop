@@ -86,7 +86,7 @@ The response schema was checked against Paystack's published OpenAPI repository 
 
 Tests use **synthetic contract-shaped fixtures**, not captured sandbox/live traffic. The client now validates the checkout origin/reference, rejects invalid money units, sets a 10-second timeout, sanitizes provider failures and verifies matching reference/NGN/integer kobo. Local activation/deposit handlers require exact amount equality. Pending/processing confirmations no longer become permanently failed solely because success is not yet reported.
 
-HMAC signature tests independently reject unsigned/tampered payloads and non-success event names. Provider timeouts and invalid responses throw, allowing webhook retries instead of committing false state. Concurrency-safe complete activation/refund/credit effects, live charge/refund, financial-scope review and provider reconciliation acceptance remain open.
+HMAC signature tests independently reject unsigned/tampered payloads and non-success event names. Provider timeouts and invalid responses throw, allowing webhook retries instead of committing false state. Migration 0016/0017 local concurrency and fault-injection tests cover atomic activation, refund records, credit holds and once-only credit return. Real provider charge/refund, financial-scope review and reconciliation acceptance remain open.
 
 ## PHP gateway corrections and compatibility
 
@@ -106,7 +106,7 @@ PHP_COMMAND='npx --yes --package=@php-wasm/cli@3.1.60 php-wasm-cli' \
 
 The WASM CLI executed successfully on this sandbox's Node 22, but its package declares a newer Node engine and emits engine warnings at installation. It is an optional local diagnostic, not a pinned production dependency or the CI PHP installation strategy.
 
-The 15 real PHP HTTP tests cover upload/serve, CORS/preflight, bad origin/signature/expiry, tenant/folder scope, traversal, MIME/extension, size/empty file and overwrite protection. The built-in server does not enforce `.htaccess`; cPanel/Apache permissions, GD variants, end-to-end Worker→PHP→finalize with actual hosting, audio/private-file architecture and operational deletion still require staging acceptance.
+The 17 real PHP HTTP tests cover upload/serve, CORS/preflight, bad origin/signature/expiry, tenant/folder scope, traversal, MIME/extension, size/empty file and overwrite protection. The built-in server does not enforce `.htaccess`; cPanel/Apache permissions, GD variants, end-to-end Worker→PHP→finalize with actual hosting, audio/private-file architecture and operational deletion still require staging acceptance.
 
 ## Recovery-code and dependency security follow-up
 
@@ -193,8 +193,9 @@ Do not promote solely because clean-schema local tests pass.
 - A pending hosted Paystack plan intent blocks another plan checkout (409).
   Hourly abandonment expires bank drafts only. Initialization timeout can leave
   an unresolved hosted intent and held credit. Inspect authoritative provider
-  state; **do not manually invalidate/recreate it blindly**. Safe hosted resume,
-  cancel and reconciliation UX remains open (R10.29).
+  state; **do not manually invalidate/recreate it blindly**. Saved hosted checkout verification/resume is implemented behind migration 0019
+  (see below); actual provider reuse/finality acceptance and cancellation
+  without a saved checkout capability remain open (R10.29).
 - Legacy fully credit-funded rows may still carry the old gross `payments.amount`.
   Receipt cash is derived from captured gross less credit; historical admin
   revenue/export totals still require explicit finance reconciliation. No silent
@@ -238,3 +239,83 @@ URLs until stale expiry; accept that policy or tighten it before release.
 There is no silent home-only inventory fallback. Verify actual proxy/cache
 headers, cold-start outage behavior and crawler access in staging. Local tests
 and a warning-free build do not establish live SEO availability.
+
+
+## Media integrity migration 0018: coordinated cutover
+
+This section extends the scoped-token rollout above. The upgraded PHP gateway,
+Worker and web client must move together; protocol compatibility has not been
+proven on production hosting. Run the native-PHP CI and real
+PHP→Worker→isolated-D1 suite on the release source first.
+
+1. Obtain the owner's release window and tested backup/restore evidence. Stop
+   new upload starts using an operator-controlled maintenance mechanism and
+   allow in-flight 10-minute upload tokens to expire. No new maintenance switch
+   is supplied by this migration; do not assume one exists.
+2. Verify the PHP host has GD support for the supported formats and sufficient
+   memory for the accepted 16-megapixel/10,000-pixel-edge image ceiling. PHP
+   rejects oversized dimensions before full decode and rejects missing GD or
+   failed decode rather than trusting caller metadata.
+3. Apply migration `0018_media_integrity.sql` to the intended database using the
+   protected migration process. It adds a nullable upload-token claim and unique
+   index. Existing media rows are retained; no receipt is retroactively invented.
+4. Deploy the receipt-producing PHP gateway, updated Worker and updated web
+   client while uploads remain paused. Use the same approved `GATEWAY_SECRET`
+   on the Worker and PHP host; do not put it in a web environment or browser.
+   Configure exact allowed origins and the existing scoped folder authorization.
+5. Test a non-sensitive synthetic image through the real web→Worker token→PHP
+   write→Worker registration flow. Verify the delivered file's bytes/dimensions,
+   receipt replay denial, cross-tenant denial, quota failure and error cleanup.
+   A receipt binds the normalized file digest, type, size, dimensions, business,
+   path and token; successful receipt registration and token consumption are an
+   atomic D1 transaction. A local test does not establish Apache permissions.
+6. Only reopen uploads after the actual hosted path passes. Monitor unsigned or
+   expired receipt errors from old tabs; tell users to reload and retry. Older
+   clients without a receipt must fail closed, not silently downgrade integrity.
+
+Files written by PHP but not registered after network/DB failure can remain on
+the media host. Neither this migration nor PHP exclusive-write protection is an
+orphan-file deletion service. Reconcile against D1 with an approved dry-run,
+retention and recovery plan before any destructive cleanup. The unique claim
+prevents duplicate registration, not unauthorized filesystem access.
+
+A Worker-only rollback to old unverified registration code weakens integrity;
+do not do it while uploads are open. Keep the coordinated versions or pause
+uploads and use an owner-reviewed recovery plan. Never drop migration columns
+or unique constraints as a casual rollback.
+
+## Hosted checkout migration 0019: private recovery capabilities
+
+Apply `0019_hosted_checkout_recovery.sql` before serving the upgraded Worker.
+It creates private `payment_checkouts` storage; do not include this table's
+checkout URLs in public listings, receipts, support exports or logs. Protect it
+in database backups with the same access controls as other payment data.
+
+- New successful hosted initialization saves a strictly validated provider URL.
+  Existing pending rows are deliberately **not backfilled** from guesses.
+- The owning vendor (or authorized staff) can check an existing intent using
+  `POST /api/vendor/payments/:id/recover`. Server verification checks the exact
+  reference, NGN and cash amount before any approved state or saved URL is
+  returned. Restricted-store users may recover their existing payment; this
+  does not reinstate moderation-suspended stores.
+- Approval follows the existing atomic activation path. A provider's explicitly
+  terminal failure releases a held credit balance once. Timeout, malformed
+  response and amount/reference mismatch do not return a checkout URL or
+  silently release credit; mismatches need finance review. Actual Paystack
+  finality and eventual-settlement policy must be confirmed in test mode.
+- Pending/processing status may return the **same** saved checkout while it is
+  under the local 24-hour reuse bound. This bound is **not a claim about the
+  provider's checkout expiration or reuse guarantee**. Recovery never creates
+  a replacement provider initialization.
+- Missing/old saved capability or initialization timeout remains a support and
+  authoritative-provider reconciliation case. Do not instruct a vendor to pay
+  again, mark failed or manually release holds merely because no URL exists.
+- The billing UI separates bank-transfer proof from hosted payment recovery and
+  tells a fully credit-funded vendor no cash is due. Verify those exact states,
+  webhooks racing a return, tab reloads and actual provider cancellation on
+  staging before accepting the checkout work package.
+
+No real provider payment, remote migration or hosted cutover was executed in
+this implementation pass. Android association/signing has a separate owner
+identity gate in `android/README.md`; backend/web rollout must not invent a
+release certificate to make the TWA appear verified.

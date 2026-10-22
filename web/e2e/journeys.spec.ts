@@ -136,3 +136,50 @@ test('unconfigured Android association fails closed without invented certificate
   expect(response.headers()['cache-control']).toBe('no-store');
   expect(await response.json()).toEqual({ error: 'Android domain association is not configured.' });
 });
+
+test('billing checks and resumes one existing synthetic checkout, then shows its paid state', async ({ page }, info) => {
+  const registered = await page.request.post('/api/auth/register', { data: {
+    role: 'vendor', name: 'Checkout Browser Vendor', email: `checkout-${info.project.name}@browser.test`,
+    password, business_name: `Checkout Shop ${info.project.name}`, category_slug: 'fashion', whatsapp_number: '08031111111',
+  } });
+  expect(registered.status(), await registered.text()).toBe(200);
+  const free = await page.request.post('/api/vendor/payment-intent', { data: { plan_slug: 'free', method: 'bank_transfer' } });
+  expect(free.status(), await free.text()).toBe(200);
+  await page.goto('/dashboard/billing');
+  let initializations = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === '/api/vendor/payment-intent' && request.method() === 'POST') initializations++;
+  });
+  await page.getByRole('button', { name: 'Pay with card', exact: true }).first().click();
+  await expect(page).toHaveURL(/\/paystack\/mock\?ref=/);
+  const checkoutUrl = page.url();
+  const reference = new URL(checkoutUrl).searchParams.get('ref');
+  expect(reference).toBeTruthy();
+  // This is the explicit development-only checkout, not a real provider sandbox.
+  await expect(page.getByText('DEMO MODE', { exact: true })).toBeVisible();
+  await page.getByRole('link', { name: 'Cancel and go back' }).click();
+  const recovery = page.getByRole('region', { name: `Recover payment ${reference}` });
+  await expect(recovery).toBeVisible();
+  await expect(page.getByRole('button', { name: /Upload bank transfer proof/ })).toHaveCount(0);
+  const check = page.waitForResponse((response) => /\/api\/vendor\/payments\/\d+\/recover$/.test(new URL(response.url()).pathname));
+  await recovery.getByRole('button', { name: 'Check payment status' }).click();
+  const checked = await check;
+  expect(checked.status(), await checked.text()).toBe(200);
+  expect((await checked.json()).status).toBe('pending');
+  await expect(page.getByRole('status').filter({ hasText: 'This payment is not yet confirmed' })).toContainText('do not start another payment');
+  await recovery.getByRole('button', { name: 'Resume same checkout' }).click();
+  await expect(page).toHaveURL(checkoutUrl);
+  expect(initializations).toBe(1);
+  await page.getByRole('button', { name: 'Pay now (simulate)' }).click();
+  await expect(page.getByText('Payment received and verified', { exact: false })).toBeVisible();
+  await page.getByRole('link', { name: 'Go to billing', exact: true }).click();
+  await expect(page.getByRole('region', { name: `Recover payment ${reference}` })).toHaveCount(0);
+  const billing = await page.request.get('/api/vendor/plans');
+  expect(billing.status()).toBe(200);
+  const payments = (await billing.json()).payments.filter((payment: { reference: string }) => payment.reference === reference);
+  expect(payments).toHaveLength(1);
+  expect(payments[0].status).toBe('approved');
+  await page.reload();
+  await expect(page.getByRole('region', { name: `Recover payment ${reference}` })).toHaveCount(0);
+  expect(initializations).toBe(1);
+});

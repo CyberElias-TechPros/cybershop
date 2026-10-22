@@ -128,11 +128,11 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
 - **Risk:** PHP-specific runtime behavior (ini limits, mod_php vs LiteSpeed, GD presence) only surfaces on the host → deployment guide §3.5 + §7 checklist gate it.
 - **Status:** Final.
 
-## D-017 — Paystack activation: server-to-server verification, not webhook signatures
-- **Decision:** The webhook handler extracts only the transaction `reference` from the (untrusted) body, then calls Paystack `GET /transaction/verify/{reference}` with the secret key; activation requires the authoritative API to report success. The webhook body is never trusted for state changes.
-- **Evidence:** Plan §13.1 ("never trust client-side claims — payment success, vendor_id, role"); Paystack's own recommended verification pattern; stronger than header signatures because a forged webhook cannot reference a charge that didn't succeed.
-- **Risk:** Each webhook triggers an outbound Paystack API call (cost ≈ 0 on free; rate-limited by Paystack) — accepted.
-- **Status:** Final.
+## D-017 — Paystack activation: signature authentication AND authoritative verification
+- **Decision (amended 2026-10-22):** Require Paystack HMAC authentication for the webhook and only accept `charge.success`. Extract its reference, then independently call Paystack `GET /transaction/verify/{reference}` with the secret key. Activation requires authoritative success, matching reference/NGN and exact integer-kobo local amount. A valid signature alone does not authorize entitlement changes; an unsigned callback is not accepted merely because verification exists.
+- **Implementation:** Signature regression tests, strict contract parsing and atomic activation/credit migrations. Provider errors remain retryable; browser-return claims are never payment evidence.
+- **Risk:** Verification requires a provider request and can time out. Preserve pending state and reconcile rather than create replacement payments blindly. Real provider finality, refund and financial acceptance remain open.
+- **Status:** Repository behavior implemented and automatically tested; not a live-money/provider acceptance record. Supersedes the earlier signature-versus-verification wording.
 
 ## D-018 — Design v3 "Fluid Material" layer — scope decisions (2026-09-11, owner blueprint)
 - **Decision:** Owner supplied a full "luxury immersion" blueprint. It was implemented where
@@ -199,6 +199,9 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
   using Android Browser Helper with custom-tab fallback, no privileged WebView
   bridge and no embedded internal API secret. User explicitly selected the
   browser-powered/TWA option in the architecture clarification.
+- **Scope:** Supersedes earlier Android-delivery exclusion only for the selected
+  browser-powered TWA over existing web journeys. It does not approve a native
+  bridge, new permissions, unreviewed money flows or a store release.
 - **Implementation:** `android/`; guarded exact-origin launcher and intent
   sanitization, debug/release identity separation, fail-closed release-signing
   gate and server-configured Digital Asset Links endpoint. See
@@ -211,4 +214,5 @@ Each entry: Decision · Evidence · Reason · Risk · Status.
   of ownership of that store identity. Current channel/payment/privacy policy,
   signing custody, HTTPS association and actual Samsung acceptance remain open.
 - **Status:** Architecture selected; internal source present, not distribution
-  acceptance. CI/build and device evidence must be recorded separately.
+  acceptance. Debug build/unit/lint passed in branch CI run 39773920769;
+  device and distribution evidence remain separate.

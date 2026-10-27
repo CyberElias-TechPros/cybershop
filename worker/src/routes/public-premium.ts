@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../config';
+import { buyerDepositsEnabled } from '../config';
 import { rateLimit } from '../lib/ratelimit';
 import { badRequest, notFound, validationError, forbidden } from '../lib/errors';
 import { getSession, requireUser } from '../lib/auth';
@@ -112,6 +113,7 @@ app.post('/threads/:token/messages', async (c) => {
  */
 app.post('/deposits', async (c) => {
   const env = c.env;
+  if (!buyerDepositsEnabled(env)) throw forbidden('New buyer deposits are currently unavailable. Contact the seller on WhatsApp and follow the safety guide.');
   await rateLimit(env, 'deposit', IP(c), 8, 3600);
   const body = await c.req.json().catch(() => null);
   if (!body || typeof body !== 'object') throw badRequest('Invalid request.');

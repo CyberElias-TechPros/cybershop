@@ -35,7 +35,7 @@ export default function SecurityPage() {
 
   // Enrolment state
   const [secret, setSecret] = useState<string | null>(null);
-  const [uri, setUri] = useState<string | null>(null);
+  const [qrImage, setQrImage] = useState<string | null>(null);
   const [code, setCode] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
@@ -62,7 +62,9 @@ export default function SecurityPage() {
     try {
       const d = await capi<{ secret: string; uri: string }>('/auth/2fa/setup', { method: 'POST', body: '{}' });
       setSecret(d.secret);
-      setUri(d.uri);
+      // Generate locally: an external QR service would receive the account's TOTP secret.
+      const { toDataURL } = await import('qrcode');
+      setQrImage(await toDataURL(d.uri, { width: 180, margin: 2 }));
     } catch (e) {
       setError(extractError(e));
     } finally {
@@ -80,7 +82,7 @@ export default function SecurityPage() {
       });
       setBackupCodes(d.backup_codes);
       setSecret(null);
-      setUri(null);
+      setQrImage(null);
       setCode('');
       setNotice(`Two-factor is on. ${d.revoked_sessions} older session(s) were signed out.`);
       await load();
@@ -94,7 +96,8 @@ export default function SecurityPage() {
   async function disable2fa() {
     const password = prompt('Enter your password to turn off two-factor authentication:');
     if (!password) return;
-    const twoFaCode = prompt('Enter the current 6-digit code (optional):', '');
+    const twoFaCode = prompt('Enter an unused authenticator code or a recovery code:', '');
+    if (!twoFaCode?.trim()) return;
     setBusy(true);
     setError('');
     try {
@@ -178,10 +181,10 @@ export default function SecurityPage() {
               cannot scan, type the key instead.
             </p>
             <div className="qr-box">
-              {/* Server-rendered QR so the secret never round-trips through our own storage. */}
+              {/* QR generated locally; never send the enrolment secret to an external image service. */}
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(uri ?? '')}`}
+                src={qrImage ?? undefined}
                 alt="QR code for your authenticator app"
                 width={180}
                 height={180}
@@ -207,7 +210,7 @@ export default function SecurityPage() {
               <button className="btn btn-primary" disabled={busy || code.length !== 6} onClick={confirmSetup}>
                 Confirm and turn on
               </button>
-              <button className="btn btn-ghost" onClick={() => { setSecret(null); setUri(null); }}>
+              <button className="btn btn-ghost" onClick={() => { setSecret(null); setQrImage(null); }}>
                 Cancel
               </button>
             </div>

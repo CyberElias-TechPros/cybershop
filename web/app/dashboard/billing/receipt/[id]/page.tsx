@@ -14,6 +14,11 @@ interface Payment {
   kind: string;
   amount: number;
   amount_display: string;
+  gross_display: string;
+  cash_display: string;
+  credit_display: string;
+  credit_kobo: number;
+  credit_returned_at: string | null;
   method: string;
   status: string;
   created_at: string;
@@ -23,6 +28,7 @@ interface Payment {
 }
 
 const METHOD_LABEL: Record<string, string> = {
+  manual: 'Platform referral credit / manual record',
   bank_transfer: 'Bank transfer',
   paystack: 'Paystack (card)',
 };
@@ -68,9 +74,11 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
             <dt>Confirmed</dt>
             <dd>{p.verified_at ? new Date(p.verified_at).toLocaleString('en-NG') : '— pending verification'}</dd>
           </div>
+          <div><dt>Plan / add-on price</dt><dd>{p.gross_display}</dd></div>
+          {p.credit_kobo > 0 && <div><dt>Referral credit applied{p.credit_returned_at ? ' (returned)' : ''}</dt><dd>{p.credit_display}</dd></div>}
           <div className="receipt-total">
-            <dt>Amount</dt>
-            <dd>{p.amount_display}</dd>
+            <dt>Cash amount{p.status === 'approved' ? ' confirmed' : p.status === 'refunded' ? ' marked refunded' : ' due'}</dt>
+            <dd>{p.cash_display}</dd>
           </div>
         </dl>
         <p className="receipt-note">

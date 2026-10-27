@@ -8,8 +8,8 @@ export default defineConfig({
     include: ['src/tests/**/*.test.ts'],
     testTimeout: 60000,
     hookTimeout: 120000,
-    // Integration files share one live worker port + D1 state dir: they must
-    // never run concurrently (a second boot would kill/wipe the first's DB).
+    // Each integration suite owns its port/config/D1 state. Keep execution
+    // serial to cap workerd memory/CPU on modest CI runners.
     fileParallelism: false,
   },
 });

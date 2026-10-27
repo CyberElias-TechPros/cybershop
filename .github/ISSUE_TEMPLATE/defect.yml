@@ -1,0 +1,83 @@
+name: Defect report
+description: Report a reproducible web or Android problem with sanitized evidence.
+title: "[Defect]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not post passwords, session cookies, reset/verification links, private keys,
+        personal IDs, customer details, live payment proofs or provider credentials.
+        Report suspected security vulnerabilities privately through the repository owner's
+        approved channel; do not publish exploit details in a public issue. If no private
+        channel is confirmed, contact the owner privately before sending sensitive evidence.
+  - type: dropdown
+    id: persona
+    attributes:
+      label: Affected persona
+      options:
+        - Guest or buyer
+        - Vendor or service provider
+        - Staff or support operator
+        - Administrator or release operator
+        - Other (explain in context)
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Surface
+      options:
+        - Web browser
+        - Android internal TWA
+        - Android distributed app (include confirmed channel below)
+        - API, media gateway or scheduled operation
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Environment and device
+      description: Include date/time/timezone, dev/staging/production, commit or app version, device/OS, browser/provider, network conditions and accessibility settings. Say when something is unknown.
+      placeholder: "Synthetic example: staging; commit abc1234; Android 15; browser version; TalkBack off; mobile data."
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Sanitized route or screen
+      description: Prefer a route pattern such as /dashboard/billing. Remove query strings, tokens, private IDs, payment capabilities and personal information.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Include safe prerequisites, account role and exact steps using synthetic data. Never ask another tester to make a live charge or repeat a possibly pending payment.
+      placeholder: "1. Sign in as a synthetic vendor on staging.\n2. Open…\n3. Select…"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result, impact and frequency
+      description: Include sanitized error text and whether it is repeatable. Explain loss of access, duplicate effects or affected journey without exposing customer data.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized evidence and roadmap IDs
+      description: Optional synthetic screenshots, minimal logs, related task IDs and workaround. Crop/redact before attaching; use approved private handling for production evidence.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Evidence safety
+      options:
+        - label: I removed secrets, personal data and private capabilities from this report and attachments.
+          required: true

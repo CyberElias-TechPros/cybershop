@@ -1,52 +1,92 @@
 name: Deploy backend
 
-# Deploys cybershop-api to Cloudflare Workers on push to main.
-# Requires repo secrets CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID
-# (Info account). The token must include the Info account in its scope.
-
 on:
   push:
     branches: [main]
     paths:
-      - "worker/**"
-      - ".github/workflows/deploy-backend.yml"
+      - 'worker/**'
+      - 'web/**'
+      - 'scripts/**'
+      - '.github/workflows/**'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: deploy-backend
+  group: production-backend
   cancel-in-progress: false
 
 jobs:
+  checks:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    needs: checks
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_BACKUP_PASSPHRASE: ${{ secrets.D1_BACKUP_PASSPHRASE }}
+      PRODUCTION_WORKER_URL: ${{ vars.PRODUCTION_WORKER_URL }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Preflight secrets
-        run: |
-          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
-            echo "::error::Missing CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID repo secrets (Info account). Add them to enable backend auto-deploy."
-            exit 1
-          fi
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: worker/package-lock.json
-      # node_modules must exist or wrangler bundling fails on node builtins.
+      - name: Require deployment credentials and backup encryption
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN" && test -n "$CLOUDFLARE_ACCOUNT_ID"
+          if [ "${#D1_BACKUP_PASSPHRASE}" -lt 32 ]; then
+            echo '::error::D1_BACKUP_PASSPHRASE must be set to a strong value of at least 32 characters'
+            exit 1
+          fi
+          node scripts/check-production-config.mjs
       - run: npm ci --no-fund --no-audit
         working-directory: worker
-      - run: npm run typecheck
-        working-directory: worker
-      - name: Apply D1 migrations
-        run: npx wrangler d1 migrations apply cybershop --remote
-        working-directory: worker
-      - run: npx wrangler deploy
-        working-directory: worker
-      - name: Verify health
+      - name: Verify production secret inventory (names only)
+        shell: bash
         run: |
-          body="$(curl -fsS https://cybershop-api.calm-disk-8311.workers.dev/healthz)"
-          echo "$body"
-          echo "$body" | grep -q '"ok":true' || { echo "::error::cybershop-api health check failed"; exit 1; }
+          set -euo pipefail
+          inventory="$RUNNER_TEMP/worker-secret-names.json"
+          (cd worker && npx wrangler secret list --env production) > "$inventory"
+          node scripts/check-production-config.mjs --secrets-file "$inventory"
+      - name: Export and encrypt pre-migration database backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          plain="$RUNNER_TEMP/cybershop.sql"
+          trap 'rm -f "$plain"' EXIT
+          (cd worker && npx wrangler d1 export cybershop --remote --env production --output "$plain")
+          test -s "$plain"
+          openssl enc -aes-256-cbc -salt -pbkdf2 -iter 200000 -in "$plain" \
+            -out "$RUNNER_TEMP/cybershop-${GITHUB_SHA}.sql.enc" -pass env:D1_BACKUP_PASSPHRASE
+          sha256sum "$RUNNER_TEMP/cybershop-${GITHUB_SHA}.sql.enc" > "$RUNNER_TEMP/backup.sha256"
+      - name: Preserve encrypted recovery artifact before migrating
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-d1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/cybershop-${{ github.sha }}.sql.enc
+            ${{ runner.temp }}/backup.sha256
+          if-no-files-found: error
+          retention-days: 14
+      - name: Apply production migrations
+        run: npx wrangler d1 migrations apply cybershop --remote --env production
+        working-directory: worker
+      - name: Deploy exact tested commit with explicit production profile
+        run: npx wrangler deploy --env production --var "RELEASE_SHA:${GITHUB_SHA}"
+        working-directory: worker
+      - name: Verify deployed release readiness
+        run: node scripts/verify-readiness.mjs
+        env:
+          EXPECTED_RELEASE_SHA: ${{ github.sha }}

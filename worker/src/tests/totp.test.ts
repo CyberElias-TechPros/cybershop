@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { randomBase32Secret, totpCode, verifyTotp, totpUri, generateBackupCodes, spentCodeHash, TOTP_PERIOD } from '../lib/totp';
+import { randomBase32Secret, totpCode, verifyTotp, totpUri, generateBackupCodes, parseSecondFactor, spentCodeHash, TOTP_PERIOD } from '../lib/totp';
 
 /**
  * TOTP is the thing standing between a stolen admin password and someone
@@ -108,5 +108,22 @@ describe('TOTP (second factor for admin accounts)', () => {
     expect(codes).toHaveLength(10);
     expect(new Set(codes).size).toBe(10);
     for (const c of codes) expect(c).toMatch(/^[0-9A-F]{5}-[0-9A-F]{5}$/);
+  });
+});
+
+describe('second-factor input classification regression', () => {
+  // These previously failed: zero numeric characters skipped recovery entirely,
+  // while exactly six numeric characters accidentally selected the TOTP branch.
+  it.each(['ABCDE-FFFFF', '12345-6ABCD', '12345-67890', 'ABC12-DEF34'])('preserves recovery code %s', (code) => {
+    expect(parseSecondFactor(code)).toEqual({ kind: 'recovery', code });
+  });
+  it('canonicalizes lowercase, whitespace and omitted separator', () => {
+    expect(parseSecondFactor('  abcde f1234  ')).toEqual({ kind: 'recovery', code: 'ABCDE-F1234' });
+  });
+  it.each(['123456', '123 456', '123-456'])('accepts formatted TOTP %s', (input) => {
+    expect(parseSecondFactor(input)).toEqual({ kind: 'totp', code: '123456' });
+  });
+  it.each(['garbage123456', 'ABCDEF', '', null, 123456, '<123456>'])('rejects invalid factor %#', (input) => {
+    expect(parseSecondFactor(input).kind).toBe('invalid');
   });
 });

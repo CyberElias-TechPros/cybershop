@@ -6,9 +6,11 @@ import { emailAllowed } from './notifyprefs';
 /**
  * Types that mirror to email. Everything a user must not miss — money,
  * access, renewals, and (for vendors) leads. In-app always happens first;
- * email is best-effort and skipped silently when no provider is configured.
+ * email is queued durably when a provider is configured. Preferences are rechecked at dispatch.
  */
 const EMAIL_TYPES = new Set([
+  'security.2fa_enabled',
+  'security.2fa_disabled',
   'payment.approved',
   'payment.rejected',
   'payment.refunded',
@@ -57,33 +59,39 @@ function emailBodyFor(type: string, title: string, body: string, env: Env, data?
   } else if (type === 'review.new') {
     cta = { label: 'See the review', url: `${env.APP_URL}/dashboard` };
   }
-  return { html: mailHtml(esc(title), esc(body), cta), cta };
+  return { html: mailHtml(title, esc(body), cta), cta };
 }
 
 export async function notify(
   env: Env,
   args: { userId: number; type: string; title: string; body?: string; data?: Record<string, unknown> }
 ): Promise<void> {
-  await env.DB.prepare(
+  const inserted = await env.DB.prepare(
     `INSERT INTO notifications (user_id, type, title, body, data, created_at) VALUES (?, ?, ?, ?, ?, ?)`
   ).bind(args.userId, args.type, args.title, args.body ?? null, args.data ? JSON.stringify(args.data) : null, nowIso()).run();
 
-  if (!mailConfigured(env) || !EMAIL_TYPES.has(args.type)) return;
+  await mirrorNotification(env, Number(inserted.meta.last_row_id));
+}
+
+/** Mirror an existing durable notification; stable row ID deduplicates queue retries. */
+export async function mirrorNotification(env: Env, notificationId: number): Promise<boolean> {
+  if (!mailConfigured(env)) return false;
   try {
-    // Per-category opt-out. Checked before the address is looked up, because a
-    // muted category should cost nothing at all.
-    if (!(await emailAllowed(env, args.userId, args.type))) return;
-    const user = (await env.DB.prepare('SELECT email FROM users WHERE id = ? AND deleted_at IS NULL').bind(args.userId).first()) as { email: string } | null;
-    if (!user?.email) return;
-    const body = args.body ?? '';
-    const { html, cta } = emailBodyFor(args.type, args.title, body, env, args.data);
-    await sendEmail(env, {
-      to: user.email,
-      subject: `${args.title} · CyberShop`,
-      text: `${args.title}\n\n${body}\n\n— CyberShop\n${cta ? cta.url + '\n' : ''}`,
-      html,
-    });
-  } catch (e) {
-    console.error('[notify] email mirror failed', e);
+    const record = await env.DB.prepare('SELECT user_id,type,title,body,data FROM notifications WHERE id=?').bind(notificationId)
+      .first<{ user_id: number; type: string; title: string; body: string | null; data: string | null }>();
+    if (!record || !EMAIL_TYPES.has(record.type)) return true;
+    if (!(await emailAllowed(env, record.user_id, record.type))) return true;
+    const user = await env.DB.prepare("SELECT email FROM users WHERE id=? AND status='active' AND deleted_at IS NULL").bind(record.user_id).first<{ email: string }>();
+    if (!user) return true;
+    const body = record.body ?? '';
+    const data = record.data ? JSON.parse(record.data) as Record<string, unknown> : undefined;
+    const { html, cta } = emailBodyFor(record.type, record.title, body, env, data);
+    return await sendEmail(env, {
+      to: user.email, subject: `${record.title} · CyberShop`,
+      text: `${record.title}\n\n${body}\n\n— CyberShop\n${cta ? cta.url + '\n' : ''}`, html,
+    }, { userId: record.user_id, notificationType: record.type, idempotencyKey: `notification:${notificationId}` });
+  } catch {
+    console.error('[notify] email_mirror_failed');
+    return false;
   }
 }

@@ -4,7 +4,7 @@
 The sandbox has no PHP runtime, so this verifies the most failure-prone part of
 the worker<->gateway coupling: a REAL token from the running Worker (src/lib/media.ts)
 checked by a line-by-line port of media-gateway/upload.php's validation (token
-format, HMAC-SHA256 over the base64url payload, payload fields b/e/m, key
+format, HMAC-SHA256 over the base64url payload, payload fields b/e/m/p, key
 prefix/segment rules). Run with the local worker up:
 
     python3 media-gateway/contract-check.py
@@ -72,7 +72,10 @@ def gateway_verify(token, key, secret, now=None):
     for seg in key.split("/"):
         if seg in ("", ".", "..") or not re.fullmatch(r"[A-Za-z0-9._-]+", seg):
             return 400, "invalid key"
-    if not key.startswith(f"media/vendors/{biz}/"):
+    prefix = payload.get("p", "")
+    if not isinstance(prefix, str) or not prefix.startswith(f"media/vendors/{biz}/") or not prefix.endswith("/"):
+        return 403, "token scope missing or invalid"
+    if not key.startswith(prefix):
         return 403, "key does not match token"
     return 200, None
 
@@ -104,7 +107,7 @@ def main():
               gateway_verify(token, key, secret) == (200, None)),
     ]
     payload = json.loads(base64.urlsafe_b64decode(token.split(".")[0] + "==="))
-    results.append(check("payload fields b/e/m match worker contract "
+    results.append(check("payload fields b/e/m/p match worker contract "
                          f"(biz int, ~10min expiry, 8MiB cap)",
                          isinstance(payload["b"], int)
                          and abs(payload["e"] - int(time.time())) < 660

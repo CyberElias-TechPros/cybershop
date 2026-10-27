@@ -29,6 +29,8 @@ describe('two-factor authentication', () => {
   let cookie = '';
   const email = 'buyer-2fa@test.ng';
   let secret = '';
+  let recoveryCodes: string[] = [];
+  let spentTotpCode = '';
 
   beforeAll(async () => {
     cookie = await registerUser(email);
@@ -55,7 +57,7 @@ describe('two-factor authentication', () => {
   });
 
   it('refuses to confirm with a wrong code', async () => {
-    const r = await api('/api/auth/2fa/confirm', { method: 'POST', body: { code: '000000' }, cookie });
+    const r = await api('/api/auth/2fa/confirm', { method: 'POST', body: { code: 'invalid' }, cookie });
     expect(r.status).toBe(400);
   });
 
@@ -64,6 +66,7 @@ describe('two-factor authentication', () => {
     const r = await api('/api/auth/2fa/confirm', { method: 'POST', body: { code }, cookie });
     expect(r.status, JSON.stringify(r.json)).toBe(200);
     expect(r.json.backup_codes).toHaveLength(10);
+    recoveryCodes = r.json.backup_codes;
     const s = await api('/api/auth/2fa/status', { cookie });
     expect(s.json.enabled).toBe(true);
     expect(s.json.backup_codes_left).toBe(10);
@@ -90,18 +93,20 @@ describe('two-factor authentication', () => {
   it('rejects a wrong second factor', async () => {
     const login = await api('/api/auth/login', { method: 'POST', body: { email, password: 'Passw0rd123' } });
     const halfCookie = login.cookie!;
-    const bad = await api('/api/auth/login/2fa', { method: 'POST', body: { code: '111111' }, cookie: halfCookie });
+    const bad = await api('/api/auth/login/2fa', { method: 'POST', body: { code: 'invalid' }, cookie: halfCookie });
     expect(bad.status).toBe(401);
     expect(bad.json.error.code).toBe('invalid_code');
   });
 
   it('accepts a recovery code exactly once', async () => {
     // Re-enrol cleanly so the codes below are known and unused.
-    await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code: await totpCode(secret) }, cookie });
+    const disabled = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code: recoveryCodes[9] }, cookie });
+    expect(disabled.status, JSON.stringify(disabled.json)).toBe(200);
     const setup = await api('/api/auth/2fa/setup', { method: 'POST', body: {}, cookie });
     secret = setup.json.secret;
     const confirm = await api('/api/auth/2fa/confirm', { method: 'POST', body: { code: await totpCode(secret) }, cookie });
     const backup: string[] = confirm.json.backup_codes;
+    recoveryCodes = backup;
     expect(backup).toHaveLength(10);
 
     const login = await api('/api/auth/login', { method: 'POST', body: { email, password: 'Passw0rd123' } });
@@ -115,6 +120,29 @@ describe('two-factor authentication', () => {
     const half2 = login2.cookie!;
     const replay = await api('/api/auth/login/2fa', { method: 'POST', body: { code: backup[0] }, cookie: half2 });
     expect(replay.status).toBe(401);
+  });
+
+  it('allows only one concurrent use of a recovery code', async () => {
+    const challenges = await Promise.all([1, 2].map(() => api('/api/auth/login', {
+      method: 'POST', body: { email, password: 'Passw0rd123' },
+    })));
+    for (const challenge of challenges) expect(challenge.json.mfa_required).toBe(true);
+    const attempts = await Promise.all(challenges.map((challenge) => api('/api/auth/login/2fa', {
+      method: 'POST', body: { code: recoveryCodes[1] }, cookie: challenge.cookie,
+    })));
+    expect(attempts.map((attempt) => attempt.status).sort()).toEqual([200, 401]);
+  });
+
+  it('allows only one concurrent use of an authenticator code', async () => {
+    const challenges = await Promise.all([1, 2].map(() => api('/api/auth/login', {
+      method: 'POST', body: { email, password: 'Passw0rd123' },
+    })));
+    const code = await totpCode(secret);
+    spentTotpCode = code;
+    const attempts = await Promise.all(challenges.map((challenge) => api('/api/auth/login/2fa', {
+      method: 'POST', body: { code }, cookie: challenge.cookie,
+    })));
+    expect(attempts.map((attempt) => attempt.status).sort()).toEqual([200, 401]);
   });
 
   it('lists the devices signed in and can drop the others', async () => {
@@ -136,14 +164,39 @@ describe('two-factor authentication', () => {
     expect((await api('/api/auth/me', { cookie })).status).toBe(200);
   });
 
-  it('requires the password to turn 2FA back off', async () => {
-    const bad = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'wrong-password' }, cookie });
+  it('requires a password plus an unused second factor to disable 2FA', async () => {
+    const bad = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'wrong-password', code: recoveryCodes[2] }, cookie });
     expect(bad.status).toBe(400);
-    const s = await api('/api/auth/2fa/status', { cookie });
-    expect(s.json.enabled).toBe(true);
-    // Clean up so the account is usable again.
-    await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code: await totpCode(secret) }, cookie });
+    for (const code of [undefined, '', '12345', 'garbage123456', recoveryCodes[0], recoveryCodes[1], spentTotpCode]) {
+      const r = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code }, cookie });
+      expect(r.status, JSON.stringify(r.json)).toBe(400);
+      expect((await api('/api/auth/2fa/status', { cookie })).json.enabled).toBe(true);
+    }
+    const valid = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code: recoveryCodes[2] }, cookie });
+    expect(valid.status, JSON.stringify(valid.json)).toBe(200);
     expect((await api('/api/auth/2fa/status', { cookie })).json.enabled).toBe(false);
+  });
+
+  it('atomically permits only one concurrent disable with the same recovery code', async () => {
+    const other = await registerUser('disable-race@test.ng');
+    const setup = await api('/api/auth/2fa/setup', { method: 'POST', body: {}, cookie: other });
+    const confirm = await api('/api/auth/2fa/confirm', { method: 'POST', body: { code: await totpCode(setup.json.secret) }, cookie: other });
+    const attempts = await Promise.all([1, 2].map(() => api('/api/auth/2fa/disable', {
+      method: 'POST', body: { password: 'Passw0rd123', code: confirm.json.backup_codes[0] }, cookie: other,
+    })));
+    expect(attempts.map((r) => r.status).sort()).toEqual([200, 400]);
+  });
+
+  it('accepts a fresh authenticator proof for disabling and revokes other sessions', async () => {
+    const other = await registerUser('disable-totp@test.ng');
+    const login = await api('/api/auth/login', { method: 'POST', body: { email: 'disable-totp@test.ng', password: 'Passw0rd123' } });
+    const setup = await api('/api/auth/2fa/setup', { method: 'POST', body: {}, cookie: other });
+    await api('/api/auth/2fa/confirm', { method: 'POST', body: { code: await totpCode(setup.json.secret) }, cookie: other });
+    const challenge = await api('/api/auth/login', { method: 'POST', body: { email: 'disable-totp@test.ng', password: 'Passw0rd123' } });
+    const r = await api('/api/auth/2fa/disable', { method: 'POST', body: { password: 'Passw0rd123', code: await totpCode(setup.json.secret) }, cookie: other });
+    expect(r.status, JSON.stringify(r.json)).toBe(200);
+    expect((await api('/api/auth/me', { cookie: login.cookie })).status).toBe(401);
+    expect((await api('/api/auth/login/2fa', { method: 'POST', body: { code: '123456' }, cookie: challenge.cookie })).status).toBe(401);
   });
 
   it('keeps 2FA endpoints behind authentication', async () => {

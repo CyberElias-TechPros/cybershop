@@ -1,5 +1,6 @@
 import type { Env } from '../config';
 import { badRequest, quotaExceeded, notFound, forbidden } from './errors';
+import { effectiveQuotas } from './quotas';
 import { randomToken, nowUnix, nowIso } from './util';
 import { hmacHex, verifyHmac } from './crypto';
 
@@ -85,7 +86,7 @@ function base64UrlEncode(s: string): string {
 
 /**
  * Issue a short-lived, single-use, HMAC-signed upload token for the media gateway.
- * Format: base64url(JSON{t,b,e,m}) . hmacSHA256(GATEWAY_SECRET, payload)
+ * Format: base64url(JSON{t,b,e,m,p}) . hmacSHA256(GATEWAY_SECRET, payload)
  * The gateway verifies signature/expiry/MIME/size statelessly; the Worker keeps
  * the random `t` part in D1 for single-use + business + quota enforcement.
  */
@@ -97,7 +98,7 @@ export async function issueUploadToken(
   const t = randomToken(16);
   const expiresAt = nowUnix() + 600; // 10 minutes
   const pathPrefix = `media/vendors/${businessId}/${opts.entityLabel}/`;
-  const payloadB64 = base64UrlEncode(JSON.stringify({ t, b: businessId, e: expiresAt, m: opts.maxBytes }));
+  const payloadB64 = base64UrlEncode(JSON.stringify({ t, b: businessId, e: expiresAt, m: opts.maxBytes, p: pathPrefix }));
   const signature = await hmacHex(env.GATEWAY_SECRET, payloadB64);
   const token = `${payloadB64}.${signature}`;
   await env.DB.prepare(
@@ -111,68 +112,55 @@ export async function issueUploadToken(
   };
 }
 
-/**
- * Finalize a gateway upload: validate the token (single-use, not expired, right business),
- * create the media row. The token HMAC is re-verified by the gateway itself.
- */
+/** Verify the gateway's post-write receipt, not browser-supplied metadata. */
 export async function finalizeGatewayUpload(
   env: Env,
-  args: {
-    businessId: number;
-    token: string;
-    storageKey: string;
-    originalName?: string;
-    mime: string;
-    size: number;
-    width?: number;
-    height?: number;
-  }
+  args: { businessId: number; token: string; receipt: string; originalName?: string }
 ): Promise<MediaRow> {
-  // verify signature + extract the random part tracked in D1
-  const [payloadB64, signature] = String(args.token).split('.');
-  if (!payloadB64 || !signature) throw badRequest('Invalid upload token.');
-  const sigOk = await verifyHmac(env.GATEWAY_SECRET, payloadB64, signature);
-  if (!sigOk) throw forbidden('Invalid upload token.');
-  let randomPart: string;
-  try {
-    const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
-    randomPart = String(payload.t || '');
-  } catch {
-    throw badRequest('Invalid upload token.');
+  const parts = args.token.split('.');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) throw badRequest('Invalid upload token.');
+  const [payloadB64, signature] = parts;
+  if (!(await verifyHmac(env.GATEWAY_SECRET, payloadB64, signature))) throw forbidden('Invalid upload token.');
+  let payload: { t: string; b: number; e: number; m: number; p: string };
+  try { payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch { throw badRequest('Invalid upload token.'); }
+  const tok = await env.DB.prepare('SELECT * FROM upload_tokens WHERE token=?').bind(payload.t).first<UploadToken>();
+  if (!tok || tok.used_at || tok.expires_at <= nowUnix()) throw badRequest('Upload session expired. Please try uploading again.');
+  if (tok.business_id !== args.businessId || payload.b !== args.businessId) throw forbidden('Upload token does not match.');
+  const receiptParts = args.receipt.split('.');
+  if (receiptParts.length !== 2 || !receiptParts[0] || !receiptParts[1]) throw forbidden('A valid storage receipt is required. Upload the file again.');
+  if (!(await verifyHmac(env.GATEWAY_SECRET, `media-receipt.v1:${receiptParts[0]}`, receiptParts[1]))) throw forbidden('Invalid storage receipt.');
+  let receipt: { v: number; t: string; b: number; key: string; mime: string; size: number; width: number | null; height: number | null; sha256: string; expires_at: number };
+  try { receipt = JSON.parse(atob(receiptParts[0].replace(/-/g, '+').replace(/_/g, '/'))); }
+  catch { throw badRequest('Invalid storage receipt.'); }
+  if (receipt.v !== 1 || receipt.t !== payload.t || receipt.b !== args.businessId || receipt.expires_at !== tok.expires_at ||
+      !IMAGE_MIME.has(receipt.mime) || !Number.isSafeInteger(receipt.size) || receipt.size <= 0 || receipt.size > tok.max_bytes ||
+      !/^[a-f0-9]{64}$/.test(receipt.sha256 ?? '') || !Number.isSafeInteger(receipt.width) || !Number.isSafeInteger(receipt.height) ||
+      receipt.width! <= 0 || receipt.height! <= 0 || receipt.width! > 10000 || receipt.height! > 10000) throw badRequest('Invalid storage receipt metadata.');
+  const key = receipt.key;
+  if (typeof key !== 'string' || key.length > 255 || !tok.path_prefix || !key.startsWith(tok.path_prefix) ||
+      !/^[A-Za-z0-9/._-]+$/.test(key) || key.split('/').some((segment) => !segment || segment === '..' || segment === '.') ||
+      !key.endsWith(`.${EXT_BY_MIME[receipt.mime]}`)) throw badRequest('Storage path is invalid.');
+  const quota = await effectiveQuotas(env, args.businessId);
+  const limit = quota.max_storage_mb < 0 ? -1 : Math.floor(quota.max_storage_mb * 1048576);
+  const result = await env.DB.batch([
+    env.DB.prepare(`INSERT INTO media (business_id,driver,storage_key,original_name,mime_type,extension,kind,size_bytes,width,height,checksum,visibility,status,upload_token)
+      SELECT ?,'gateway',?,?,?,?,'image',?,?,?,?,'public','uploaded',? FROM upload_tokens t
+      WHERE t.token=? AND t.business_id=? AND t.used_at IS NULL AND t.expires_at>?
+      AND EXISTS(SELECT 1 FROM businesses WHERE id=t.business_id AND deleted_at IS NULL AND status IN ('active','pending_payment','pending_approval'))
+      AND (?<0 OR (SELECT COALESCE(SUM(size_bytes),0) FROM media WHERE business_id=t.business_id AND status!='deleted' AND deleted_at IS NULL)+?<=?) RETURNING id`)
+      .bind(args.businessId,key,args.originalName ?? null,receipt.mime,EXT_BY_MIME[receipt.mime],receipt.size,receipt.width,receipt.height,receipt.sha256,payload.t,
+        payload.t,args.businessId,nowUnix(),limit,receipt.size,limit),
+    env.DB.prepare(`UPDATE upload_tokens SET used_at=? WHERE token=? AND used_at IS NULL AND EXISTS(SELECT 1 FROM media WHERE upload_token=?)`)
+      .bind(nowUnix(),payload.t,payload.t),
+  ]);
+  const inserted = result[0].results[0] as { id: number } | undefined;
+  if (!inserted) {
+    const current = await env.DB.prepare('SELECT used_at,expires_at FROM upload_tokens WHERE token=?').bind(payload.t).first<UploadToken>();
+    if (!current || current.used_at || current.expires_at<=nowUnix()) throw badRequest('Upload session expired. Please try uploading again.');
+    throw quotaExceeded('Storage limit or store status changed. Remove media or review your plan before retrying.');
   }
-  const tok = (await env.DB.prepare('SELECT * FROM upload_tokens WHERE token = ?').bind(randomPart).first()) as UploadToken | null;
-  if (!tok || tok.used_at || tok.expires_at < nowUnix()) throw badRequest('Upload session expired. Please try uploading again.');
-  if (tok.business_id !== args.businessId) throw forbidden('Upload token does not match.');
-  if (!IMAGE_MIME.has(args.mime)) throw badRequest('File type not allowed.');
-  if (args.size > tok.max_bytes) throw quotaExceeded('File is larger than the allowed size for your plan.');
-  if (!tok.path_prefix || !args.storageKey.startsWith(tok.path_prefix)) {
-    throw badRequest('Storage path is invalid.');
-  }
-  // path traversal guard: no '..' segments
-  if (args.storageKey.split('/').some((seg) => seg === '..' || seg === '.' || seg === '')) {
-    throw badRequest('Storage path is invalid.');
-  }
-  // Atomic single-use claim: the token column stores the 16-char random part,
-  // and the WHERE used_at IS NULL guard makes concurrent replays lose the race.
-  const claim = await env.DB.prepare(
-    'UPDATE upload_tokens SET used_at = ? WHERE token = ? AND used_at IS NULL'
-  ).bind(nowUnix(), randomPart).run();
-  if (!claim.meta.changes) throw badRequest('Upload session expired. Please try uploading again.');
-
-  const res = await env.DB.prepare(
-    `INSERT INTO media (business_id, driver, storage_key, original_name, mime_type, extension, kind, size_bytes, width, height, visibility, status)
-     VALUES (?, 'gateway', ?, ?, ?, ?, 'image', ?, ?, ?, 'public', 'uploaded')`
-  ).bind(
-    args.businessId,
-    args.storageKey,
-    args.originalName || null,
-    args.mime,
-    EXT_BY_MIME[args.mime] || 'bin',
-    args.size,
-    args.width || null,
-    args.height || null
-  ).run();
-  return (await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(Number(res.meta.last_row_id)).first()) as MediaRow;
+  return (await env.DB.prepare('SELECT * FROM media WHERE id=?').bind(inserted.id).first()) as MediaRow;
 }
 
 interface UploadToken {
@@ -204,24 +192,17 @@ export async function storeD1Media(
     args.kind ??
     (args.mime.startsWith('image/') ? 'image' : args.mime.startsWith('audio/') ? 'audio' : 'document');
   const storageKey = `d1/${kind}/${randomToken(16)}.${EXT_BY_MIME[args.mime] || 'bin'}`;
-  const res = await env.DB.prepare(
-    `INSERT INTO media (business_id, uploaded_by, driver, storage_key, d1_blob, original_name, mime_type, extension, kind, size_bytes, width, height, visibility, status)
-     VALUES (?, ?, 'd1', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'uploaded')`
-  ).bind(
-    args.businessId,
-    args.userId ?? null,
-    storageKey,
-    args.blob,
-    args.originalName || null,
-    args.mime,
-    EXT_BY_MIME[args.mime] || 'bin',
-    kind,
-    args.blob.byteLength,
-    args.width || null,
-    args.height || null,
-    args.visibility || 'public'
-  ).run();
-  return (await env.DB.prepare('SELECT * FROM media WHERE id = ?').bind(Number(res.meta.last_row_id)).first()) as MediaRow;
+  const quota = args.businessId === null ? null : await effectiveQuotas(env,args.businessId);
+  const limit = !quota || quota.max_storage_mb < 0 ? -1 : Math.floor(quota.max_storage_mb*1048576);
+  const inserted = await env.DB.prepare(
+    `INSERT INTO media (business_id,uploaded_by,driver,storage_key,d1_blob,original_name,mime_type,extension,kind,size_bytes,width,height,visibility,status)
+     SELECT ?,?,'d1',?,?,?,?,?,?,?,?,?,?,'uploaded'
+     WHERE (? IS NULL OR EXISTS(SELECT 1 FROM businesses WHERE id=? AND deleted_at IS NULL AND status IN ('active','pending_payment','pending_approval')))
+     AND (?<0 OR (SELECT COALESCE(SUM(size_bytes),0) FROM media WHERE business_id=? AND status!='deleted' AND deleted_at IS NULL)+?<=?) RETURNING id`
+  ).bind(args.businessId,args.userId ?? null,storageKey,args.blob,args.originalName ?? null,args.mime,EXT_BY_MIME[args.mime] || 'bin',kind,
+    args.blob.byteLength,args.width ?? null,args.height ?? null,args.visibility || 'public',args.businessId,args.businessId,limit,args.businessId,args.blob.byteLength,limit).first<{ id: number }>();
+  if (!inserted) throw quotaExceeded('Storage limit or store status changed. Remove media or review your plan before retrying.');
+  return (await env.DB.prepare('SELECT * FROM media WHERE id=?').bind(inserted.id).first()) as MediaRow;
 }
 
 /**

@@ -22,6 +22,12 @@ interface Entry {
   created_at: string;
 }
 
+interface MailHealth {
+  counts: { status: string; n: number }[];
+  recent: { id: string; status: string; attempts: number; last_error: string | null; expires_at: number; created_at: number }[];
+}
+interface JobRun { id: string; job: string; status: string; started_at: number; finished_at: number | null; }
+
 const WINDOWS = [24, 72, 168];
 const LABEL: Record<number, string> = { 24: 'Last 24 hours', 72: 'Last 3 days', 168: 'Last 7 days' };
 
@@ -38,13 +44,21 @@ export default function AdminHealthPage() {
   const [recent, setRecent] = useState<Entry[]>([]);
   const [rules, setRules] = useState<{ key: string; threshold: number; window_minutes: number }[]>([]);
   const [error, setError] = useState('');
+  const [mail, setMail] = useState<MailHealth | null>(null);
+  const [jobs, setJobs] = useState<JobRun[]>([]);
+  const [followups, setFollowups] = useState<{ kind: string; payment_id: number; created_at: string }[]>([]);
+  const [replaying, setReplaying] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const d = await capi<{ health: Health; recent: Entry[]; alert_rules: { key: string; threshold: number; window_minutes: number }[] }>(
+      const d = await capi<{ health: Health; recent: Entry[]; mail: MailHealth; jobs: JobRun[]; payment_followups: { oldest_pending: { kind: string; payment_id: number; created_at: string }[] }; alert_rules: { key: string; threshold: number; window_minutes: number }[] }>(
         `/admin/health?hours=${hours}`
       );
+      setError('');
       setHealth(d.health);
+      setMail(d.mail);
+      setJobs(d.jobs ?? []);
+      setFollowups(d.payment_followups?.oldest_pending ?? []);
       setRecent(d.recent ?? []);
       setRules(d.alert_rules ?? []);
     } catch (e) {
@@ -54,6 +68,14 @@ export default function AdminHealthPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function replay(id: string) {
+    if (!window.confirm('Retry this unexpired email intent? It keeps the original content, expiry and provider idempotency key.')) return;
+    setReplaying(id);
+    try { await capi(`/admin/mail/${id}/replay`, { method: 'POST', body: '{}' }); await load(); }
+    catch (e) { setError(extractError(e)); }
+    finally { setReplaying(null); }
+  }
 
   const fiveXX = health?.by_status.filter((s) => s.status >= 500).reduce((a, b) => a + b.n, 0) ?? 0;
 
@@ -70,6 +92,33 @@ export default function AdminHealthPage() {
         </div>
       </div>
       {error && <div className="form-msg error">{error}</div>}
+
+      <section className="card panel" style={{ marginTop: 14 }} aria-labelledby="payment-followups-title">
+        <h2 id="payment-followups-title">Payment follow-ups</h2>
+        <p>Paid access and credit holds commit with the payment. Email and referral processing retry every two minutes. Do not manually grant access again to fix an email delay.</p>
+        {followups.length ? <ul>{followups.map((row) => <li key={`${row.kind}:${row.payment_id}`}>Payment #{row.payment_id} · {row.kind} · waiting since {new Date(row.created_at).toLocaleString('en-NG')}</li>)}</ul> : <p>No pending payment follow-ups.</p>}
+      </section>
+      {mail && <section className="card panel" style={{ marginTop: 14 }} aria-labelledby="mail-health-title">
+        <h2 id="mail-health-title">Email outbox</h2>
+        <p>Sent means accepted by the provider, not confirmed inbox delivery. Recipients and content are never shown here.</p>
+        <p>{mail.counts.map((item) => `${item.status}: ${item.n}`).join(' · ') || 'No messages queued.'}</p>
+        {mail.recent.length > 0 && <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>Intent</th><th>Status</th><th>Attempts</th><th>Last result</th><th>Action</th></tr></thead>
+          <tbody>{mail.recent.map((item) => <tr key={item.id}>
+            <td><code>{item.id.slice(0, 12)}…</code></td><td>{item.status}</td><td>{item.attempts}</td><td>{item.last_error ?? '—'}</td>
+            <td>{item.status === 'dead' && item.expires_at > Date.now() / 1000 ? <button className="mini-btn" disabled={replaying !== null} onClick={() => replay(item.id)}>{replaying === item.id ? 'Queuing…' : 'Retry'}</button> : '—'}</td>
+          </tr>)}</tbody>
+        </table></div>}
+      </section>}
+      <section className="card panel" style={{ marginTop: 14 }} aria-labelledby="job-health-title">
+        <h2 id="job-health-title">Maintenance history</h2>
+        <p>A running entry older than twenty minutes needs investigation; abrupt runtime termination may not record a failure.</p>
+        {jobs.length ? <div className="table-wrap"><table className="tbl">
+          <thead><tr><th>Job</th><th>Status</th><th>Started</th><th>Duration</th></tr></thead>
+          <tbody>{jobs.map((job) => <tr key={job.id}><td>{job.job}</td><td>{job.status}</td>
+            <td>{new Date(job.started_at * 1000).toLocaleString('en-NG')}</td><td>{job.finished_at === null ? 'Not finished' : `${job.finished_at - job.started_at}s`}</td></tr>)}</tbody>
+        </table></div> : <p>No maintenance runs recorded.</p>}
+      </section>
 
       {health && (
         <>

@@ -2,7 +2,7 @@ import type { Env } from '../config';
 import { forbidden, quotaExceeded, notFound, conflict, badRequest } from './errors';
 import { nowIso } from './util';
 import { notify } from './notify';
-import { paystackMock } from '../config';
+import { paystackMock, buyerDepositsEnabled } from '../config';
 import { verifyPaystackReference } from './paystack';
 import { effectiveQuotas } from './quotas';
 import { likeContains } from './search';
@@ -96,7 +96,7 @@ export async function publicPremium(env: Env, businessId: number, verificationSt
   const types = await activeAddonTypes(env, businessId);
   return {
     chat: types.has('in_app_chat'),
-    escrow: types.has('buyer_escrow'),
+    escrow: buyerDepositsEnabled(env) && types.has('buyer_escrow'),
     jobs: types.has('jobs_board'),
     verified_id: verificationStatus === 'verified',
     reply: await replyBadge(env, businessId, types),
@@ -123,17 +123,17 @@ export async function markDepositPaid(env: Env, reference: string, ip: string | 
   }
   if (dep.status !== 'pending') return { ok: false, detail: `deposit ${dep.status}` };
 
-  let verified: { success: boolean; amountKobo: number };
+  let verified: Awaited<ReturnType<typeof verifyPaystackReference>>;
   if (paystackMock(env)) {
-    verified = { success: true, amountKobo: dep.amount };
+    verified = { success: true, amountKobo: dep.amount, email: null, terminalFailure: false };
   } else {
     verified = await verifyPaystackReference(env, reference);
   }
   if (!verified.success) {
-    await env.DB.prepare(`UPDATE deposits SET status = 'failed' WHERE id = ? AND status = 'pending'`).bind(dep.id).run();
+    if (verified.terminalFailure) await env.DB.prepare(`UPDATE deposits SET status = 'failed' WHERE id = ? AND status = 'pending'`).bind(dep.id).run();
     return { ok: false, detail: 'paystack verification failed' };
   }
-  if (verified.amountKobo + 1 < dep.amount) {
+  if (verified.amountKobo !== dep.amount) {
     await env.DB.prepare(`UPDATE deposits SET status = 'failed' WHERE id = ?`).bind(dep.id).run();
     return { ok: false, detail: 'amount mismatch' };
   }

@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../config';
 import { requireUser, destroySession } from '../lib/auth';
 import { hashPassword, verifyPassword } from '../lib/crypto';
-import { badRequest, forbidden, notFound, validationError } from '../lib/errors';
+import { AppError, badRequest, forbidden, notFound, validationError } from '../lib/errors';
 import { reqStr, reqPassword, optStr, reqInt } from '../lib/validate';
 import { nowIso, randomToken } from '../lib/util';
 import { mediaUrl } from '../lib/media';
@@ -93,13 +93,14 @@ app.post('/verify-email/request', async (c) => {
   await c.env.DB.prepare('UPDATE users SET email_verify_token = ?, email_verify_expires = ? WHERE id = ?').bind(token, expires, user.id).run();
   const url = `${c.env.APP_URL}/verify-email?token=${token}`;
   if (mailConfigured(c.env)) {
-    await sendEmail(c.env, {
+    const queued = await sendEmail(c.env, {
       to: user.email,
       subject: 'Confirm your CyberShop email',
       text: `Confirm your email:\n${url}\n\nThe link works for 24 hours.`,
       html: mailHtml('Confirm your email', 'Tap below to confirm this address. The link works for 24 hours.', { label: 'Confirm email', url }),
-    });
-    return c.json({ ok: true, message: 'Confirmation email sent.' });
+    }, { userId: user.id, expiresInSeconds: 23 * 3600 });
+    if (!queued) throw new AppError(503, 'mail_queue_unavailable', 'Unable to queue the email. Please retry.');
+    return c.json({ ok: true, queued: true, message: 'Confirmation email queued.' });
   }
   if (c.env.SESSION_SECURE === '0') return c.json({ ok: true, dev_mode: true, verify_url: url });
   return c.json({ ok: true, message: 'Email is not configured yet. Ask support to confirm your address.' });

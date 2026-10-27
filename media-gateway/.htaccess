@@ -11,3 +11,8 @@ Options -Indexes
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 </IfModule>
+
+# Never serve configuration, test tooling or accidental backup files.
+<FilesMatch "^(config(\.example)?\.php|.*\.(py|sh|env|sql|bak|log))$">
+  Require all denied
+</FilesMatch>

@@ -23,7 +23,8 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 
 | Document | Contents |
 |---|---|
-| [`plan.md`](plan.md) | The full product plan & confirmed decisions (source of truth for scope) |
+| [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) | **Start-to-finish web + Android delivery roadmap:** 535 granular tasks, evidence-based status, dependencies, roles, integrations, acceptance/release gates and immediate priorities ([CSV task register](docs/roadmap/tasks.csv)) |
+| [`plan.md`](plan.md) | The full product plan & confirmed decisions (source of truth for scope; proposed changes require explicit decisions) |
 | [`docs/architecture.md`](docs/architecture.md) | Topology, request flows, data model, security, env reference, build status |
 | [`docs/deployment.md`](docs/deployment.md) | Step-by-step production deployment (Cloudflare + Vercel + cPanel) |
 | [`docs/feature-matrix.md`](docs/feature-matrix.md) | Phase 1 feature matrix + test priority |
@@ -35,14 +36,19 @@ Admin:   Vendor approvals · payment verification · categories · plans &
 | [`docs/expert-critique.md`](docs/expert-critique.md) | Every-seat expert critique (buyers, sellers, staff, admin, trust, growth, market fit) with a prioritised Now/Next/Later roadmap |
 | [`docs/galaxy-store.md`](docs/galaxy-store.md) | Samsung Galaxy Store rejection fix kit: 8-screenshot storyboard, sharp-capture rules, resubmission checklist (paste-ready copy in [`store-listing/`](store-listing/galaxy-store-listing.md)) |
 | [`docs/gap-analysis.md`](docs/gap-analysis.md) | What the product still needed, what was fixed, and the ranked backlog |
+| [`docs/roadmap/progress.md`](docs/roadmap/progress.md) | Implementation batches, verified results and remaining release blockers |
+| [`docs/operations/release-safety.md`](docs/operations/release-safety.md) | Protected deployment setup, strict readiness, payment-contract fixes and real PHP tests |
 | [`docs/production.md`](docs/production.md) | **Going live**: every key, host and command, in order |
 
 ## Going live
 
-The app runs today with demo keys. [`docs/production.md`](docs/production.md) is
-the ordered checklist — create the remote D1, set six Worker secrets, point the
-hosts at your domains, deploy, configure Paystack, deploy Vercel. No code
-changes are involved. Gate a deploy with:
+The repository includes local/demo flows and a deployment runbook in
+[`docs/production.md`](docs/production.md). **Implementation is not production
+acceptance:** the [implementation roadmap](docs/implementation-roadmap.md)
+records deployment-environment/readiness gaps, provider/media validation and
+release gates that must be addressed before a public launch. Read its immediate
+priorities before following older “just add keys” instructions. The environment
+checker is a useful preflight, not the complete release gate:
 
 ```bash
 node scripts/check-env.mjs     # prints the exact `wrangler secret put` commands still owed
@@ -89,7 +95,7 @@ docs/           architecture · deployment · decisions · feature-matrix · sch
 
 ## Local development
 
-Prereqs: Node 20+, npm. (Optional: PHP 8 for the media gateway — dev mode
+Prereqs: Node 22.12+ (supported LTS; `.nvmrc` selects Node 22), npm. (Optional: PHP 8 for the media gateway — dev mode
 doesn't need it.)
 
 ```bash
@@ -126,7 +132,7 @@ npm run dev
 ## Tests
 
 ```bash
-cd worker && npm test        # 56 tests: password-hashing + wa.me prefill units + full
+cd worker && npm test        # Worker unit + full
                              # integration suite (onboarding, both payment paths, media
                              # upload + gateway-token finalize/single-use,
                              # IDOR isolation, public pages, rate limits,
@@ -170,6 +176,15 @@ checklist. Free-tier headroom and the scaling path are in
   hides), admin extend/revoke/feature/refund, and a vendor referral credit
   (10% of the referred store’s first paid plan, capped, applied to the next
   plan — not cash; refunds take it back).
-- **Not in this product:** checkout, orders, WhatsApp Business Cloud API,
-  extra payment providers, a native app, or AI copy. Those would change what
-  the market is. Deep links remain how a sale starts.
+- **Web + Android implementation roadmap (2026-10-21):** see
+  [`docs/implementation-roadmap.md`](docs/implementation-roadmap.md) and its
+  [task register](docs/roadmap/tasks.csv). Android is now a requested expansion,
+  **not an implemented app in this checkout**. TWA/PWA packaging is a proposed
+  first route pending a device/policy spike; Capacitor/native remain alternatives
+  requiring an explicit architecture decision. Earlier Android exclusions are
+  historical scope, not evidence of delivery.
+- **Boundaries to preserve/reconcile:** WhatsApp deep links remain the primary
+  enquiry path; general checkout, orders, escrow, WhatsApp Business Cloud API,
+  extra payment providers and AI copy are not approved by this roadmap. Existing
+  deposit/premium payment paths require an explicit money-flow/legal/policy review
+  before release; documentation must match the actual enabled behavior.

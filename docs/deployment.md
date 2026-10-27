@@ -51,7 +51,7 @@ the ID is public, not a secret.
 **1.3** Apply migrations to the **remote** database:
 
 ```bash
-npx wrangler d1 migrations apply cybershop --remote
+npx wrangler d1 migrations apply cybershop --remote --env production
 ```
 
 Expected: every file in `worker/migrations/` applies, from `0001_init` through
@@ -87,7 +87,7 @@ npx wrangler deployments create --env APP_URL=https://yourshop.ng \
 # (repeat --env for each; or use wrangler.jsonc `vars` for the non-secrets)
 
 # 2.3 deploy
-npx wrangler deploy
+npx wrangler deploy --env production
 ```
 
 **2.4** Verify:

@@ -15,7 +15,7 @@ import { mailConfigured, sendEmail, mailHtml } from '../lib/mail';
 import { audit } from '../lib/audit';
 import { notify } from '../lib/notify';
 import { createSessionRow, sessionCookie, listSessions, revokeSession, revokeOtherSessions, deviceLabel, currentSessionId } from '../lib/session';
-import { randomBase32Secret, totpUri, verifyTotp, generateBackupCodes, spentCodeHash } from '../lib/totp';
+import { randomBase32Secret, totpUri, verifyTotp, generateBackupCodes, parseSecondFactor, spentCodeHash } from '../lib/totp';
 import { sha256Hex } from '../lib/util';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -87,7 +87,7 @@ app.post('/register', async (c) => {
       subject: 'Confirm your CyberShop email',
       text: `Welcome to CyberShop.\n\nConfirm your email (24 hours):\n${url}`,
       html: mailHtml('Welcome to CyberShop', 'Confirm this address so we can reach you about your account. The link works for 24 hours.', { label: 'Confirm email', url }),
-    });
+    }, { userId, expiresInSeconds: 23 * 3600 });
   }
   return c.json({ ok: true, user: { id: userId, role, name, email, business_id: businessId } });
 });
@@ -147,7 +147,8 @@ app.post('/login/2fa', async (c) => {
   }
 
   const body = await c.req.json().catch(() => null);
-  const code = String(body?.code || '').replace(/\D/g, '');
+  const factor = parseSecondFactor(body?.code);
+  const code = factor.code;
   const user = (await c.env.DB.prepare(
     'SELECT totp_secret, totp_backup_codes, totp_last_counter, totp_last_code_hash FROM users WHERE id = ?'
   ).bind(row.user_id).first()) as
@@ -157,23 +158,32 @@ app.post('/login/2fa', async (c) => {
 
   let ok = false;
   let counter: number | null = null;
-  if (/^\d{6}$/.test(code)) {
+  if (factor.kind === 'totp') {
     const v = await verifyTotp(user.totp_secret, code, {
       lastCounter: user.totp_last_counter ?? null,
       lastCodeHash: user.totp_last_code_hash ?? null,
     });
-    ok = v.ok;
     counter = v.counter;
-  } else if (code) {
-    // Recovery codes: XXXXX-XXXXXX shape, hashed at rest, single use.
+    if (v.ok && counter !== null) {
+      // Atomically consume against the state we verified. Concurrent replay loses.
+      const claim = await c.env.DB.prepare(
+        `UPDATE users SET totp_last_counter = ?, totp_last_code_hash = ?
+         WHERE id = ? AND totp_last_counter IS ? AND totp_last_code_hash IS ? AND totp_secret = ? AND status = 'active'`
+      ).bind(counter, await spentCodeHash(counter, code), row.user_id,
+        user.totp_last_counter, user.totp_last_code_hash, user.totp_secret).run();
+      ok = claim.meta.changes === 1;
+    }
+  } else if (factor.kind === 'recovery') {
+    // Recovery codes: XXXXX-XXXXX shape, hashed at rest, single use.
     const codes = JSON.parse(user.totp_backup_codes || '[]') as { code_hash: string; used_at: string | null }[];
-    const given = String(body?.code || '').trim().toUpperCase();
-    const hash = await sha256Hex(`backup:${given}`);
+    const hash = await sha256Hex(`backup:${code}`);
     const idx = codes.findIndex((b) => b.code_hash === hash && !b.used_at);
     if (idx >= 0) {
       codes[idx]!.used_at = new Date().toISOString();
-      await c.env.DB.prepare('UPDATE users SET totp_backup_codes = ? WHERE id = ?').bind(JSON.stringify(codes), row.user_id).run();
-      ok = true;
+      const claim = await c.env.DB.prepare(
+        `UPDATE users SET totp_backup_codes = ? WHERE id = ? AND totp_backup_codes = ? AND totp_secret = ? AND status = 'active'`
+      ).bind(JSON.stringify(codes), row.user_id, user.totp_backup_codes, user.totp_secret).run();
+      ok = claim.meta.changes === 1;
     }
   }
   if (!ok) {
@@ -184,10 +194,6 @@ app.post('/login/2fa', async (c) => {
   const { mfa: _mfa, ...clean } = payload;
   await c.env.DB.prepare('UPDATE sessions SET payload = ?, last_activity = ? WHERE id = ?')
     .bind(JSON.stringify(clean), nowUnix(), sessionId).run();
-  if (counter) {
-    await c.env.DB.prepare('UPDATE users SET totp_last_counter = ?, totp_last_code_hash = ? WHERE id = ?')
-      .bind(counter, await spentCodeHash(counter, code), row.user_id).run();
-  }
   return c.json({ ok: true, user: clean });
 });
 
@@ -264,19 +270,36 @@ app.post('/2fa/confirm', async (c) => {
 app.post('/2fa/disable', async (c) => {
   const user = await requireUser(c.env, c);
   const body = await c.req.json().catch(() => null);
+  await rateLimit(c.env, '2fa_disable', String(user.id), 10, 900);
   const password = String(body?.password || '');
-  if (!password) throw badRequest('Confirm with your password.');
-  const row = (await c.env.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(user.id).first()) as
-    { password_hash: string } | null;
+  if (!password) throw badRequest('Confirm with your password and a second factor.');
+  const row = await c.env.DB.prepare(`SELECT password_hash,totp_secret,totp_enabled_at,totp_backup_codes,totp_last_counter,totp_last_code_hash
+    FROM users WHERE id=? AND status='active' AND deleted_at IS NULL`).bind(user.id).first<{
+      password_hash: string; totp_secret: string | null; totp_enabled_at: string | null;
+      totp_backup_codes: string | null; totp_last_counter: number | null; totp_last_code_hash: string | null;
+    }>();
   if (!row || !(await verifyPassword(password, row.password_hash))) throw badRequest('Password is incorrect.');
-  const code = String(body?.code || '').replace(/\D/g, '');
-  if (code.length === 6) {
-    const s2 = (await c.env.DB.prepare('SELECT totp_secret FROM users WHERE id = ?').bind(user.id).first()) as { totp_secret: string | null } | null;
-    if (s2?.totp_secret && !(await verifyTotp(s2.totp_secret, code)).ok) throw badRequest('That code is not right.');
+  if (!row.totp_secret || !row.totp_enabled_at) throw badRequest('Two-factor authentication is not enabled.');
+  const factor = parseSecondFactor(body?.code);
+  let valid = false;
+  if (factor.kind === 'totp') {
+    valid = (await verifyTotp(row.totp_secret, factor.code, { lastCounter: row.totp_last_counter, lastCodeHash: row.totp_last_code_hash })).ok;
+  } else if (factor.kind === 'recovery') {
+    const codes = JSON.parse(row.totp_backup_codes || '[]') as { code_hash: string; used_at: string | null }[];
+    const hash = await sha256Hex(`backup:${factor.code}`);
+    valid = codes.some((item) => item.code_hash === hash && !item.used_at);
   }
-  await c.env.DB.prepare(
-    'UPDATE users SET totp_secret = NULL, totp_pending_secret = NULL, totp_enabled_at = NULL, totp_backup_codes = NULL, totp_last_counter = NULL WHERE id = ?'
-  ).bind(user.id).run();
+  if (!valid) throw badRequest('Enter an unused authenticator or recovery code.');
+  // The factor is consumed by clearing the entire enrolled state atomically.
+  // A concurrent sign-in/disable, password change or re-enrolment invalidates this snapshot.
+  const changed = await c.env.DB.prepare(`UPDATE users SET totp_secret=NULL,totp_pending_secret=NULL,totp_enabled_at=NULL,
+    totp_backup_codes=NULL,totp_last_counter=NULL,totp_last_code_hash=NULL
+    WHERE id=? AND password_hash=? AND totp_secret=? AND totp_enabled_at=? AND totp_backup_codes IS ?
+    AND totp_last_counter IS ? AND totp_last_code_hash IS ? AND status='active' AND deleted_at IS NULL`)
+    .bind(user.id, row.password_hash, row.totp_secret, row.totp_enabled_at, row.totp_backup_codes, row.totp_last_counter, row.totp_last_code_hash).run();
+  if (changed.meta.changes !== 1) throw badRequest('Security settings changed. Try again with an unused code.');
+  const keep = await currentSessionId(c);
+  await revokeOtherSessions(c.env, user.id, keep ?? undefined);
   await audit(c.env, { actor: user, action: 'auth.2fa_disabled', entityType: 'user', entityId: user.id, ip: clientIp(c) });
   await notify(c.env, {
     userId: user.id,
@@ -477,7 +500,7 @@ app.post('/forgot', async (c) => {
           `Hi ${row?.name ? row.name.replace(/</g, '&lt;') : 'there'} — here is your single-use reset link. It expires in one hour.`,
           { label: 'Choose a new password', url: resetUrl }
         ),
-      });
+      }, { userId: user.id, expiresInSeconds: 3540 });
       return c.json(generic);
     }
     if (c.env.SESSION_SECURE === '0') {

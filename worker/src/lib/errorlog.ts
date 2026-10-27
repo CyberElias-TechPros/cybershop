@@ -52,6 +52,16 @@ export interface AlertRule {
 
 export const ALERT_RULES: AlertRule[] = [
   {
+    key: 'payment_followup_backlog', minStatus: 500, threshold: 1, windowMinutes: 60, cooldownMinutes: 60,
+    title: 'Payment follow-up processing needs attention',
+    body: 'Committed payment receipts or credit follow-ups have waited over ten minutes. Check Admin → Health and scheduled-trigger failures. Do not reapply paid access manually.',
+  },
+  {
+    key: 'mail_backlog', minStatus: 500, threshold: 1, windowMinutes: 60, cooldownMinutes: 60,
+    title: 'Email delivery needs attention',
+    body: 'Dead-letter mail or messages waiting over ten minutes. Check Admin → Health. Provider acceptance is not inbox delivery.',
+  },
+  {
     key: 'error_5xx',
     minStatus: 500,
     threshold: 5,
@@ -79,7 +89,11 @@ export async function shouldAlert(env: Env, rule: AlertRule): Promise<boolean> {
       ? `scope IN ('api','webhook') AND (route LIKE '%paystack%' OR code LIKE '%paystack%')`
       : `status >= ?`;
   const stmt =
-    rule.key === 'error_paystack'
+    rule.key === 'payment_followup_backlog'
+      ? env.DB.prepare(`SELECT COUNT(*) AS n FROM (SELECT a.created_at AS created_at FROM payment_activations a JOIN payments p ON p.id=a.payment_id WHERE p.status='approved' AND (a.notice_processed_at IS NULL OR a.referral_processed_at IS NULL) UNION ALL SELECT s.created_at AS created_at FROM payment_settlements s JOIN payments p ON p.id=s.payment_id WHERE p.status=s.status AND (s.notice_processed_at IS NULL OR s.referral_processed_at IS NULL)) WHERE created_at<?`).bind(new Date(Date.now()-600_000).toISOString())
+      : rule.key === 'mail_backlog'
+      ? env.DB.prepare(`SELECT COUNT(*) AS n FROM email_outbox WHERE expires_at>? AND (status='dead' OR (status IN ('queued','processing') AND created_at<?))`).bind(Math.floor(Date.now()/1000), Math.floor(Date.now()/1000)-600)
+      : rule.key === 'error_paystack'
       ? env.DB.prepare(`SELECT COUNT(*) AS n FROM error_log WHERE ${where} AND created_at >= ?`).bind(since)
       : env.DB.prepare(`SELECT COUNT(*) AS n FROM error_log WHERE ${where} AND created_at >= ?`).bind(rule.minStatus, since);
   const row = (await stmt.first()) as { n: number } | null;

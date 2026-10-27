@@ -61,7 +61,9 @@ export default function Atmosphere() {
     const el = document.querySelector('.cine-intro');
     if (!el) return;
     const drop = () => {
-      el.remove();
+      // React owns this server-rendered node. Removing it imperatively breaks
+      // sibling insertion during client-side route transitions. Hide it instead.
+      if (el instanceof HTMLElement) el.style.display = 'none';
       window.removeEventListener('pointerdown', drop);
       window.removeEventListener('keydown', drop);
       window.removeEventListener('wheel', drop);
@@ -241,19 +243,9 @@ export default function Atmosphere() {
       hover = Boolean(mag);
       ring.classList.toggle('hot', hover);
 
-      if (fine && mag && mag.matches('.btn')) {
-        const r = mag.getBoundingClientRect();
-        const dx = e.clientX - (r.left + r.width / 2);
-        const dy = e.clientY - (r.top + r.height / 2);
-        mag.style.transform = `translate(${dx * 0.18}px, ${dy * 0.22}px)`;
-        mag.dataset.mag = '1';
-      }
-      document.querySelectorAll<HTMLElement>('.btn[data-mag="1"]').forEach((el) => {
-        if (el !== mag) {
-          el.style.transform = '';
-          delete el.dataset.mag;
-        }
-      });
+      // Keep the actual hit target stationary. Translating a hovered button
+      // makes pointer-based activation unstable and is unnecessary decoration.
+
     };
 
     const onScroll = () => {

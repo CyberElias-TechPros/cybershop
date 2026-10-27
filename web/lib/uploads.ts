@@ -59,15 +59,14 @@ export async function uploadVendorImage(
   form.append('file', file);
   const up = await fetch(tok.uploadUrl, { method: 'POST', body: form });
   if (!up.ok) throw new Error('Upload to storage failed.');
-  const fj = (await up.json().catch(() => ({}))) as { storage_key?: string };
+  const fj = (await up.json().catch(() => ({}))) as { receipt?: string };
+  if (!fj.receipt) throw new Error('Storage could not confirm the uploaded file. Please upload it again.');
   const done = await capi<{ media: { id: number; url: string } }>('/vendor/media/finalize', {
     method: 'POST',
     body: JSON.stringify({
       token: tok.token,
-      storage_key: fj.storage_key ?? `${tok.pathPrefix}${file.name}`,
+      receipt: fj.receipt,
       original_name: file.name,
-      mime: file.type || 'image/jpeg',
-      size: file.size,
     }),
   });
   return { id: done.media.id, url: done.media.url };

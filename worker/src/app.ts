@@ -19,7 +19,7 @@ import qrRoutes from './routes/qr';
 import catalogApiRoutes from './routes/catalog-api';
 import { supportPublic, supportAccount, supportAdmin } from './routes/support';
 import { runHourlyJobs } from './jobs/cron';
-import { reportEnv } from './lib/envcheck';
+import { reportEnv, checkEnv, isProduction } from './lib/envcheck';
 import { logError } from './lib/errorlog';
 
 /**
@@ -30,7 +30,7 @@ import { logError } from './lib/errorlog';
  *  - /healthz
  * Everything else under /api/* is called by the Vercel proxy with x-internal-secret.
  */
-const PUBLIC_PREFIXES = ['/api/media/file/', '/api/sitemap.xml', '/api/webhooks/', '/api/qr.svg', '/healthz'];
+const PUBLIC_PREFIXES = ['/api/media/file/', '/api/sitemap.xml', '/api/webhooks/', '/api/qr.svg', '/healthz', '/readyz'];
 
 export function buildApp(): Hono<{ Bindings: Env }> {
   const app = new Hono<{ Bindings: Env }>();
@@ -46,9 +46,20 @@ export function buildApp(): Hono<{ Bindings: Env }> {
     await next();
   });
 
+  // Do not serve money/account operations from an unsafe hosted configuration.
+  // Health probes stay reachable so operators can diagnose and fix readiness.
+  app.use('*', async (c, next) => {
+    if (!['/healthz', '/readyz'].includes(c.req.path) &&
+        (isProduction(c.env) || c.env.APP_ENV === 'staging') && !checkEnv(c.env).ok) {
+      c.header('Cache-Control', 'no-store');
+      return c.json({ ok: false, error: { code: 'service_unavailable', message: 'Service is temporarily unavailable. Please try again shortly.' } }, 503);
+    }
+    await next();
+  });
+
   // first-boot admin (idempotent, cheap)
   app.use('*', async (c, next) => {
-    await ensureAdmin(c.env);
+    if (!['/healthz', '/readyz'].includes(c.req.path)) await ensureAdmin(c.env);
     await next();
   });
 
@@ -62,6 +73,18 @@ export function buildApp(): Hono<{ Bindings: Env }> {
       // deploy check confirm the keys landed without leaking them to the world.
       config: { ok: r.ok, production: r.production, missing: r.missing, unsafe: r.unsafe, warnings: r.warnings },
     });
+  });
+
+  // Liveness is deliberately separate: readiness includes config + real D1 access.
+  app.get('/readyz', async (c) => {
+    const config = reportEnv(c.env);
+    let database = false;
+    try {
+      database = Boolean(await c.env.DB.prepare('SELECT 1 AS ok').first());
+    } catch { /* Return no database/provider errors or credentials to a public probe. */ }
+    const ok = config.ok && database;
+    c.header('Cache-Control', 'no-store');
+    return c.json({ ok, service: 'cybershop-api', config, database, release: c.env.RELEASE_SHA || null }, ok ? 200 : 503);
   });
 
   app.route('/api/auth', authRoutes);

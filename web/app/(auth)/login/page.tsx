@@ -84,17 +84,17 @@ export default function LoginPage() {
       {mfa ? (
         <form onSubmit={submitCode}>
           <div className="field" style={{ ['--i' as string]: 1 }}>
-            <label htmlFor="code">Code from your authenticator app</label>
+            <label htmlFor="code">Authenticator or recovery code</label>
             <input
               id="code"
               className="input totp-input"
               type="text"
-              inputMode="numeric"
+              inputMode="text"
               autoComplete="one-time-code"
-              maxLength={6}
+              maxLength={11}
               required
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
+              onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-F0-9-]/g, ''))}
               placeholder="000000"
               autoFocus
             />
@@ -103,7 +103,7 @@ export default function LoginPage() {
             </div>
           </div>
           <div className="form-actions" style={{ ['--i' as string]: 2 }}>
-            <button className="btn btn-primary" type="submit" disabled={busy || code.length < 6}>
+            <button className="btn btn-primary" type="submit" disabled={busy || !/^(?:[0-9]{6}|[A-F0-9]{5}-?[A-F0-9]{5})$/.test(code)}>
               {busy ? 'Checking…' : 'Verify and sign in'}
             </button>
           </div>
